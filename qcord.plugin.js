@@ -35,7 +35,11 @@ const BUTTON_SELECTOR = ".qcord-button";
 const DECODED_SELECTOR = ".qcord-plain";
 const FILE_NAME_RE = /^qcord_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.txt$/;
 const MAX_DECODED_FILE_SIZE = 1024 * 1024;
-const BUTTON_CSS = `
+const PLUGIN_CSS = `
+    [class*="channelTextArea"]:has(.qcord-button[data-enabled="true"]) {
+        outline: 2px solid #2786de;
+        outline-offset: -2px;
+    }
     .qcord-button {
 
         --qcord-icon-off: #c5c6ca;
@@ -122,6 +126,9 @@ module.exports = class Qcord {
         this.frame = null;
         this.session = {};
         this.fileDecodes = new WeakMap();
+        this.renderedMessages = new Map();
+        this.markdown = BdApi.Webpack.getByKeys("parse", "reactParserFor");
+        this.markupClass = BdApi.Webpack.getByKeys("markup")?.markup || "";
         this.keys = null;
         this.generating = false;
         const savedScheme = BdApi.Data.load(NAME, "scheme");
@@ -164,10 +171,13 @@ module.exports = class Qcord {
             return;
         }
         this.running = true;
-        BdApi.DOM.addStyle(NAME, BUTTON_CSS);
+        BdApi.DOM.addStyle(NAME, PLUGIN_CSS);
+        if (!this.markdown) {
+            BdApi.UI.showToast("Qcord could not find Discord's Markdown renderer. Decoded messages will display as plain text.", {type: "warning"});
+        }
         this.mountButtons();
         this.scanMessages();
-        BdApi.UI.showToast("Qcord ready — open the shield for settings.", {type: "success"});
+        BdApi.UI.showToast("Qcord ready - open the shield for settings.", {type: "success"});
     }
 
     // Base64 via Node's Buffer (Node core, same runtime as `crypto`).
@@ -241,16 +251,44 @@ module.exports = class Qcord {
     }
 
     clearDecoded() {
-        for (const span of document.querySelectorAll(DECODED_SELECTOR)) span.remove();
+        for (const span of this.renderedMessages.keys()) this.removeDecoded(span);
+        for (const span of document.querySelectorAll(DECODED_SELECTOR)) this.removeDecoded(span);
         for (const element of document.querySelectorAll(".qcord-decoded")) element.classList.remove("qcord-decoded");
         for (const element of document.querySelectorAll(".qcord-file-hidden")) element.classList.remove("qcord-file-hidden");
+    }
+
+    renderDecoded(element, text) {
+        const previous = this.renderedMessages.get(element);
+        if (previous?.text === text) return;
+        let root = previous?.root;
+        try {
+            if (this.markdown) {
+                const content = this.markdown.parse(text, true, {allowLinks: true});
+                root ||= BdApi.ReactDOM.createRoot(element);
+                root.render(content);
+            }
+            else element.textContent = text;
+        }
+        catch (error) {
+            root?.unmount();
+            root = null;
+            element.textContent = text;
+            BdApi.Logger.warn(NAME, "Could not format a decoded message.", error);
+        }
+        this.renderedMessages.set(element, {root, text});
+    }
+
+    removeDecoded(element) {
+        this.renderedMessages.get(element)?.root?.unmount();
+        this.renderedMessages.delete(element);
+        element.remove();
     }
 
     updateButton(button) {
         const checked = String(this.enabled);
         if (button.getAttribute("data-enabled") === checked) return;
         button.setAttribute("data-enabled", checked);
-        button.title = `Qcord settings — Base64 encoding ${this.enabled ? "on" : "off"}`;
+        button.title = `Qcord settings - Base64 encoding ${this.enabled ? "on" : "off"}`;
         button.setAttribute("aria-label", button.title);
     }
 
@@ -284,11 +322,13 @@ module.exports = class Qcord {
 
     // Read visible chat messages and decode any that carry the Qcord prefix.
     // Idempotent: safe to run on every DOM mutation. The original React-owned
-    // nodes are hidden, never edited; the decoded text goes in our own span via
-    // textContent (no HTML injection).
+    // nodes are hidden, never edited; Discord's Markdown renderer owns our nodes.
     scanMessages() {
         if (!this.running) return;
         if (!this.decodeIncoming) { this.clearDecoded(); return; }
+        for (const element of this.renderedMessages.keys()) {
+            if (!element.isConnected) this.removeDecoded(element);
+        }
         for (const element of document.querySelectorAll(MESSAGE_SELECTOR)) {
             let span = element.querySelector(`:scope > ${DECODED_SELECTOR}`);
             const source = Array.from(element.childNodes)
@@ -298,19 +338,18 @@ module.exports = class Qcord {
             const decoded = this.decodeText(source);
             if (decoded === null) {
                 if (span) {
-                    span.remove();
+                    this.removeDecoded(span);
                     element.classList.remove("qcord-decoded");
                 }
                 continue;
             }
-            if (span && span.textContent === decoded) continue;
             if (!span) {
-                span = document.createElement("span");
-                span.className = "qcord-plain";
+                span = document.createElement("div");
+                span.className = `qcord-plain ${this.markupClass}`;
                 span.title = "Decoded from Qcord Base64 (encoded, not encrypted)";
                 element.append(span);
             }
-            span.textContent = decoded;
+            this.renderDecoded(span, decoded);
             element.classList.add("qcord-decoded");
         }
         for (const link of document.querySelectorAll('[id^="chat-messages-"] a[href]')) {
@@ -335,7 +374,7 @@ module.exports = class Qcord {
         if (!card) return;
         let state = this.fileDecodes.get(card);
         if (state && state.url !== url.href) {
-            state.span?.remove();
+            if (state.span) this.removeDecoded(state.span);
             card.classList.remove("qcord-file-hidden");
             this.fileDecodes.delete(card);
             state = null;
@@ -364,10 +403,10 @@ module.exports = class Qcord {
             !card.isConnected || link.href !== state.url || this.fileDecodes.get(card) !== state) return;
         if (!state.span?.isConnected) {
             state.span = document.createElement("div");
-            state.span.className = "qcord-plain qcord-file-plain";
+            state.span.className = `qcord-plain qcord-file-plain ${this.markupClass}`;
             state.span.title = "Decoded from Qcord Base64 attachment (encoded, not encrypted)";
-            state.span.textContent = state.decoded;
             card.after(state.span);
+            this.renderDecoded(state.span, state.decoded);
         }
         card.classList.add("qcord-file-hidden");
     }

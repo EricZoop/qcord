@@ -1,7 +1,8 @@
-# Logs
+# Local-only development files
 /examples/
 /tests/
 
+# Logs
 logs
 *.log
 npm-debug.log*
