@@ -1,8 +1,8 @@
 /**
  * @name Qcord
- * @author Eric, Arsh, Yasukha
+ * @author Eric, Arsh, Yasser
  * @authorId 215269534540496896
- * @version 0.3.1
+ * @version 0.0.1
  * @description Client-side Base64 message encoding with auto-decode of incoming Qcord messages, plus a post-quantum key-generation demo. Base64 is an encoding, NOT encryption.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
@@ -17,7 +17,11 @@ catch { Crypto = null; } // Encoding still works if the optional key API is unav
 const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
 const BUTTON_SVG =
 `
-<svg width="24" height="24" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false"><path d="M 27.9883 51.2969 C 28.3633 51.2969 28.9492 51.1562 29.5586 50.8516 C 42.6602 43.4688 47.1836 40.3750 47.1836 31.9609 L 47.1836 14.2891 C 47.1836 11.8750 46.1289 11.1016 44.1836 10.2813 C 41.4414 9.1562 32.6524 5.9922 29.9336 5.0313 C 29.3008 4.8438 28.6680 4.7031 27.9883 4.7031 C 27.3320 4.7031 26.6992 4.8438 26.0664 5.0313 C 23.3476 6.0156 14.5586 9.1797 11.8164 10.2813 C 9.8711 11.0781 8.8164 11.8750 8.8164 14.2891 L 8.8164 31.9609 C 8.8164 40.3750 13.3633 43.4453 26.4414 50.8516 C 27.0508 51.1562 27.6133 51.2969 27.9883 51.2969 Z M 19.7617 35.7344 L 19.7617 26.6406 C 19.7617 25.1172 20.3476 24.3203 21.5898 24.1328 L 21.5898 21.3203 C 21.5898 17.0078 24.1914 14.1016 27.9883 14.1016 C 31.8086 14.1016 34.3867 17.0078 34.3867 21.3203 L 34.3867 24.1094 C 35.6524 24.2969 36.2383 25.0938 36.2383 26.6406 L 36.2383 35.7344 C 36.2383 37.4922 35.4649 38.3125 33.8242 38.3125 L 22.1524 38.3125 C 20.5351 38.3125 19.7617 37.4922 19.7617 35.7344 Z M 24.0508 24.0860 L 31.9492 24.0625 L 31.9492 21.0625 C 31.9492 18.2969 30.3789 16.4687 27.9883 16.4687 C 25.6211 16.4687 24.0508 18.2969 24.0508 21.0625 Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="2 0 98 87"
+     preserveAspectRatio="xMidYMid meet">
+    <path d="m15.617 41.047c-4.4844 2.9961-7.9922 6.2266-10.262 9.4727-2.4922 3.5664-3.4531 7.1211-2.4922 10.34 1.5938 5.3516 8.1562 9.1289 17.465 10.895 1.6055 0.30469 3.2852 0.54688 5.0586 0.73047 5.2578 0.53906 11.09 0.50391 17.242-0.14453-2.4609-1.3672-4.7148-3.0977-6.5703-5.1445-3.1367-3.4648-5.1484-7.8203-5.1484-12.875v-16.355c0.007813-0.89062 0.55469-1.7266 1.4414-2.0469 2.8828-1.0508 5.7656-2.2617 8.5703-3.6211 2.707-1.3086 5.3555-2.7656 7.8867-4.3398 0.6875-0.44531 1.5977-0.48047 2.3359-0.019531 2.543 1.5859 5.207 3.0508 7.9258 4.3633 2.7539 1.332 5.582 2.5273 8.4102 3.5625 0.92188 0.25781 1.5977 1.1016 1.5977 2.1055v18.602c-0.003906 0.19531-0.03125 0.39063-0.085937 0.58984l-0.60156 2.1211c-0.96484 3.4141-2.8516 6.3672-5.293 8.8008 6.2422-1.9531 11.902-4.3711 16.773-7.0859l0.14453-0.082032c3.6016-2.0195 6.7461-4.1953 9.3555-6.4531 5.9961-5.1953 9.0391-10.723 7.8789-15.562l-0.12891-0.46484c-0.87109-2.9102-3.2461-5.3711-6.7422-7.293-1.75-0.96094-3.7695-1.7852-6.0156-2.4609v21.949c0 1.207-0.97656 2.1836-2.1836 2.1836-1.207 0-2.1836-0.98047-2.1836-2.1836v-22.402c-1.7109-0.39844-3.4375-0.87109-5.1641-1.4141-0.09375-0.023438-0.18359-0.050781-0.27344-0.085938-3.7578-1.1914-7.5-2.6953-11.051-4.4336-5.0586-2.4766-9.7383-5.4414-13.52-8.6719-3.7812 3.2305-8.4609 6.1953-13.52 8.6719-5.2695 2.582-10.965 4.6445-16.488 5.9297v26.098c0 1.4258 0.097656 2.8086 0.28906 4.1719 0.19922 1.3945 0.48828 2.7266 0.86328 4.0039 0.33594 1.1523-0.33203 2.3633-1.4844 2.6953-1.1523 0.33594-2.3633-0.33203-2.6953-1.4844-0.4375-1.4922-0.7695-3.0195-1-4.6016-0.22656-1.6016-0.34375-3.1914-0.34375-4.7852v-13.27zm61.309 26.348c-4.2383 1.9961-8.9023 3.7773-13.891 5.2656-1.8242 0.54297-3.7695 1.0664-5.8359 1.5625-9.3398 2.2461-18.453 3.1836-26.578 2.957 1.9766 1.7656 4.1797 3.3281 6.5547 4.6641 3.8906 2.1875 8.2344 3.7461 12.82 4.5391 6.9492-1.2031 13.328-4.1484 18.398-8.3594 3.5781-2.9688 6.5078-6.5703 8.5312-10.629z"/>
+</svg>
 `;
 
 // protocol:version:scheme:payload
@@ -31,35 +35,69 @@ const BUTTON_SELECTOR = ".qcord-button";
 const DECODED_SELECTOR = ".qcord-plain";
 const BUTTON_CSS = `
     .qcord-button {
+
         --qcord-icon-off: #c5c6ca;
         --qcord-icon-on: #ffffff;
-        --qcord-accent: #63862b;
-        display: inline-flex; align-items: center; justify-content: center;
-        align-self: center; flex-shrink: 0; margin: 0;
-        width: 32px; height: 32px; padding: 4px 4px; box-sizing: border-box;
-        border: 0; border-radius: 25%; cursor: pointer;
-        background: transparent; color: var(--qcord-icon-off);
+        --qcord-accent: #2786de;
+        
+        display: inline-flex; 
+        align-items: center; 
+        justify-content: center;
+
+        align-self: center; 
+        flex-shrink: 0; 
+        margin: 0;
+        
+        width: 32px; 
+        height: 32px; 
+        margin-left: 2px;
+
+        padding: 4px 4px; 
+        
+        box-sizing: border-box;
+        border: 0; 
+        border-radius: 25%; 
+        cursor: pointer;
+        
+        background: transparent; 
+        color: var(--qcord-icon-off);
     }
+
+    
     .qcord-button:focus-visible { outline: 2px solid var(--text-link); }
     .qcord-button[data-enabled="true"], .qcord-button:hover {
         color: var(--qcord-icon-on);
         background: linear-gradient(to top, var(--qcord-accent), transparent);
     }
     .qcord-button svg {
-        display: block; flex-shrink: 0; width: 24px; height: 24px;
-        fill: currentColor; pointer-events: none;
-        transition: transform 120ms ease;
+        display: block; 
+        flex-shrink: 0;
+        width: 22px; 
+        height: 22px;
+        
+        transform: translateY(-2px) translateX(0.5px);
+
+        
+        fill: currentColor; 
+        
+        pointer-events: none;
+        transition: transform 180ms ease;
     }
-    .qcord-button:hover svg { transform: scale(1.075); }
+    .qcord-button:hover svg { 
+        transform: translateY(-2px) translateX(0.5px) scale(1.075);
+
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .qcord-button svg { transition: none; }
     }
+
     .qcord-decoded > :not(.qcord-plain) { display: none !important; }
     .qcord-plain { white-space: pre-wrap; }
     .qcord-panel { display: grid; gap: 12px; }
     .qcord-panel label { display: flex; align-items: center; gap: 8px; }
     .qcord-panel .qcord-field { display: grid; gap: 6px; }
-    .qcord-panel input[type="checkbox"] { accent-color: #63862b; }
+    .qcord-panel input[type="checkbox"] { accent-color: #2786de; }
     .qcord-panel select, .qcord-panel button, .qcord-panel textarea {
         padding: 8px; border: 1px solid var(--background-modifier-accent);
         border-radius: 6px; background: var(--background-secondary);
@@ -103,7 +141,7 @@ module.exports = class Qcord {
                 }
                 const content = this.encodeText(message.content);
                 if (content.length > MAX_CONTENT_LENGTH) {
-                    return this.blockSend("Qcord message exceeds 2,000 characters once encoded. Shorten it and try again.");
+                    return this.stageMessageFile(args[0], content);
                 }
                 // Clone rather than mutate Discord's draft or a caller's message.
                 outgoing = args.slice();
@@ -157,6 +195,30 @@ module.exports = class Qcord {
         // Discord's normal send result instructs the composer whether to clear
         // the draft. Resolve without calling the original send function.
         return Promise.resolve({shouldClear: false, shouldRefocus: true});
+    }
+
+    async stageMessageFile(channelId, content) {
+        try {
+            const attachments = BdApi.Webpack.getByKeys("addFiles");
+            if (typeof attachments?.addFiles !== "function") {
+                return this.blockSend("Qcord could not find attachment staging. Your message was not sent.");
+            }
+            const now = new Date();
+            const parts = [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()]
+                .map(value => String(value).padStart(2, "0"));
+            const filename = `message_${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.txt`;
+            const file = new File([content], filename, {type: "text/plain;charset=utf-8"});
+            // Stage the encoded envelope for review; never send the plaintext draft.
+            await attachments.addFiles({
+                channelId, draftType: 0, showLargeMessageDialog: false,
+                files: [{file, platform: 1, isThumbnail: false}]
+            });
+            BdApi.UI.showToast("Qcord attached your encoded message. Review the file and press Send.", {type: "success"});
+            return {shouldClear: true, shouldRefocus: true};
+        }
+        catch {
+            return this.blockSend("Qcord could not prepare the message attachment. Your message was not sent.");
+        }
     }
 
     setEnabled(enabled) {
