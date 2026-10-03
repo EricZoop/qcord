@@ -2,7 +2,7 @@
  * @name Qcord
  * @author EricZoop
  * @authorId 215269534540496896
- * @version 0.2.1
+ * @version 0.2.3
  * @description Client-side text effect and post-quantum key-generation demo. Messages are not encrypted.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
@@ -13,14 +13,36 @@
 const NAME = "Qcord";
 const Crypto = require("crypto"); // BetterDiscord exposes selected APIs, not all of Node.
 const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
-const BUTTON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" focusable="false">
-    <path d="M216.57,39.43A80,80,0,0,0,83.91,120.78L28.69,176A15.86,15.86,0,0,0,24,187.31V216a16,16,0,0,0,16,16H72a8,8,0,0,0,8-8V208H96a8,8,0,0,0,8-8V184h16a8,8,0,0,0,5.66-2.34l9.56-9.57A79.73,79.73,0,0,0,160,176h.1A80,80,0,0,0,216.57,39.43ZM180,92a16,16,0,1,1,16-16A16,16,0,0,1,180,92Z"/>
-</svg>`;
+const BUTTON_SVG = `<svg width="24" height="24" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false"><path d="M 27.9883 51.2969 C 28.3633 51.2969 28.9492 51.1562 29.5586 50.8516 C 42.6602 43.4688 47.1836 40.3750 47.1836 31.9609 L 47.1836 14.2891 C 47.1836 11.8750 46.1289 11.1016 44.1836 10.2813 C 41.4414 9.1562 32.6524 5.9922 29.9336 5.0313 C 29.3008 4.8438 28.6680 4.7031 27.9883 4.7031 C 27.3320 4.7031 26.6992 4.8438 26.0664 5.0313 C 23.3476 6.0156 14.5586 9.1797 11.8164 10.2813 C 9.8711 11.0781 8.8164 11.8750 8.8164 14.2891 L 8.8164 31.9609 C 8.8164 40.3750 13.3633 43.4453 26.4414 50.8516 C 27.0508 51.1562 27.6133 51.2969 27.9883 51.2969 Z M 19.7617 35.7344 L 19.7617 26.6406 C 19.7617 25.1172 20.3476 24.3203 21.5898 24.1328 L 21.5898 21.3203 C 21.5898 17.0078 24.1914 14.1016 27.9883 14.1016 C 31.8086 14.1016 34.3867 17.0078 34.3867 21.3203 L 34.3867 24.1094 C 35.6524 24.2969 36.2383 25.0938 36.2383 26.6406 L 36.2383 35.7344 C 36.2383 37.4922 35.4649 38.3125 33.8242 38.3125 L 22.1524 38.3125 C 20.5351 38.3125 19.7617 37.4922 19.7617 35.7344 Z M 24.0508 24.0860 L 31.9492 24.0625 L 31.9492 21.0625 C 31.9492 18.2969 30.3789 16.4687 27.9883 16.4687 C 25.6211 16.4687 24.0508 18.2969 24.0508 21.0625 Z"/></svg>`;
 // A portable Unicode dingbat alphabet, not a font applied to plaintext.
 // Encode each UTF-8 byte as two symbols so every character is covered.
 const SYMBOLS = Array.from("✀✁✂✃✄☎☏✆✉✍✎✏✐✑✒✓");
 const MAX_CONTENT_LENGTH = 2000; // Conservative limit, including non-Nitro accounts.
 const BUTTON_SELECTOR = ".qcord-button";
+const BUTTON_CSS = `
+    .qcord-button {
+        --qcord-icon-off: #c5c6ca;
+        --qcord-icon-on: #ffffff;
+        --qcord-accent: #a3ff12;
+        display: inline-flex; align-items: center; justify-content: center;
+        align-self: center; flex-shrink: 0; order: 999; margin: 0 4px;
+        width: 32px; height: 32px; padding: 4px; box-sizing: border-box;
+        border: 0; border-radius: 5px; cursor: pointer;
+        background: transparent; color: var(--qcord-icon-off);
+    }
+    .qcord-button:hover { background: var(--background-modifier-hover); }
+    .qcord-button:focus-visible { outline: 2px solid var(--text-link); }
+    .qcord-button[data-enabled="true"] {
+        color: var(--qcord-icon-on);
+        background: linear-gradient(to top, var(--qcord-accent), transparent);
+    }
+    .qcord-button svg {
+        display: block; flex-shrink: 0; width: 24px; height: 24px;
+        fill: currentColor; pointer-events: none;
+    }
+    .qcord-panel { display: grid; gap: 12px; }
+    .qcord-panel textarea { width: 100%; box-sizing: border-box; font-family: monospace; }
+`;
 
 module.exports = class Qcord {
     start() {
@@ -70,20 +92,7 @@ module.exports = class Qcord {
             return;
         }
         this.running = true;
-        BdApi.DOM.addStyle(NAME, `
-            .qcord-button {
-                display: inline-flex; align-items: center; justify-content: center;
-                align-self: center; flex-shrink: 0; margin: 0 8px 0 0;
-                width: 32px; height: 32px; padding: 4px; border: 0; border-radius: 5px;
-                cursor: pointer; background: transparent; color: var(--text-muted);
-            }
-            .qcord-button:hover { background: var(--background-modifier-hover); }
-            .qcord-button:focus-visible { outline: 2px solid var(--text-link); }
-            .qcord-button[data-enabled="true"] { color: var(--text-positive); }
-            .qcord-button svg { width: 24px; height: 24px; }
-            .qcord-panel { display: grid; gap: 12px; }
-            .qcord-panel textarea { width: 100%; box-sizing: border-box; font-family: monospace; }
-        `);
+        BdApi.DOM.addStyle(NAME, BUTTON_CSS);
         this.mountButtons();
     }
 
@@ -119,14 +128,13 @@ module.exports = class Qcord {
 
     mountButtons() {
         if (!this.running) return;
-        // Scope to message composers, excluding unrelated attachment controls.
+        // Append to the composer's right-hand controls, after Discord's buttons.
         // Class fragments avoid depending on Discord's changing CSS hashes.
         for (const editor of document.querySelectorAll('[role="textbox"][contenteditable="true"]')) {
             const composer = editor.closest('[class*="channelTextArea"]');
             if (!composer) continue;
-            const attach = composer.querySelector('button[class*="attachButton"], [role="button"][class*="attachButton"]');
-            if (!attach) continue;
-            const anchor = attach.closest('[class*="attachWrapper"]') || attach;
+            const controls = composer.querySelector('[class*="buttons_"]');
+            if (!controls) continue;
             let button = composer.querySelector(BUTTON_SELECTOR);
             if (!button) {
                 button = document.createElement("button");
@@ -142,7 +150,7 @@ module.exports = class Qcord {
                 });
             }
             this.updateButton(button);
-            if (anchor.nextElementSibling !== button) anchor.after(button);
+            if (controls.lastElementChild !== button) controls.append(button);
         }
     }
 
