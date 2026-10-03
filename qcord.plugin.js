@@ -27,7 +27,7 @@ const BUTTON_SVG =
 // protocol:version:scheme:payload
 const PREFIX = "qcord:v1:b64:";
 // Standard Base64: groups of 4 chars, optional "=" / "==" padding on the last group only.
-const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 
 const MAX_CONTENT_LENGTH = 2000; // Conservative limit, including non-Nitro accounts.
 const MESSAGE_SELECTOR = '[id^="message-content-"]';
@@ -320,15 +320,6 @@ module.exports = class Qcord {
 
     async decodeFile(link) {
         if (!this.running || !this.decodeIncoming) return;
-        const card = link.closest('[class*="fileWrapper_"], [class*="attachment_"]');
-        if (!card) return;
-        let state = this.fileDecodes.get(card);
-        if (state && state.url !== link.href) {
-            state.span?.remove();
-            card.classList.remove("qcord-file-hidden");
-            this.fileDecodes.delete(card);
-            state = null;
-        }
         let url;
         try { url = new URL(link.href); }
         catch { return; }
@@ -336,6 +327,19 @@ module.exports = class Qcord {
             !["cdn.discordapp.com", "media.discordapp.net"].includes(url.hostname) ||
             !/^\/attachments\/\d+\/\d+\//.test(url.pathname)) return;
         if (!FILE_NAME_RE.test(url.pathname.split("/").pop())) return;
+        // Discord renders .txt uploads as text previews as well as ordinary file
+        // cards. Hide the outer attachment item so its preview leaves no blank tile.
+        const card = link.closest('[class*="mosaicItem_"]') || link.closest(
+            '[class*="textContainer_"], [class*="fileWrapper_"], [class*="file_"], [class*="attachment_"]'
+        );
+        if (!card) return;
+        let state = this.fileDecodes.get(card);
+        if (state && state.url !== url.href) {
+            state.span?.remove();
+            card.classList.remove("qcord-file-hidden");
+            this.fileDecodes.delete(card);
+            state = null;
+        }
         if (!state) {
             state = {url: url.href, decoded: null, pending: true};
             this.fileDecodes.set(card, state);
@@ -350,7 +354,10 @@ module.exports = class Qcord {
                 if (text.length > MAX_DECODED_FILE_SIZE || this.session !== session) return;
                 state.decoded = this.decodeText(text);
             }
-            catch { /* Failed or invalid files keep their original attachment card. */ }
+            catch (error) {
+                // Keep the original attachment available if download/decoding fails.
+                BdApi.Logger.warn(NAME, "Could not decode a Qcord attachment.", error);
+            }
             finally { state.pending = false; }
         }
         if (state.pending || state.decoded === null || !this.running || !this.decodeIncoming ||
@@ -470,6 +477,6 @@ module.exports = class Qcord {
         BdApi.Patcher.unpatchAll(NAME);
         BdApi.DOM.removeStyle(NAME);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) button.remove();
-        this.clearDecoded();
+        this.clearDecoded(); //test
     }
 };

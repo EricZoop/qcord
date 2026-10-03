@@ -17,3 +17,5 @@ Messages use `protocol:version:scheme:payload`, for example:
 ```text
 qcord:v1:b64:SGVsbG8gd29ybGQ=
 ```
+
+Run the attachment regression check with `node --test tests/attachments.test.js`. It uses mocked Discord/DOM APIs; attachment display should also be checked in the Discord client after reloading the plugin.
