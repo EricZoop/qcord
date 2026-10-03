@@ -1,9 +1,9 @@
 /**
  * @name Qcord
- * @author EricZoop
+ * @author Eric, Arsh, Yasukha
  * @authorId 215269534540496896
- * @version 0.2.4
- * @description Client-side text effect and post-quantum key-generation demo. Messages are not encrypted.
+ * @version 0.3.0
+ * @description Client-side Base64 message encoding with auto-decode of incoming Qcord messages, plus a post-quantum key-generation demo. Base64 is an encoding, NOT encryption.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
  */
@@ -11,27 +11,37 @@
 "use strict";
 
 const NAME = "Qcord";
-const Crypto = require("crypto"); // BetterDiscord exposes selected APIs, not all of Node.
+const Crypto = require("crypto"); // BetterDiscord exposes selected Node APIs; used for key generation.
 const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
 const BUTTON_SVG =
 `
 <svg width="24" height="24" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false"><path d="M 27.9883 51.2969 C 28.3633 51.2969 28.9492 51.1562 29.5586 50.8516 C 42.6602 43.4688 47.1836 40.3750 47.1836 31.9609 L 47.1836 14.2891 C 47.1836 11.8750 46.1289 11.1016 44.1836 10.2813 C 41.4414 9.1562 32.6524 5.9922 29.9336 5.0313 C 29.3008 4.8438 28.6680 4.7031 27.9883 4.7031 C 27.3320 4.7031 26.6992 4.8438 26.0664 5.0313 C 23.3476 6.0156 14.5586 9.1797 11.8164 10.2813 C 9.8711 11.0781 8.8164 11.8750 8.8164 14.2891 L 8.8164 31.9609 C 8.8164 40.3750 13.3633 43.4453 26.4414 50.8516 C 27.0508 51.1562 27.6133 51.2969 27.9883 51.2969 Z M 19.7617 35.7344 L 19.7617 26.6406 C 19.7617 25.1172 20.3476 24.3203 21.5898 24.1328 L 21.5898 21.3203 C 21.5898 17.0078 24.1914 14.1016 27.9883 14.1016 C 31.8086 14.1016 34.3867 17.0078 34.3867 21.3203 L 34.3867 24.1094 C 35.6524 24.2969 36.2383 25.0938 36.2383 26.6406 L 36.2383 35.7344 C 36.2383 37.4922 35.4649 38.3125 33.8242 38.3125 L 22.1524 38.3125 C 20.5351 38.3125 19.7617 37.4922 19.7617 35.7344 Z M 24.0508 24.0860 L 31.9492 24.0625 L 31.9492 21.0625 C 31.9492 18.2969 30.3789 16.4687 27.9883 16.4687 C 25.6211 16.4687 24.0508 18.2969 24.0508 21.0625 Z"/></svg>
 `;
 
-// A portable Unicode dingbat alphabet, not a font applied to plaintext.
-// Encode each UTF-8 byte as two symbols so every character is covered.
-const SYMBOLS = Array.from("✀✁✂✃✄☎☏✆✉✍✎✏✐✑✒✓");
+// Wire format: "<protocol>:<version>:<scheme>:<payload>", similar in spirit to
+// PHC strings ($scheme$params$data) and multibase prefixes. The scheme tag lets
+// the receiver pick the right decoder. Future PQC format might be, e.g.:
+//   qcord:v1:ml-kem-768+aes-256-gcm:<base64 kem-ciphertext>.<base64 iv+ciphertext+tag>
+const PROTOCOL = "qcord";
+const VERSION = "v1";
+const SCHEME_B64 = "b64";
+const PREFIX = `${PROTOCOL}:${VERSION}:${SCHEME_B64}:`;
+// Standard Base64: groups of 4 chars, optional "=" / "==" padding on the last group only.
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
 const MAX_CONTENT_LENGTH = 2000; // Conservative limit, including non-Nitro accounts.
+const MESSAGE_SELECTOR = '[id^="message-content-"]';
 const BUTTON_SELECTOR = ".qcord-button";
+const DECODED_SELECTOR = ".qcord-plain";
 const BUTTON_CSS = `
     .qcord-button {
         --qcord-icon-off: #c5c6ca;
         --qcord-icon-on: #ffffff;
-        --qcord-accent: #8ee600;
+        --qcord-accent: #63862b;
         display: inline-flex; align-items: center; justify-content: center;
         align-self: center; flex-shrink: 0; margin: 0;
-        width: 40px; height: 32px; padding: 4px 8px; box-sizing: border-box;
-        border: 0; border-radius: 5px; cursor: pointer;
+        width: 32px; height: 32px; padding: 4px 4px; box-sizing: border-box;
+        border: 0; border-radius: 25%; cursor: pointer;
         background: transparent; color: var(--qcord-icon-off);
     }
     .qcord-button:focus-visible { outline: 2px solid var(--text-link); }
@@ -44,10 +54,12 @@ const BUTTON_CSS = `
         fill: currentColor; pointer-events: none;
         transition: transform 120ms ease;
     }
-    .qcord-button:hover svg { transform: scale(1.1); }
+    .qcord-button:hover svg { transform: scale(1.075); }
     @media (prefers-reduced-motion: reduce) {
         .qcord-button svg { transition: none; }
     }
+    .qcord-decoded > :not(.qcord-plain) { display: none !important; }
+    .qcord-plain { white-space: pre-wrap; }
     .qcord-panel { display: grid; gap: 12px; }
     .qcord-panel textarea { width: 100%; box-sizing: border-box; font-family: monospace; }
 `;
@@ -67,7 +79,7 @@ module.exports = class Qcord {
         // unless we can actually intercept ordinary chat submissions.
         const actions = BdApi.Webpack.getByKeys("sendMessage", "editMessage");
         if (!actions || typeof actions.sendMessage !== "function") {
-            BdApi.UI.showToast("Qcord could not find Discord's send function. The effect is unavailable.", {type: "error"});
+            BdApi.UI.showToast("Qcord could not find Discord's send function. Encoding is unavailable.", {type: "error"});
             return;
         }
 
@@ -82,7 +94,7 @@ module.exports = class Qcord {
                 }
                 const content = this.encodeText(message.content);
                 if (content.length > MAX_CONTENT_LENGTH) {
-                    return this.blockSend("Qcord symbols exceed 2,000 characters. Shorten your message and try again.");
+                    return this.blockSend("Qcord message exceeds 2,000 characters once encoded. Shorten it and try again.");
                 }
                 // Clone rather than mutate Discord's draft or a caller's message.
                 outgoing = args.slice();
@@ -90,26 +102,45 @@ module.exports = class Qcord {
             }
             catch {
                 // Never fall back to sending plaintext if conversion fails.
-                return this.blockSend("Qcord blocked sending because text conversion failed.");
+                return this.blockSend("Qcord blocked sending because encoding failed.");
             }
             return original.apply(context, outgoing);
         });
 
         if (typeof unpatch !== "function") {
-            BdApi.UI.showToast("Qcord could not install its send hook. The effect is unavailable.", {type: "error"});
+            BdApi.UI.showToast("Qcord could not install its send hook. Encoding is unavailable.", {type: "error"});
             return;
         }
         this.running = true;
         BdApi.DOM.addStyle(NAME, BUTTON_CSS);
         this.mountButtons();
+        this.scanMessages();
     }
 
+    // Base64 via Node's Buffer (Node core, same runtime as `crypto`).
+    // Note: Node's crypto module has no Base64 primitive; Buffer is the built-in for it.
     encodeText(text) {
-        let result = "";
-        for (const byte of new TextEncoder().encode(text)) {
-            result += SYMBOLS[byte >> 4] + SYMBOLS[byte & 15];
+        return PREFIX + Buffer.from(text, "utf8").toString("base64");
+    }
+
+    // Returns the decoded string, or null if `text` is not a valid Qcord Base64 message.
+    // Strict on purpose, so ordinary chat is never misread as ciphertext.
+    decodeText(text) {
+        if (typeof text !== "string") return null;
+        const trimmed = text.trim();
+        if (!trimmed.startsWith(PREFIX)) return null;
+        const payload = trimmed.slice(PREFIX.length);
+        // Base64 output length is always a multiple of 4 ("=" / "==" pad the last group).
+        if (!payload || payload.length % 4 !== 0 || !BASE64_RE.test(payload)) return null;
+        try {
+            const bytes = Buffer.from(payload, "base64");
+            // Canonical check: re-encoding must reproduce the input exactly.
+            if (bytes.toString("base64") !== payload) return null;
+            return new TextDecoder("utf-8", {fatal: true}).decode(bytes);
         }
-        return result;
+        catch {
+            return null;
+        }
     }
 
     blockSend(reason) {
@@ -130,7 +161,7 @@ module.exports = class Qcord {
         const checked = String(this.enabled);
         if (button.getAttribute("data-enabled") === checked) return;
         button.setAttribute("data-enabled", checked);
-        button.title = `Qcord settings — text effect ${this.enabled ? "on" : "off"}`;
+        button.title = `Qcord settings — Base64 encoding ${this.enabled ? "on" : "off"}`;
         button.setAttribute("aria-label", button.title);
     }
 
@@ -159,6 +190,38 @@ module.exports = class Qcord {
             }
             this.updateButton(button);
             if (controls.firstElementChild !== button) controls.prepend(button);
+        }
+    }
+
+    // Read visible chat messages and decode any that carry the Qcord prefix.
+    // Idempotent: safe to run on every DOM mutation. The original React-owned
+    // nodes are hidden, never edited; the decoded text goes in our own span via
+    // textContent (no HTML injection).
+    scanMessages() {
+        if (!this.running) return;
+        for (const element of document.querySelectorAll(MESSAGE_SELECTOR)) {
+            let span = element.querySelector(`:scope > ${DECODED_SELECTOR}`);
+            const source = Array.from(element.childNodes)
+                .filter(node => node !== span)
+                .map(node => node.textContent)
+                .join("");
+            const decoded = this.decodeText(source);
+            if (decoded === null) {
+                if (span) {
+                    span.remove();
+                    element.classList.remove("qcord-decoded");
+                }
+                continue;
+            }
+            if (span && span.textContent === decoded) continue;
+            if (!span) {
+                span = document.createElement("span");
+                span.className = "qcord-plain";
+                span.title = "Decoded from Qcord Base64 (encoded, not encrypted)";
+                element.append(span);
+            }
+            span.textContent = decoded;
+            element.classList.add("qcord-decoded");
         }
     }
 
@@ -203,8 +266,8 @@ module.exports = class Qcord {
                 h("label", null, h("input", {
                     type: "checkbox", checked: enabled, disabled: !plugin.running,
                     onChange: event => { plugin.setEnabled(event.target.checked); setEnabled(plugin.enabled); }
-                }), " Enable Wingdings-style text effect"),
-                h("p", null, "The text effect is not encryption. PQC keys below are a separate demo."),
+                }), ` Encode outgoing messages (${PREFIX}…)`),
+                h("p", null, "Incoming messages starting with the Qcord prefix are decoded automatically. Base64 is NOT encryption: anyone can decode it. PQC keys below are a separate demo."),
                 h("label", null, "Key demo algorithm ", h("select", {
                     value: scheme, disabled: busy || !plugin.running,
                     onChange: event => {
@@ -236,7 +299,7 @@ module.exports = class Qcord {
                 h("label", null, "Public key (SPKI PEM)", h("textarea", {readOnly: true, rows: 5, value: publicKey})),
                 h("p", null, canGenerate
                     ? "Private keys stay in memory and are discarded when Qcord stops. Key generation sends nothing to Discord. PQC also requires algorithm support in the exposed crypto API."
-                    : "Native key generation is unavailable in this BetterDiscord build. The text effect still works. PQC needs an exposed crypto API with algorithm support or a bundled JavaScript library.")
+                    : "Native key generation is unavailable in this BetterDiscord build. Base64 encoding still works. PQC needs an exposed crypto API with algorithm support or a bundled JavaScript library.")
             );
         });
     }
@@ -250,6 +313,7 @@ module.exports = class Qcord {
         this.frame = requestAnimationFrame(() => {
             this.frame = null;
             this.mountButtons();
+            this.scanMessages();
         });
     }
 
@@ -262,5 +326,7 @@ module.exports = class Qcord {
         BdApi.Patcher.unpatchAll(NAME);
         BdApi.DOM.removeStyle(NAME);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) button.remove();
+        for (const span of document.querySelectorAll(DECODED_SELECTOR)) span.remove();
+        for (const element of document.querySelectorAll(".qcord-decoded")) element.classList.remove("qcord-decoded");
     }
 };
