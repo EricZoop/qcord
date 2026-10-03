@@ -2,7 +2,9 @@
 
 Base64 encoding and decoding messaging demo
 
-Copy `qcord.plugin.js` into BetterDiscord's Plugins folder and enable it. A **Qcord ready** toast confirms startup. Click the shield beside the default composer options to open settings:
+Copy `qcord.plugin.js` and place into BetterDiscord's Plugins folder and enable it. 
+
+A **Qcord ready** toast confirms startup. Click the shield beside the default text composer options to open settings:
 
 - **Encode outgoing messages** - converts new chat text before sending.
 - **Decoding incoming messages** — displays valid Qcord messages as plain text locally. Turning it off restores the encoded display.

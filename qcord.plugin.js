@@ -97,7 +97,7 @@ const BUTTON_CSS = `
     .qcord-decoded > :not(.qcord-plain) { display: none !important; }
     .qcord-plain { white-space: pre-wrap; }
     .qcord-file-hidden { display: none !important; }
-    .qcord-file-plain { color: var(--text-normal); font-size: 16px; line-height: 1.375; overflow-wrap: anywhere; }
+    .qcord-file-plain { color: #fff; font-size: 16px; line-height: 1.375; overflow-wrap: anywhere; }
     .qcord-panel { display: grid; gap: 12px; }
     .qcord-panel label { display: flex; align-items: center; gap: 8px; }
     .qcord-panel .qcord-field { display: grid; gap: 6px; }
