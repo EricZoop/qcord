@@ -18,9 +18,4 @@ Only this prefix with canonical Base64 and valid UTF-8 is decoded. Invalid messa
 
 PQC keys do not encrypt messages yet and are discarded when Qcord stops. ML-KEM establishes shared secrets; ML-DSA and SLH-DSA provide signatures. [BetterDiscord exposes selected Node APIs](https://docs.betterdiscord.app/plugins/introduction/environment), so installing Node separately does not enable PQC inside Discord.
 
-Local tests (the `examples/` folder is Git-ignored; PQC tests require Node 24.8+):
 
-```powershell
-node --check qcord.plugin.js
-node --test examples/qcordtest.js
-```
