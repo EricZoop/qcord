@@ -2,8 +2,8 @@
  * @name Qcord
  * @author EricZoop
  * @authorId 215269534540496896
- * @version 0.1.0
- * @description Client-side Wingdings-style message encoding proof of concept. Not encryption.
+ * @version 0.2.0
+ * @description Client-side text effect and post-quantum key-generation demo. Messages are not encrypted.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
  */
@@ -11,17 +11,26 @@
 "use strict";
 
 const NAME = "Qcord";
+const {promisify} = require("util");
+const generateKeyPair = promisify(require("crypto").generateKeyPair);
+const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
+const BUTTON_SVG = ""; // Replace with the supplied, reviewed SVG. Until then use Q.
 // A portable Unicode dingbat alphabet, not a font applied to plaintext.
 // Encode each UTF-8 byte as two symbols so every character is covered.
 const SYMBOLS = Array.from("✀✁✂✃✄☎☏✆✉✍✎✏✐✑✒✓");
 const MAX_CONTENT_LENGTH = 2000; // Conservative limit, including non-Nitro accounts.
-const TOGGLE_SELECTOR = ".qcord-toggle";
+const BUTTON_SELECTOR = ".qcord-button";
 
 module.exports = class Qcord {
     start() {
         this.enabled = BdApi.Data.load(NAME, "enabled") === true;
         this.running = false;
         this.frame = null;
+        this.session = {};
+        this.keys = null;
+        this.generating = false;
+        const savedScheme = BdApi.Data.load(NAME, "scheme");
+        this.scheme = SCHEMES.includes(savedScheme) ? savedScheme : "ml-kem-768";
 
         // Discord internals are not a stable API. Do not present a working switch
         // unless we can actually intercept ordinary chat submissions.
@@ -61,23 +70,19 @@ module.exports = class Qcord {
         }
         this.running = true;
         BdApi.DOM.addStyle(NAME, `
-            .qcord-toggle {
-                display: inline-flex; align-items: center; gap: 5px;
+            .qcord-button {
                 align-self: center; flex-shrink: 0; margin: 0 8px 0 0;
-                padding: 5px; border: 0; border-radius: 5px; cursor: pointer;
-                background: transparent; color: var(--text-muted); font-size: 12px;
+                width: 32px; height: 32px; padding: 4px; border: 0; border-radius: 5px;
+                cursor: pointer; background: transparent; color: var(--text-muted);
             }
-            .qcord-toggle:hover { background: var(--background-modifier-hover); }
-            .qcord-toggle:focus-visible { outline: 2px solid var(--text-link); }
-            .qcord-toggle[aria-checked="true"] { color: var(--text-normal); }
-            .qcord-track { width: 26px; height: 16px; border-radius: 8px;
-                background: var(--text-muted); position: relative; }
-            .qcord-toggle[aria-checked="true"] .qcord-track { background: #248046; }
-            .qcord-thumb { position: absolute; top: 2px; left: 2px;
-                width: 12px; height: 12px; border-radius: 50%; background: white; }
-            .qcord-toggle[aria-checked="true"] .qcord-thumb { left: 12px; }
+            .qcord-button:hover { background: var(--background-modifier-hover); }
+            .qcord-button:focus-visible { outline: 2px solid var(--text-link); }
+            .qcord-button[data-enabled="true"] { color: var(--text-positive); }
+            .qcord-button svg { width: 24px; height: 24px; }
+            .qcord-panel { display: grid; gap: 12px; }
+            .qcord-panel textarea { width: 100%; box-sizing: border-box; font-family: monospace; }
         `);
-        this.mountToggles();
+        this.mountButtons();
     }
 
     encodeText(text) {
@@ -96,20 +101,21 @@ module.exports = class Qcord {
     }
 
     setEnabled(enabled) {
+        if (!this.running) return;
         BdApi.Data.save(NAME, "enabled", Boolean(enabled));
         this.enabled = Boolean(enabled);
-        for (const button of document.querySelectorAll(TOGGLE_SELECTOR)) this.updateToggle(button);
+        for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
     }
 
-    updateToggle(button) {
+    updateButton(button) {
         const checked = String(this.enabled);
-        if (button.getAttribute("aria-checked") === checked) return;
-        button.setAttribute("aria-checked", checked);
-        button.title = `Qcord Wingdings-style effect: ${this.enabled ? "ON" : "OFF"}. Click to toggle. Not encryption.`;
-        button.setAttribute("aria-label", `Wingdings-style text effect ${this.enabled ? "on" : "off"}`);
+        if (button.getAttribute("data-enabled") === checked) return;
+        button.setAttribute("data-enabled", checked);
+        button.title = `Qcord settings — text effect ${this.enabled ? "on" : "off"}`;
+        button.setAttribute("aria-label", button.title);
     }
 
-    mountToggles() {
+    mountButtons() {
         if (!this.running) return;
         // Scope to message composers, excluding unrelated attachment controls.
         // Class fragments avoid depending on Discord's changing CSS hashes.
@@ -119,31 +125,91 @@ module.exports = class Qcord {
             const attach = composer.querySelector('button[class*="attachButton"], [role="button"][class*="attachButton"]');
             if (!attach) continue;
             const anchor = attach.closest('[class*="attachWrapper"]') || attach;
-            let button = composer.querySelector(TOGGLE_SELECTOR);
+            let button = composer.querySelector(BUTTON_SELECTOR);
             if (!button) {
                 button = document.createElement("button");
                 button.type = "button";
-                button.className = "qcord-toggle";
-                button.setAttribute("role", "switch");
-                const label = document.createElement("span");
-                label.textContent = "WD";
-                const track = document.createElement("span");
-                track.className = "qcord-track";
-                track.setAttribute("aria-hidden", "true");
-                const thumb = document.createElement("span");
-                thumb.className = "qcord-thumb";
-                track.append(thumb);
-                button.append(label, track);
+                button.className = "qcord-button";
+                button.setAttribute("aria-haspopup", "dialog");
+                button.innerHTML = BUTTON_SVG || "Q";
                 button.addEventListener("mousedown", event => event.preventDefault());
                 button.addEventListener("click", event => {
                     event.preventDefault();
                     event.stopPropagation();
-                    this.setEnabled(!this.enabled);
+                    BdApi.UI.alert(NAME, this.getSettingsPanel());
                 });
             }
-            this.updateToggle(button);
+            this.updateButton(button);
             if (anchor.nextElementSibling !== button) anchor.after(button);
         }
+    }
+
+    async generateKeys(scheme) {
+        if (!this.running) throw new Error("Enable Qcord first.");
+        if (!SCHEMES.includes(scheme)) throw new Error("Unknown key algorithm.");
+        if (this.generating) throw new Error("Key generation is already running.");
+        const session = this.session;
+        this.generating = true;
+        try {
+            const keys = await generateKeyPair(scheme, {});
+            if (!this.running || this.session !== session) return null;
+            // ponytail: session-only demo keys; add protected storage with the messaging protocol.
+            this.keys = {scheme, ...keys};
+            return this.keys;
+        }
+        finally {
+            if (this.session === session) this.generating = false;
+        }
+    }
+
+    getSettingsPanel() {
+        const plugin = this;
+        const {createElement: h, useState} = BdApi.React;
+        return h(function Panel() {
+            const [enabled, setEnabled] = useState(Boolean(plugin.enabled));
+            const [scheme, setScheme] = useState(plugin.scheme || "ml-kem-768");
+            const [publicKey, setPublicKey] = useState(() => plugin.keys && plugin.keys.scheme === plugin.scheme
+                ? plugin.keys.publicKey.export({type: "spki", format: "pem"}) : "");
+            const [busy, setBusy] = useState(false);
+            const [status, setStatus] = useState("");
+            return h("div", {className: "qcord-panel"},
+                h("label", null, h("input", {
+                    type: "checkbox", checked: enabled, disabled: !plugin.running,
+                    onChange: event => { plugin.setEnabled(event.target.checked); setEnabled(plugin.enabled); }
+                }), " Enable Wingdings-style text effect"),
+                h("p", null, "The text effect is not encryption. PQC keys below are a separate demo."),
+                h("label", null, "Key demo algorithm ", h("select", {
+                    value: scheme, disabled: busy || !plugin.running,
+                    onChange: event => {
+                        plugin.scheme = event.target.value;
+                        BdApi.Data.save(NAME, "scheme", plugin.scheme);
+                        setScheme(plugin.scheme); setStatus("");
+                        setPublicKey(plugin.keys?.scheme === plugin.scheme
+                            ? plugin.keys.publicKey.export({type: "spki", format: "pem"}) : "");
+                    }
+                }, ...SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase())))),
+                h("p", null, scheme.startsWith("ml-kem") ? "Key encapsulation: establishes a shared secret for encryption." : "Digital signatures: authenticates messages; does not encrypt them."),
+                h("button", {
+                    type: "button", disabled: busy || !plugin.running,
+                    onClick: async () => {
+                        setBusy(true); setStatus("Generating…");
+                        try {
+                            const generated = await plugin.generateKeys(scheme);
+                            if (generated) {
+                                setPublicKey(generated.publicKey.export({type: "spki", format: "pem"}));
+                                setStatus("Demo keys generated locally.");
+                            }
+                            else setStatus("Qcord stopped; generated keys discarded.");
+                        }
+                        catch (error) { setStatus(`Key generation failed: ${error.message}`); }
+                        finally { setBusy(false); }
+                    }
+                }, busy ? "Generating…" : "Generate / replace demo keys"),
+                h("div", {role: "status"}, status),
+                h("label", null, "Public key (SPKI PEM)", h("textarea", {readOnly: true, rows: 5, value: publicKey})),
+                h("p", null, "Private keys stay in memory and are discarded when Qcord stops. Nothing is sent to Discord. Native PQC requires a compatible Discord Node/OpenSSL runtime (Node 24.8+ supports all listed families).")
+            );
+        });
     }
 
     // BetterDiscord's lifecycle supplies DOM mutations and navigation events.
@@ -154,16 +220,18 @@ module.exports = class Qcord {
         if (!this.running || this.frame !== null) return;
         this.frame = requestAnimationFrame(() => {
             this.frame = null;
-            this.mountToggles();
+            this.mountButtons();
         });
     }
 
     stop() {
         this.running = false;
+        this.keys = null;
+        this.session = null;
         if (this.frame !== null && this.frame !== undefined) cancelAnimationFrame(this.frame);
         this.frame = null;
         BdApi.Patcher.unpatchAll(NAME);
         BdApi.DOM.removeStyle(NAME);
-        for (const button of document.querySelectorAll(TOGGLE_SELECTOR)) button.remove();
+        for (const button of document.querySelectorAll(BUTTON_SELECTOR)) button.remove();
     }
 };
