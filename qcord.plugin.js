@@ -1,8 +1,8 @@
 /**
  * @name Qcord
- * @author Eric, Arsh, Yasukha
+ * @author Eric, Arsh, Yasser
  * @authorId 215269534540496896
- * @version 0.3.0
+ * @version 0.0.1
  * @description Client-side Base64 message encoding with auto-decode of incoming Qcord messages, plus a post-quantum key-generation demo. Base64 is an encoding, NOT encryption.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
@@ -11,21 +11,21 @@
 "use strict";
 
 const NAME = "Qcord";
-const Crypto = require("crypto"); // BetterDiscord exposes selected Node APIs; used for key generation.
+let Crypto;
+try { Crypto = require("crypto"); }
+catch { Crypto = null; } // Encoding still works if the optional key API is unavailable.
 const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
 const BUTTON_SVG =
 `
-<svg width="24" height="24" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false"><path d="M 27.9883 51.2969 C 28.3633 51.2969 28.9492 51.1562 29.5586 50.8516 C 42.6602 43.4688 47.1836 40.3750 47.1836 31.9609 L 47.1836 14.2891 C 47.1836 11.8750 46.1289 11.1016 44.1836 10.2813 C 41.4414 9.1562 32.6524 5.9922 29.9336 5.0313 C 29.3008 4.8438 28.6680 4.7031 27.9883 4.7031 C 27.3320 4.7031 26.6992 4.8438 26.0664 5.0313 C 23.3476 6.0156 14.5586 9.1797 11.8164 10.2813 C 9.8711 11.0781 8.8164 11.8750 8.8164 14.2891 L 8.8164 31.9609 C 8.8164 40.3750 13.3633 43.4453 26.4414 50.8516 C 27.0508 51.1562 27.6133 51.2969 27.9883 51.2969 Z M 19.7617 35.7344 L 19.7617 26.6406 C 19.7617 25.1172 20.3476 24.3203 21.5898 24.1328 L 21.5898 21.3203 C 21.5898 17.0078 24.1914 14.1016 27.9883 14.1016 C 31.8086 14.1016 34.3867 17.0078 34.3867 21.3203 L 34.3867 24.1094 C 35.6524 24.2969 36.2383 25.0938 36.2383 26.6406 L 36.2383 35.7344 C 36.2383 37.4922 35.4649 38.3125 33.8242 38.3125 L 22.1524 38.3125 C 20.5351 38.3125 19.7617 37.4922 19.7617 35.7344 Z M 24.0508 24.0860 L 31.9492 24.0625 L 31.9492 21.0625 C 31.9492 18.2969 30.3789 16.4687 27.9883 16.4687 C 25.6211 16.4687 24.0508 18.2969 24.0508 21.0625 Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="2 0 98 87"
+     preserveAspectRatio="xMidYMid meet">
+    <path d="m15.617 41.047c-4.4844 2.9961-7.9922 6.2266-10.262 9.4727-2.4922 3.5664-3.4531 7.1211-2.4922 10.34 1.5938 5.3516 8.1562 9.1289 17.465 10.895 1.6055 0.30469 3.2852 0.54688 5.0586 0.73047 5.2578 0.53906 11.09 0.50391 17.242-0.14453-2.4609-1.3672-4.7148-3.0977-6.5703-5.1445-3.1367-3.4648-5.1484-7.8203-5.1484-12.875v-16.355c0.007813-0.89062 0.55469-1.7266 1.4414-2.0469 2.8828-1.0508 5.7656-2.2617 8.5703-3.6211 2.707-1.3086 5.3555-2.7656 7.8867-4.3398 0.6875-0.44531 1.5977-0.48047 2.3359-0.019531 2.543 1.5859 5.207 3.0508 7.9258 4.3633 2.7539 1.332 5.582 2.5273 8.4102 3.5625 0.92188 0.25781 1.5977 1.1016 1.5977 2.1055v18.602c-0.003906 0.19531-0.03125 0.39063-0.085937 0.58984l-0.60156 2.1211c-0.96484 3.4141-2.8516 6.3672-5.293 8.8008 6.2422-1.9531 11.902-4.3711 16.773-7.0859l0.14453-0.082032c3.6016-2.0195 6.7461-4.1953 9.3555-6.4531 5.9961-5.1953 9.0391-10.723 7.8789-15.562l-0.12891-0.46484c-0.87109-2.9102-3.2461-5.3711-6.7422-7.293-1.75-0.96094-3.7695-1.7852-6.0156-2.4609v21.949c0 1.207-0.97656 2.1836-2.1836 2.1836-1.207 0-2.1836-0.98047-2.1836-2.1836v-22.402c-1.7109-0.39844-3.4375-0.87109-5.1641-1.4141-0.09375-0.023438-0.18359-0.050781-0.27344-0.085938-3.7578-1.1914-7.5-2.6953-11.051-4.4336-5.0586-2.4766-9.7383-5.4414-13.52-8.6719-3.7812 3.2305-8.4609 6.1953-13.52 8.6719-5.2695 2.582-10.965 4.6445-16.488 5.9297v26.098c0 1.4258 0.097656 2.8086 0.28906 4.1719 0.19922 1.3945 0.48828 2.7266 0.86328 4.0039 0.33594 1.1523-0.33203 2.3633-1.4844 2.6953-1.1523 0.33594-2.3633-0.33203-2.6953-1.4844-0.4375-1.4922-0.7695-3.0195-1-4.6016-0.22656-1.6016-0.34375-3.1914-0.34375-4.7852v-13.27zm61.309 26.348c-4.2383 1.9961-8.9023 3.7773-13.891 5.2656-1.8242 0.54297-3.7695 1.0664-5.8359 1.5625-9.3398 2.2461-18.453 3.1836-26.578 2.957 1.9766 1.7656 4.1797 3.3281 6.5547 4.6641 3.8906 2.1875 8.2344 3.7461 12.82 4.5391 6.9492-1.2031 13.328-4.1484 18.398-8.3594 3.5781-2.9688 6.5078-6.5703 8.5312-10.629z"/>
+</svg>
 `;
 
-// Wire format: "<protocol>:<version>:<scheme>:<payload>", similar in spirit to
-// PHC strings ($scheme$params$data) and multibase prefixes. The scheme tag lets
-// the receiver pick the right decoder. Future PQC format might be, e.g.:
-//   qcord:v1:ml-kem-768+aes-256-gcm:<base64 kem-ciphertext>.<base64 iv+ciphertext+tag>
-const PROTOCOL = "qcord";
-const VERSION = "v1";
-const SCHEME_B64 = "b64";
-const PREFIX = `${PROTOCOL}:${VERSION}:${SCHEME_B64}:`;
+// protocol:version:scheme:payload
+const PREFIX = "qcord:v1:b64:";
 // Standard Base64: groups of 4 chars, optional "=" / "==" padding on the last group only.
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
@@ -35,38 +35,85 @@ const BUTTON_SELECTOR = ".qcord-button";
 const DECODED_SELECTOR = ".qcord-plain";
 const BUTTON_CSS = `
     .qcord-button {
+
         --qcord-icon-off: #c5c6ca;
         --qcord-icon-on: #ffffff;
-        --qcord-accent: #63862b;
-        display: inline-flex; align-items: center; justify-content: center;
-        align-self: center; flex-shrink: 0; margin: 0;
-        width: 32px; height: 32px; padding: 4px 4px; box-sizing: border-box;
-        border: 0; border-radius: 25%; cursor: pointer;
-        background: transparent; color: var(--qcord-icon-off);
+        --qcord-accent: #2786de;
+        
+        display: inline-flex; 
+        align-items: center; 
+        justify-content: center;
+
+        align-self: center; 
+        flex-shrink: 0; 
+        margin: 0;
+        
+        width: 32px; 
+        height: 32px; 
+        margin-left: 2px;
+
+        padding: 4px 4px; 
+        
+        box-sizing: border-box;
+        border: 0; 
+        border-radius: 25%; 
+        cursor: pointer;
+        
+        background: transparent; 
+        color: var(--qcord-icon-off);
     }
+
+    
     .qcord-button:focus-visible { outline: 2px solid var(--text-link); }
     .qcord-button[data-enabled="true"], .qcord-button:hover {
         color: var(--qcord-icon-on);
         background: linear-gradient(to top, var(--qcord-accent), transparent);
     }
     .qcord-button svg {
-        display: block; flex-shrink: 0; width: 24px; height: 24px;
-        fill: currentColor; pointer-events: none;
-        transition: transform 120ms ease;
+        display: block; 
+        flex-shrink: 0;
+        width: 22px; 
+        height: 22px;
+        
+        transform: translateY(-2px) translateX(0.5px);
+
+        
+        fill: currentColor; 
+        
+        pointer-events: none;
+        transition: transform 180ms ease;
     }
-    .qcord-button:hover svg { transform: scale(1.075); }
+    .qcord-button:hover svg { 
+        transform: translateY(-2px) translateX(0.5px) scale(1.075);
+
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .qcord-button svg { transition: none; }
     }
+
     .qcord-decoded > :not(.qcord-plain) { display: none !important; }
     .qcord-plain { white-space: pre-wrap; }
     .qcord-panel { display: grid; gap: 12px; }
-    .qcord-panel textarea { width: 100%; box-sizing: border-box; font-family: monospace; }
+    .qcord-panel label { display: flex; align-items: center; gap: 8px; }
+    .qcord-panel .qcord-field { display: grid; gap: 6px; }
+    .qcord-panel input[type="checkbox"] { accent-color: #2786de; }
+    .qcord-panel select, .qcord-panel button, .qcord-panel textarea {
+        padding: 8px; border: 1px solid var(--background-modifier-accent);
+        border-radius: 6px; background: var(--background-secondary);
+        color: var(--text-normal); font: inherit;
+    }
+    .qcord-panel select, .qcord-panel textarea { width: 100%; box-sizing: border-box; }
+    .qcord-panel textarea { font-family: monospace; }
+    .qcord-panel button { cursor: pointer; }
+    .qcord-panel button:disabled { opacity: .5; cursor: default; }
+    .qcord-panel p { margin: 0; color: var(--text-muted); font-size: 12px; }
 `;
 
 module.exports = class Qcord {
     start() {
         this.enabled = BdApi.Data.load(NAME, "enabled") === true;
+        this.decodeIncoming = BdApi.Data.load(NAME, "decodeIncoming") !== false;
         this.running = false;
         this.frame = null;
         this.session = {};
@@ -115,21 +162,21 @@ module.exports = class Qcord {
         BdApi.DOM.addStyle(NAME, BUTTON_CSS);
         this.mountButtons();
         this.scanMessages();
+        BdApi.UI.showToast("Qcord ready — open the shield for settings.", {type: "success"});
     }
 
     // Base64 via Node's Buffer (Node core, same runtime as `crypto`).
     // Note: Node's crypto module has no Base64 primitive; Buffer is the built-in for it.
     encodeText(text) {
-        return PREFIX + Buffer.from(text, "utf8").toString("base64");
+        return text ? PREFIX + Buffer.from(text, "utf8").toString("base64") : "";
     }
 
     // Returns the decoded string, or null if `text` is not a valid Qcord Base64 message.
     // Strict on purpose, so ordinary chat is never misread as ciphertext.
     decodeText(text) {
         if (typeof text !== "string") return null;
-        const trimmed = text.trim();
-        if (!trimmed.startsWith(PREFIX)) return null;
-        const payload = trimmed.slice(PREFIX.length);
+        if (!text.startsWith(PREFIX)) return null;
+        const payload = text.slice(PREFIX.length);
         // Base64 output length is always a multiple of 4 ("=" / "==" pad the last group).
         if (!payload || payload.length % 4 !== 0 || !BASE64_RE.test(payload)) return null;
         try {
@@ -155,6 +202,18 @@ module.exports = class Qcord {
         BdApi.Data.save(NAME, "enabled", Boolean(enabled));
         this.enabled = Boolean(enabled);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
+    }
+
+    setDecoding(enabled) {
+        if (!this.running) return;
+        BdApi.Data.save(NAME, "decodeIncoming", Boolean(enabled));
+        this.decodeIncoming = Boolean(enabled);
+        this.scanMessages();
+    }
+
+    clearDecoded() {
+        for (const span of document.querySelectorAll(DECODED_SELECTOR)) span.remove();
+        for (const element of document.querySelectorAll(".qcord-decoded")) element.classList.remove("qcord-decoded");
     }
 
     updateButton(button) {
@@ -199,6 +258,7 @@ module.exports = class Qcord {
     // textContent (no HTML injection).
     scanMessages() {
         if (!this.running) return;
+        if (!this.decodeIncoming) { this.clearDecoded(); return; }
         for (const element of document.querySelectorAll(MESSAGE_SELECTOR)) {
             let span = element.querySelector(`:scope > ${DECODED_SELECTOR}`);
             const source = Array.from(element.childNodes)
@@ -228,7 +288,7 @@ module.exports = class Qcord {
     async generateKeys(scheme) {
         if (!this.running) throw new Error("Enable Qcord first.");
         if (!SCHEMES.includes(scheme)) throw new Error("Unknown key algorithm.");
-        if (typeof Crypto.generateKeyPair !== "function") {
+        if (typeof Crypto?.generateKeyPair !== "function") {
             throw new Error("This BetterDiscord build does not expose native key generation. PQC requires a supported crypto API or a bundled JavaScript library.");
         }
         if (this.generating) throw new Error("Key generation is already running.");
@@ -254,9 +314,10 @@ module.exports = class Qcord {
     getSettingsPanel() {
         const plugin = this;
         const {createElement: h, useState} = BdApi.React;
-        const canGenerate = typeof Crypto.generateKeyPair === "function";
+        const canGenerate = typeof Crypto?.generateKeyPair === "function";
         return h(function Panel() {
             const [enabled, setEnabled] = useState(Boolean(plugin.enabled));
+            const [decoding, setDecoding] = useState(plugin.decodeIncoming !== false);
             const [scheme, setScheme] = useState(plugin.scheme || "ml-kem-768");
             const [publicKey, setPublicKey] = useState(() => plugin.keys && plugin.keys.scheme === plugin.scheme
                 ? plugin.keys.publicKey.export({type: "spki", format: "pem"}) : "");
@@ -266,9 +327,13 @@ module.exports = class Qcord {
                 h("label", null, h("input", {
                     type: "checkbox", checked: enabled, disabled: !plugin.running,
                     onChange: event => { plugin.setEnabled(event.target.checked); setEnabled(plugin.enabled); }
-                }), ` Encode outgoing messages (${PREFIX}…)`),
-                h("p", null, "Incoming messages starting with the Qcord prefix are decoded automatically. Base64 is NOT encryption: anyone can decode it. PQC keys below are a separate demo."),
-                h("label", null, "Key demo algorithm ", h("select", {
+                }), "Encode outgoing messages"),
+                h("label", null, h("input", {
+                    type: "checkbox", checked: decoding, disabled: !plugin.running,
+                    onChange: event => { plugin.setDecoding(event.target.checked); setDecoding(plugin.decodeIncoming); }
+                }), "Decoding incoming messages"),
+                h("p", null, "Base64 is not encryption."),
+                h("label", {className: "qcord-field"}, "PQC key demo", h("select", {
                     value: scheme, disabled: busy || !plugin.running,
                     onChange: event => {
                         plugin.scheme = event.target.value;
@@ -278,7 +343,7 @@ module.exports = class Qcord {
                             ? plugin.keys.publicKey.export({type: "spki", format: "pem"}) : "");
                     }
                 }, ...SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase())))),
-                h("p", null, scheme.startsWith("ml-kem") ? "Key encapsulation: establishes a shared secret for encryption." : "Digital signatures: authenticates messages; does not encrypt them."),
+                h("p", null, scheme.startsWith("ml-kem") ? "Key agreement" : "Digital signatures"),
                 h("button", {
                     type: "button", disabled: busy || !plugin.running || !canGenerate,
                     onClick: async () => {
@@ -294,12 +359,11 @@ module.exports = class Qcord {
                         catch (error) { setStatus(`Key generation failed: ${error.message}`); }
                         finally { setBusy(false); }
                     }
-                }, busy ? "Generating…" : "Generate / replace demo keys"),
+                }, busy ? "Generating…" : "Generate keys"),
                 h("div", {role: "status"}, status),
-                h("label", null, "Public key (SPKI PEM)", h("textarea", {readOnly: true, rows: 5, value: publicKey})),
-                h("p", null, canGenerate
-                    ? "Private keys stay in memory and are discarded when Qcord stops. Key generation sends nothing to Discord. PQC also requires algorithm support in the exposed crypto API."
-                    : "Native key generation is unavailable in this BetterDiscord build. Base64 encoding still works. PQC needs an exposed crypto API with algorithm support or a bundled JavaScript library.")
+                publicKey && h("label", {className: "qcord-field"}, "Public key", h("textarea", {readOnly: true, rows: 4, value: publicKey})),
+                h("p", null, `${plugin.running ? "Qcord running" : "Qcord stopped"} · Crypto ${Crypto ? "loaded" : "unavailable"} · Key API ${canGenerate ? "available" : "unavailable"}`),
+                h("p", null, "Demo keys are session-only; messages are not encrypted.")
             );
         });
     }
@@ -326,7 +390,6 @@ module.exports = class Qcord {
         BdApi.Patcher.unpatchAll(NAME);
         BdApi.DOM.removeStyle(NAME);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) button.remove();
-        for (const span of document.querySelectorAll(DECODED_SELECTOR)) span.remove();
-        for (const element of document.querySelectorAll(".qcord-decoded")) element.classList.remove("qcord-decoded");
+        this.clearDecoded();
     }
 };
