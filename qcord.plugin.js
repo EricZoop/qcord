@@ -33,6 +33,8 @@ const MAX_CONTENT_LENGTH = 2000; // Conservative limit, including non-Nitro acco
 const MESSAGE_SELECTOR = '[id^="message-content-"]';
 const BUTTON_SELECTOR = ".qcord-button";
 const DECODED_SELECTOR = ".qcord-plain";
+const FILE_NAME_RE = /^qcord_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.txt$/;
+const MAX_DECODED_FILE_SIZE = 1024 * 1024;
 const BUTTON_CSS = `
     .qcord-button {
 
@@ -94,6 +96,8 @@ const BUTTON_CSS = `
 
     .qcord-decoded > :not(.qcord-plain) { display: none !important; }
     .qcord-plain { white-space: pre-wrap; }
+    .qcord-file-hidden { display: none !important; }
+    .qcord-file-plain { color: var(--text-normal); font-size: 16px; line-height: 1.375; overflow-wrap: anywhere; }
     .qcord-panel { display: grid; gap: 12px; }
     .qcord-panel label { display: flex; align-items: center; gap: 8px; }
     .qcord-panel .qcord-field { display: grid; gap: 6px; }
@@ -117,6 +121,7 @@ module.exports = class Qcord {
         this.running = false;
         this.frame = null;
         this.session = {};
+        this.fileDecodes = new WeakMap();
         this.keys = null;
         this.generating = false;
         const savedScheme = BdApi.Data.load(NAME, "scheme");
@@ -206,7 +211,7 @@ module.exports = class Qcord {
             const now = new Date();
             const parts = [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()]
                 .map(value => String(value).padStart(2, "0"));
-            const filename = `message_${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.txt`;
+            const filename = `qcord_${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.txt`;
             const file = new File([content], filename, {type: "text/plain;charset=utf-8"});
             // Stage the encoded envelope for review; never send the plaintext draft.
             await attachments.addFiles({
@@ -238,6 +243,7 @@ module.exports = class Qcord {
     clearDecoded() {
         for (const span of document.querySelectorAll(DECODED_SELECTOR)) span.remove();
         for (const element of document.querySelectorAll(".qcord-decoded")) element.classList.remove("qcord-decoded");
+        for (const element of document.querySelectorAll(".qcord-file-hidden")) element.classList.remove("qcord-file-hidden");
     }
 
     updateButton(button) {
@@ -307,6 +313,56 @@ module.exports = class Qcord {
             span.textContent = decoded;
             element.classList.add("qcord-decoded");
         }
+        for (const link of document.querySelectorAll('[id^="chat-messages-"] a[href]')) {
+            this.decodeFile(link);
+        }
+    }
+
+    async decodeFile(link) {
+        if (!this.running || !this.decodeIncoming) return;
+        const card = link.closest('[class*="fileWrapper_"], [class*="attachment_"]');
+        if (!card) return;
+        let state = this.fileDecodes.get(card);
+        if (state && state.url !== link.href) {
+            state.span?.remove();
+            card.classList.remove("qcord-file-hidden");
+            this.fileDecodes.delete(card);
+            state = null;
+        }
+        let url;
+        try { url = new URL(link.href); }
+        catch { return; }
+        if (url.protocol !== "https:" || url.port || url.username || url.password ||
+            !["cdn.discordapp.com", "media.discordapp.net"].includes(url.hostname) ||
+            !/^\/attachments\/\d+\/\d+\//.test(url.pathname)) return;
+        if (!FILE_NAME_RE.test(url.pathname.split("/").pop())) return;
+        if (!state) {
+            state = {url: url.href, decoded: null, pending: true};
+            this.fileDecodes.set(card, state);
+            const session = this.session;
+            try {
+                // Use BetterDiscord's native fetch; signed CDN URLs need no auth token.
+                const response = await BdApi.Net.fetch(url.href, {timeout: 10000, redirect: "error", maxRedirects: 0});
+                if (!response.ok) return;
+                // ponytail: 1 MiB display ceiling; streaming download limits need a streaming Net API.
+                if (Number(response.headers.get("content-length")) > MAX_DECODED_FILE_SIZE) return;
+                const text = await response.text();
+                if (text.length > MAX_DECODED_FILE_SIZE || this.session !== session) return;
+                state.decoded = this.decodeText(text);
+            }
+            catch { /* Failed or invalid files keep their original attachment card. */ }
+            finally { state.pending = false; }
+        }
+        if (state.pending || state.decoded === null || !this.running || !this.decodeIncoming ||
+            !card.isConnected || link.href !== state.url || this.fileDecodes.get(card) !== state) return;
+        if (!state.span?.isConnected) {
+            state.span = document.createElement("div");
+            state.span.className = "qcord-plain qcord-file-plain";
+            state.span.title = "Decoded from Qcord Base64 attachment (encoded, not encrypted)";
+            state.span.textContent = state.decoded;
+            card.after(state.span);
+        }
+        card.classList.add("qcord-file-hidden");
     }
 
     async generateKeys(scheme) {
