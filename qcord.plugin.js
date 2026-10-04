@@ -29,16 +29,15 @@ const PREFIX = "qcord:v1:b64:";
 // Standard Base64: groups of 4 chars, optional "=" / "==" padding on the last group only.
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 
-const MAX_CONTENT_LENGTH = 2000; // Conservative limit, including non-Nitro accounts.
 const MESSAGE_SELECTOR = '[id^="message-content-"]';
 const BUTTON_SELECTOR = ".qcord-button";
 const DECODED_SELECTOR = ".qcord-plain";
-const FILE_NAME_RE = /^qcord_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.txt$/;
+// Continue reading timestamped .txt attachments from earlier Qcord versions.
+const FILE_NAME_RE = /\.qcord$|^qcord_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.txt$/i;
 const MAX_DECODED_FILE_SIZE = 1024 * 1024;
 const PLUGIN_CSS = `
-    [class*="channelTextArea"]:has(.qcord-button[data-enabled="true"]) {
-        outline: 2px solid #2786de;
-        outline-offset: -2px;
+    [class*="channelTextArea"]:has(.qcord-button[data-enabled="true"]) [class*="scrollableContainer"] {
+        background-image: linear-gradient(to top, #2786de, transparent);
     }
     .qcord-button {
 
@@ -145,25 +144,21 @@ module.exports = class Qcord {
         const unpatch = BdApi.Patcher.instead(NAME, actions, "sendMessage", (context, args, original) => {
             if (!this.enabled) return original.apply(context, args);
 
-            let outgoing;
             try {
                 const message = args[1];
                 if (!message || typeof message.content !== "string") {
                     return this.blockSend("Qcord blocked sending: unrecognized message format.");
                 }
-                const content = this.encodeText(message.content);
-                if (content.length > MAX_CONTENT_LENGTH) {
-                    return this.stageMessageFile(args[0], content);
+                if (message.content) {
+                    return this.stageMessageFile(args[0], this.encodeText(message.content));
                 }
-                // Clone rather than mutate Discord's draft or a caller's message.
-                outgoing = args.slice();
-                outgoing[1] = {...message, content};
             }
             catch {
                 // Never fall back to sending plaintext if conversion fails.
                 return this.blockSend("Qcord blocked sending because encoding failed.");
             }
-            return original.apply(context, outgoing);
+            // An empty composer can submit the staged file without creating another.
+            return original.apply(context, args);
         });
 
         if (typeof unpatch !== "function") {
@@ -221,8 +216,8 @@ module.exports = class Qcord {
             const now = new Date();
             const parts = [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()]
                 .map(value => String(value).padStart(2, "0"));
-            const filename = `qcord_${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.txt`;
-            const file = new File([content], filename, {type: "text/plain;charset=utf-8"});
+            const filename = `qcord_${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.qcord`;
+            const file = new File([content], filename, {type: "application/octet-stream"});
             // Stage the encoded envelope for review; never send the plaintext draft.
             await attachments.addFiles({
                 channelId, draftType: 0, showLargeMessageDialog: false,
