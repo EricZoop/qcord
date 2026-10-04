@@ -186,7 +186,9 @@ module.exports = class Qcord extends MessageCrypto {
                 button.addEventListener("click", event => {
                     event.preventDefault();
                     event.stopPropagation();
-                    BdApi.UI.alert(NAME, this.getSettingsPanel());
+                    BdApi.UI.showConfirmationModal(NAME, this.getSettingsPanel(), {
+                        className: "qcord-modal", confirmText: "Close", cancelText: null
+                    });
                 });
             }
             this.updateButton(button);

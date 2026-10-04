@@ -65,19 +65,27 @@ module.exports = class MessageCrypto {
         return saved?.[scheme] || [];
     }
 
+    getDirectPartner(channelId) {
+        const channel = BdApi.Webpack.getStore?.("ChannelStore")?.getChannel(channelId);
+        if (channel?.type !== 1 || !Array.isArray(channel.recipients) || channel.recipients.length !== 1) {
+            throw new Error("Open a one-to-one DM to use Qcord encryption.");
+        }
+        const recipient = channel.recipients[0];
+        const userId = typeof recipient === "string" ? recipient : recipient?.id;
+        if (!/^\d{1,20}$/.test(userId || "")) throw new Error("Could not identify this DM's recipient.");
+        return {userId, channelId};
+    }
+
     saveRecipients(channelId, rows, scheme) {
         if (!/^\d+$/.test(channelId || "")) throw new Error("Open a Discord channel first.");
         if (scheme !== ACTIVE_SCHEME) throw new Error("New recipients must use ML-KEM-512.");
-        if (!Array.isArray(rows) || rows.length > 15) throw new Error("Add up to 15 recipients.");
-        const seen = new Set();
-        const entries = rows.map(({username, publicKey}) => {
-            if (typeof username !== "string" || username.length > 100) throw new Error("Use a recipient name of up to 100 characters.");
+        const partner = this.getDirectPartner(channelId);
+        if (!Array.isArray(rows) || rows.length > 1) throw new Error("Save one public key for your DM partner.");
+        const entries = rows.map(({userId, publicKey}) => {
+            if (userId !== partner.userId) throw new Error("The user ID must match this DM's recipient.");
             const key = PQC.createPublicKey(publicKey);
             if (key.asymmetricKeyType !== scheme) throw new Error("Every recipient key must use the selected ML-KEM scheme.");
-            const id = this.keyId(key);
-            if (seen.has(id)) throw new Error("That public key is already in the recipient table.");
-            seen.add(id);
-            return {username: username.trim(), publicKey: key.export({type: "spki", format: "base64"})};
+            return {userId, publicKey: key.export({type: "spki", format: "base64"})};
         });
         const recipients = BdApi.Data.load(KEY_STORE, "recipients") || {};
         const previous = recipients[channelId];
@@ -111,11 +119,11 @@ module.exports = class MessageCrypto {
     async encryptMessage(channelId, text) {
         if (!/^\d+$/.test(channelId || "")) throw new Error("Invalid channel.");
         const scheme = ACTIVE_SCHEME;
+        const partner = this.getDirectPartner(channelId);
         const recipients = this.getRecipients(channelId, scheme);
-        if (!Array.isArray(recipients) || !recipients.length) {
-            throw new Error("Save recipient public keys for this channel and scheme in Qcord settings first.");
+        if (!Array.isArray(recipients) || recipients.length !== 1 || recipients[0].userId !== partner.userId) {
+            throw new Error("Save your DM partner's ML-KEM-512 key in Qcord first. Older username entries must be replaced.");
         }
-        if (recipients.length > 15) throw new Error("At most 15 recipient keys are supported.");
         const input = Buffer.from(text, "utf8");
         if (input.length > MAX_DECODED_FILE_SIZE) throw new Error("Message is too large for a Qcord file.");
         const session = this.session;
