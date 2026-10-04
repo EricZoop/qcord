@@ -1,6 +1,7 @@
 # Local-only development files
 /examples/
 /tests/
+*.config.json
 
 # Logs
 logs

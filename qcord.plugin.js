@@ -3,7 +3,7 @@
  * @author Eric, Arsh, Yasser
  * @authorId 215269534540496896
  * @version 0.0.1
- * @description Client-side Base64 message encoding with auto-decode of incoming Qcord messages, plus a post-quantum key-generation demo. Base64 is an encoding, NOT encryption.
+ * @description Experimental ML-KEM + AES-256-GCM encrypted chat files, saved local keys, and PQC timing tests. Reads older Base64 messages too.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
  */
@@ -15,6 +15,10 @@ let Crypto;
 try { Crypto = require("crypto"); }
 catch { Crypto = null; } // Encoding still works if the optional key API is unavailable.
 const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
+const KEM_SCHEMES = SCHEMES.filter(scheme => scheme.startsWith("ml-kem"));
+// Use one cache name for settings and keys: Windows filenames ignore case.
+const KEY_STORE = "qcord";
+const ENCRYPTED_PREFIX = "qcord:v2:pqc:";
 const BUTTON_SVG =
 `
 <svg xmlns="http://www.w3.org/2000/svg"
@@ -122,6 +126,9 @@ const PLUGIN_CSS = `
         color: var(--text-normal); font: inherit;
     }
     .qcord-panel select, .qcord-panel textarea { width: 100%; box-sizing: border-box; }
+    .qcord-panel select { color-scheme: dark; }
+    .qcord-panel select, .qcord-panel option { background: #172638; color: #f1f6ff; }
+    .qcord-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
     .qcord-panel textarea { font-family: monospace; }
     .qcord-panel button { cursor: pointer; }
     .qcord-panel button:disabled { opacity: .5; cursor: default; }
@@ -130,8 +137,8 @@ const PLUGIN_CSS = `
 
 module.exports = class Qcord {
     start() {
-        this.enabled = BdApi.Data.load(NAME, "enabled") === true;
-        this.decodeIncoming = BdApi.Data.load(NAME, "decodeIncoming") !== false;
+        this.enabled = BdApi.Data.load(KEY_STORE, "enabled") === true;
+        this.decodeIncoming = BdApi.Data.load(KEY_STORE, "decodeIncoming") !== false;
         this.running = false;
         this.frame = null;
         this.session = {};
@@ -140,15 +147,18 @@ module.exports = class Qcord {
         this.markdown = BdApi.Webpack.getByKeys("parse", "reactParserFor");
         this.markupClass = BdApi.Webpack.getByKeys("markup")?.markup || "";
         this.keys = null;
-        this.generating = false;
-        const savedScheme = BdApi.Data.load(NAME, "scheme");
-        this.scheme = SCHEMES.includes(savedScheme) ? savedScheme : "ml-kem-768";
+        this.keyPairs = new Map();
+        this.keyTasks = new Map();
+        this.metrics = {};
+        this.schemeStatus = {};
+        const savedScheme = BdApi.Data.load(KEY_STORE, "scheme");
+        this.scheme = KEM_SCHEMES.includes(savedScheme) ? savedScheme : "ml-kem-768";
 
         // Discord internals are not a stable API. Do not present a working switch
         // unless we can actually intercept ordinary chat submissions.
         const actions = BdApi.Webpack.getByKeys("sendMessage", "editMessage");
         if (!actions || typeof actions.sendMessage !== "function") {
-            BdApi.UI.showToast("Qcord could not find Discord's send function. Encoding is unavailable.", {type: "error"});
+            BdApi.UI.showToast("Qcord could not find Discord's send function. Encryption is unavailable.", {type: "error"});
             return;
         }
 
@@ -161,19 +171,19 @@ module.exports = class Qcord {
                     return this.blockSend("Qcord blocked sending: unrecognized message format.");
                 }
                 if (message.content) {
-                    return this.stageMessageFile(args[0], this.encodeText(message.content));
+                    return this.prepareMessageFile(args[0], message.content);
                 }
             }
             catch {
                 // Never fall back to sending plaintext if conversion fails.
-                return this.blockSend("Qcord blocked sending because encoding failed.");
+                return this.blockSend("Qcord blocked sending because encryption failed.");
             }
             // An empty composer can submit the staged file without creating another.
             return original.apply(context, args);
         });
 
         if (typeof unpatch !== "function") {
-            BdApi.UI.showToast("Qcord could not install its send hook. Encoding is unavailable.", {type: "error"});
+            BdApi.UI.showToast("Qcord could not install its send hook. Encryption is unavailable.", {type: "error"});
             return;
         }
         this.running = true;
@@ -218,6 +228,18 @@ module.exports = class Qcord {
         return Promise.resolve({shouldClear: false, shouldRefocus: true});
     }
 
+    async prepareMessageFile(channelId, text) {
+        const session = this.session;
+        try {
+            const content = await this.encryptMessage(channelId, text);
+            if (!this.running || !this.enabled || this.session !== session) throw new Error("Qcord encryption was stopped.");
+            return await this.stageMessageFile(channelId, content);
+        }
+        catch (error) {
+            return this.blockSend(`Qcord did not send your message: ${error.message}`);
+        }
+    }
+
     async stageMessageFile(channelId, content) {
         try {
             const attachments = BdApi.Webpack.getByKeys("addFiles");
@@ -234,7 +256,8 @@ module.exports = class Qcord {
                 channelId, draftType: 0, showLargeMessageDialog: false,
                 files: [{file, platform: 1, isThumbnail: false}]
             });
-            BdApi.UI.showToast("Qcord attached your encoded message. Review the file and press Send.", {type: "success"});
+            const timing = this.metrics.encrypt;
+            BdApi.UI.showToast(`Qcord attached your encrypted message${timing ? ` (${timing.ms.toFixed(3)} ms, ${file.size} bytes)` : ""}. Press Send.`, {type: "success"});
             return {shouldClear: true, shouldRefocus: true};
         }
         catch {
@@ -244,14 +267,14 @@ module.exports = class Qcord {
 
     setEnabled(enabled) {
         if (!this.running) return;
-        BdApi.Data.save(NAME, "enabled", Boolean(enabled));
+        BdApi.Data.save(KEY_STORE, "enabled", Boolean(enabled));
         this.enabled = Boolean(enabled);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
     }
 
     setDecoding(enabled) {
         if (!this.running) return;
-        BdApi.Data.save(NAME, "decodeIncoming", Boolean(enabled));
+        BdApi.Data.save(KEY_STORE, "decodeIncoming", Boolean(enabled));
         this.decodeIncoming = Boolean(enabled);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
         this.scanMessages();
@@ -297,7 +320,7 @@ module.exports = class Qcord {
         if (button.getAttribute("data-encoding") === encoding && button.getAttribute("data-decoding") === decoding) return;
         button.setAttribute("data-encoding", encoding);
         button.setAttribute("data-decoding", decoding);
-        button.title = `Qcord settings - Encoding ${this.enabled ? "on" : "off"}, decoding ${this.decodeIncoming ? "on" : "off"}`;
+        button.title = `Qcord settings - Encryption ${this.enabled ? "on" : "off"}, decryption ${this.decodeIncoming ? "on" : "off"}`;
         button.setAttribute("aria-label", button.title);
     }
 
@@ -400,7 +423,12 @@ module.exports = class Qcord {
                 if (Number(response.headers.get("content-length")) > MAX_DECODED_FILE_SIZE) return;
                 const text = await response.text();
                 if (text.length > MAX_DECODED_FILE_SIZE || this.session !== session) return;
-                state.decoded = this.decodeText(text);
+                const channelId = link.closest('[id^="chat-messages-"]')?.id?.match(/^chat-messages-(\d+)-\d+$/)?.[1];
+                state.encrypted = text.startsWith(ENCRYPTED_PREFIX);
+                const started = performance.now();
+                state.decoded = await this.decryptMessage(text, channelId);
+                state.decryptMs = state.encrypted ? performance.now() - started : null;
+                if (this.session !== session) return;
             }
             catch (error) {
                 // Keep the original attachment available if download/decoding fails.
@@ -413,7 +441,7 @@ module.exports = class Qcord {
         if (!state.span?.isConnected) {
             state.span = document.createElement("div");
             state.span.className = `qcord-plain qcord-file-plain ${this.markupClass}`;
-            state.span.title = "Decoded from Qcord Base64 attachment (encoded, not encrypted)";
+            state.span.title = state.encrypted ? `Decrypted locally by Qcord in ${state.decryptMs?.toFixed(3)} ms (ML-KEM + AES-256-GCM)` : "Decoded from Qcord Base64 attachment (encoded, not encrypted)";
             card.after(state.span);
             this.renderDecoded(state.span, state.decoded);
         }
@@ -423,82 +451,317 @@ module.exports = class Qcord {
     async generateKeys(scheme) {
         if (!this.running) throw new Error("Enable Qcord first.");
         if (!SCHEMES.includes(scheme)) throw new Error("Unknown key algorithm.");
-        if (typeof Crypto?.generateKeyPair !== "function") {
-            throw new Error("This BetterDiscord build does not expose native key generation. PQC requires a supported crypto API or a bundled JavaScript library.");
-        }
-        if (this.generating) throw new Error("Key generation is already running.");
+        if (!Crypto?.generateKeyPair) throw new Error("This Discord runtime does not expose native key generation.");
+        if (this.keyPairs.has(scheme)) return this.keyPairs.get(scheme);
+        if (this.keyTasks.has(scheme)) return this.keyTasks.get(scheme);
         const session = this.session;
-        this.generating = true;
-        try {
-            const keys = await new Promise((resolve, reject) => {
-                Crypto.generateKeyPair(scheme, {}, (error, publicKey, privateKey) => {
-                    if (error) reject(error);
-                    else resolve({publicKey, privateKey});
+        const task = (async () => {
+            const stored = BdApi.Data.load(KEY_STORE, "keyPairs") || {};
+            if (typeof stored !== "object" || Array.isArray(stored)) throw new Error("Invalid saved key configuration.");
+            let keys;
+            if (stored[scheme]) {
+                const {publicKey, privateKey, keygenMs} = stored[scheme];
+                keys = {scheme, publicKey: Crypto.createPublicKey(publicKey), privateKey: Crypto.createPrivateKey(privateKey), keygenMs};
+                if (keys.publicKey.asymmetricKeyType !== scheme || keys.privateKey.asymmetricKeyType !== scheme ||
+                    !Crypto.createPublicKey(keys.privateKey).equals(keys.publicKey)) {
+                    throw new Error("Saved keys do not match. Restore your key configuration from backup.");
+                }
+            }
+            else {
+                const started = performance.now();
+                keys = await new Promise((resolve, reject) => {
+                    Crypto.generateKeyPair(scheme, {}, (error, publicKey, privateKey) => {
+                        if (error) reject(error);
+                        else resolve({scheme, publicKey, privateKey, keygenMs: performance.now() - started});
+                    });
                 });
-            });
-            if (!this.running || this.session !== session) return null;
-            // ponytail: session-only demo keys; add protected storage with the messaging protocol.
-            this.keys = {scheme, ...keys};
-            return this.keys;
+                if (!this.running || this.session !== session) throw new Error("Qcord stopped during key generation.");
+                // Reload so concurrent generation of different schemes preserves both.
+                BdApi.Data.save(KEY_STORE, "keyPairs", {
+                    ...(BdApi.Data.load(KEY_STORE, "keyPairs") || {}),
+                    [scheme]: {
+                        publicKey: keys.publicKey.export({type: "spki", format: "pem"}),
+                        privateKey: keys.privateKey.export({type: "pkcs8", format: "pem"}),
+                        keygenMs: keys.keygenMs, createdAt: new Date().toISOString()
+                    }
+                });
+            }
+            if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
+            this.keyPairs.set(scheme, keys);
+            this.keys = keys;
+            this.schemeStatus[scheme] = "Key API passed";
+            this.metrics.keygen = {scheme, ms: keys.keygenMs,
+                publicBytes: keys.publicKey.export({type: "spki", format: "der"}).length,
+                privateBytes: keys.privateKey.export({type: "pkcs8", format: "der"}).length};
+            return keys;
+        })();
+        this.keyTasks.set(scheme, task);
+        try { return await task; }
+        catch (error) {
+            if (this.session === session) this.schemeStatus[scheme] = error.message;
+            throw error;
         }
-        finally {
-            if (this.session === session) this.generating = false;
+        finally { if (this.keyTasks.get(scheme) === task) this.keyTasks.delete(scheme); }
+    }
+
+    keyId(publicKey) {
+        return Crypto.createHash("sha256").update(publicKey.export({type: "spki", format: "der"})).digest("hex");
+    }
+
+    saveRecipients(channelId, text, scheme) {
+        if (!/^\d+$/.test(channelId || "")) throw new Error("Open a Discord channel first.");
+        if (!KEM_SCHEMES.includes(scheme)) throw new Error("Choose an ML-KEM encryption scheme.");
+        const pems = text.match(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g) || [];
+        if (text.replace(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g, "").trim() || pems.length > 15) {
+            throw new Error("Paste up to 15 public PEM keys, without other text.");
         }
+        for (const pem of pems) {
+            if (Crypto.createPublicKey(pem).asymmetricKeyType !== scheme) throw new Error("Every recipient key must use the selected ML-KEM scheme.");
+        }
+        const recipients = BdApi.Data.load(KEY_STORE, "recipients") || {};
+        BdApi.Data.save(KEY_STORE, "recipients", {...recipients, [channelId]: {scheme, publicKeys: pems}});
+    }
+
+    decodeBytes(value, size) {
+        if (typeof value !== "string" || value.length > MAX_DECODED_FILE_SIZE || !BASE64_RE.test(value)) throw new Error("Invalid encrypted file field.");
+        const bytes = Buffer.from(value, "base64");
+        if (bytes.toString("base64") !== value || (size !== undefined && bytes.length !== size)) throw new Error("Invalid encrypted file field.");
+        return bytes;
+    }
+
+    seal(data, key, aad) {
+        const iv = Crypto.randomBytes(12);
+        const cipher = Crypto.createCipheriv("aes-256-gcm", key, iv);
+        cipher.setAAD(aad);
+        const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+        return {iv: iv.toString("base64"), data: encrypted.toString("base64"), tag: cipher.getAuthTag().toString("base64")};
+    }
+
+    openSealed(sealed, key, aad) {
+        const decipher = Crypto.createDecipheriv("aes-256-gcm", key, this.decodeBytes(sealed.iv, 12));
+        decipher.setAAD(aad);
+        decipher.setAuthTag(this.decodeBytes(sealed.tag, 16));
+        return Buffer.concat([decipher.update(this.decodeBytes(sealed.data)), decipher.final()]);
+    }
+
+    wrappingKey(sharedSecret) {
+        return Crypto.hkdfSync("sha256", sharedSecret, Buffer.alloc(0), Buffer.from("Qcord v2 key wrap"), 32);
+    }
+
+    async encryptMessage(channelId, text) {
+        if (!Crypto?.encapsulate || !Crypto?.decapsulate) throw new Error("Discord's crypto runtime lacks ML-KEM encapsulation/decapsulation.");
+        if (!/^\d+$/.test(channelId || "")) throw new Error("Invalid channel.");
+        const scheme = this.scheme;
+        const recipients = BdApi.Data.load(KEY_STORE, "recipients")?.[channelId];
+        if (recipients?.scheme !== scheme || !Array.isArray(recipients.publicKeys) || !recipients.publicKeys.length) {
+            throw new Error("Save recipient public keys for this channel and scheme in Qcord settings first.");
+        }
+        if (recipients.publicKeys.length > 15) throw new Error("At most 15 recipient keys are supported.");
+        const input = Buffer.from(text, "utf8");
+        if (input.length > MAX_DECODED_FILE_SIZE) throw new Error("Message is too large for a Qcord file.");
+        const session = this.session;
+        const ownKeys = await this.generateKeys(scheme);
+        const publicKeys = new Map();
+        for (const key of [ownKeys.publicKey, ...recipients.publicKeys.map(pem => Crypto.createPublicKey(pem))]) {
+            if (key.asymmetricKeyType !== scheme) throw new Error("Recipient key algorithm does not match.");
+            publicKeys.set(this.keyId(key), key);
+        }
+        const started = performance.now();
+        const aad = Buffer.from(JSON.stringify({scheme, channelId, recipientIds: [...publicKeys.keys()]}));
+        const payloadKey = Crypto.randomBytes(32);
+        const envelopes = [];
+        for (const [id, publicKey] of publicKeys) {
+            const {sharedKey, ciphertext} = await new Promise((resolve, reject) =>
+                Crypto.encapsulate(publicKey, (error, result) => error ? reject(error) : resolve(result)));
+            envelopes.push({id, kem: ciphertext.toString("base64"),
+                ...this.seal(payloadKey, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id)]))});
+        }
+        const output = ENCRYPTED_PREFIX + JSON.stringify({scheme, channelId, recipients: envelopes, ...this.seal(input, payloadKey, aad)});
+        const fileBytes = Buffer.byteLength(output);
+        if (fileBytes > MAX_DECODED_FILE_SIZE) throw new Error("Encrypted file exceeds the 1 MiB display limit. Shorten your message.");
+        if (!this.running || !this.enabled || this.session !== session) throw new Error("Qcord encryption was stopped.");
+        this.metrics.encrypt = {scheme, ms: performance.now() - started, inputBytes: input.length, fileBytes, recipients: envelopes.length};
+        return output;
+    }
+
+    async decryptMessage(text, channelId) {
+        if (!text.startsWith(ENCRYPTED_PREFIX)) return this.decodeText(text);
+        if (!Crypto?.decapsulate) throw new Error("Discord's crypto runtime lacks ML-KEM decapsulation.");
+        if (Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE) throw new Error("Encrypted file is too large.");
+        const started = performance.now();
+        const session = this.session;
+        const file = JSON.parse(text.slice(ENCRYPTED_PREFIX.length));
+        if (!file || !KEM_SCHEMES.includes(file.scheme) || !/^\d+$/.test(channelId || "") || file.channelId !== channelId ||
+            !Array.isArray(file.recipients) || !file.recipients.length || file.recipients.length > 16) throw new Error("Invalid encrypted file or wrong channel.");
+        const ids = file.recipients.map(recipient => recipient?.id);
+        if (ids.some(id => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)) || new Set(ids).size !== ids.length) throw new Error("Invalid recipient list.");
+        // Incoming files must never create new identities.
+        if (!this.keyPairs.has(file.scheme) && !BdApi.Data.load(KEY_STORE, "keyPairs")?.[file.scheme]) throw new Error("No saved private key for this file.");
+        const keys = await this.generateKeys(file.scheme);
+        const id = this.keyId(keys.publicKey);
+        const recipient = file.recipients.find(entry => entry.id === id);
+        if (!recipient) throw new Error("This file is not addressed to your key.");
+        const aad = Buffer.from(JSON.stringify({scheme: file.scheme, channelId, recipientIds: ids}));
+        const sharedKey = await new Promise((resolve, reject) =>
+            Crypto.decapsulate(keys.privateKey, this.decodeBytes(recipient.kem), (error, result) => error ? reject(error) : resolve(result)));
+        const payloadKey = this.openSealed(recipient, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id)]));
+        if (payloadKey.length !== 32) throw new Error("Invalid payload key.");
+        const plaintext = this.openSealed(file, payloadKey, aad);
+        const decoded = new TextDecoder("utf-8", {fatal: true}).decode(plaintext);
+        if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
+        this.metrics.decrypt = {scheme: file.scheme, ms: performance.now() - started, inputBytes: plaintext.length, fileBytes: Buffer.byteLength(text)};
+        return decoded;
+    }
+
+    async testScheme(scheme, text) {
+        const keys = await this.generateKeys(scheme);
+        const session = this.session;
+        const input = Buffer.from(text, "utf8");
+        if (input.length > MAX_DECODED_FILE_SIZE) throw new Error("Test input exceeds 1 MiB.");
+        let started = performance.now();
+        let result;
+        if (KEM_SCHEMES.includes(scheme)) {
+            if (!Crypto.encapsulate || !Crypto.decapsulate) throw new Error("This runtime cannot perform ML-KEM encapsulation.");
+            const encrypted = await new Promise((resolve, reject) =>
+                Crypto.encapsulate(keys.publicKey, (error, value) => error ? reject(error) : resolve(value)));
+            const encapsulateMs = performance.now() - started;
+            started = performance.now();
+            const sharedKey = await new Promise((resolve, reject) =>
+                Crypto.decapsulate(keys.privateKey, encrypted.ciphertext, (error, value) => error ? reject(error) : resolve(value)));
+            if (!Crypto.timingSafeEqual(encrypted.sharedKey, sharedKey)) throw new Error("KEM round-trip failed.");
+            result = {scheme, encapsulateMs, decapsulateMs: performance.now() - started, kemBytes: encrypted.ciphertext.length};
+        }
+        else {
+            const signature = await new Promise((resolve, reject) =>
+                Crypto.sign(null, input, keys.privateKey, (error, value) => error ? reject(error) : resolve(value)));
+            const signMs = performance.now() - started;
+            started = performance.now();
+            const valid = await new Promise((resolve, reject) =>
+                Crypto.verify(null, input, keys.publicKey, signature, (error, value) => error ? reject(error) : resolve(value)));
+            if (!valid) throw new Error("Signature verification failed.");
+            result = {scheme, signMs, verifyMs: performance.now() - started, inputBytes: input.length, signatureBytes: signature.length};
+        }
+        if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
+        this.schemeStatus[scheme] = "Round-trip passed";
+        this.metrics.test = result;
+        return result;
     }
 
     getSettingsPanel() {
         const plugin = this;
-        const {createElement: h, useState} = BdApi.React;
+        const {createElement: h, useState, useEffect} = BdApi.React;
+        const channelId = BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId();
+        const savedRecipients = BdApi.Data.load(KEY_STORE, "recipients")?.[channelId];
+        const versions = typeof process === "object" ? process.versions || {} : {};
         const canGenerate = typeof Crypto?.generateKeyPair === "function";
         return h(function Panel() {
             const [enabled, setEnabled] = useState(Boolean(plugin.enabled));
             const [decoding, setDecoding] = useState(plugin.decodeIncoming !== false);
-            const [scheme, setScheme] = useState(plugin.scheme || "ml-kem-768");
-            const [publicKey, setPublicKey] = useState(() => plugin.keys && plugin.keys.scheme === plugin.scheme
-                ? plugin.keys.publicKey.export({type: "spki", format: "pem"}) : "");
-            const [busy, setBusy] = useState(false);
-            const [status, setStatus] = useState("");
+            const [scheme, setScheme] = useState(plugin.scheme);
+            const [testAlgorithm, setTestAlgorithm] = useState(plugin.scheme);
+            const [publicKey, setPublicKey] = useState("");
+            const [recipientText, setRecipientText] = useState(savedRecipients?.scheme === plugin.scheme ? savedRecipients.publicKeys.join("\n") : "");
+            const [sample, setSample] = useState("Qcord PQC round-trip test");
+            const [busy, setBusy] = useState(true);
+            const [status, setStatus] = useState("Loading or generating your encryption key...");
+            const [elapsed, setElapsed] = useState(0);
+            useEffect(() => {
+                let active = true;
+                plugin.generateKeys(plugin.scheme).then(keys => {
+                    if (active) {
+                        setPublicKey(keys.publicKey.export({type: "spki", format: "pem"}));
+                        setStatus("Encryption key ready and saved locally.");
+                    }
+                }).catch(error => {
+                    if (active) setStatus(error.message);
+                }).finally(() => { if (active) setBusy(false); });
+                return () => { active = false; };
+            }, []);
+            useEffect(() => {
+                if (!busy) return;
+                const started = performance.now();
+                setElapsed(0);
+                const timer = setInterval(() => setElapsed(performance.now() - started), 100);
+                return () => clearInterval(timer);
+            }, [busy]);
+            const loadKeys = async value => {
+                setBusy(true); setStatus("Loading or generating encryption keys...");
+                try {
+                    const keys = await plugin.generateKeys(value);
+                    setPublicKey(keys.publicKey.export({type: "spki", format: "pem"}));
+                    setStatus("Encryption key ready and saved locally.");
+                }
+                catch (error) { setPublicKey(""); setStatus(error.message); }
+                finally { setBusy(false); }
+            };
+            const runTests = async algorithms => {
+                setBusy(true);
+                for (const algorithm of algorithms) {
+                    if (!plugin.running) break;
+                    setStatus("Testing " + algorithm.toUpperCase() + "...");
+                    try { await plugin.testScheme(algorithm, sample); }
+                    catch (error) { plugin.schemeStatus[algorithm] = error.message; }
+                }
+                setStatus("Tests finished. See algorithm results below."); setBusy(false);
+            };
+            const metrics = plugin.metrics;
+            const ms = value => Number.isFinite(value) ? value.toFixed(3) + " ms" : "not measured";
+            const timingLines = [];
+            if (metrics.keygen) timingLines.push("Key generation (saved measurement): " + metrics.keygen.scheme + ", " + ms(metrics.keygen.ms) +
+                "; public " + metrics.keygen.publicBytes + " B, private " + metrics.keygen.privateBytes + " B (DER)");
+            if (metrics.encrypt) timingLines.push("Last encryption: " + ms(metrics.encrypt.ms) + "; " + metrics.encrypt.inputBytes + " B text -> " + metrics.encrypt.fileBytes + " B file; " + metrics.encrypt.recipients + " keys");
+            if (metrics.decrypt) timingLines.push("Last decryption: " + ms(metrics.decrypt.ms) + "; " + metrics.decrypt.fileBytes + " B file -> " + metrics.decrypt.inputBytes + " B text");
+            if (metrics.test?.encapsulateMs !== undefined) timingLines.push("Last KEM test: " + metrics.test.scheme + "; encapsulate " + ms(metrics.test.encapsulateMs) + ", decapsulate " + ms(metrics.test.decapsulateMs) + "; " + metrics.test.kemBytes + " B KEM ciphertext");
+            if (metrics.test?.signMs !== undefined) timingLines.push("Last signature test: " + metrics.test.scheme + "; sign " + ms(metrics.test.signMs) + ", verify " + ms(metrics.test.verifyMs) + "; " + metrics.test.signatureBytes + " B signature for " + metrics.test.inputBytes + " B input");
             return h("div", {className: "qcord-panel"},
                 h("label", null, h("input", {
                     type: "checkbox", checked: enabled, disabled: !plugin.running,
                     onChange: event => { plugin.setEnabled(event.target.checked); setEnabled(plugin.enabled); }
-                }), "Encode outgoing messages"),
+                }), "Encrypt outgoing messages"),
                 h("label", null, h("input", {
                     type: "checkbox", checked: decoding, disabled: !plugin.running,
                     onChange: event => { plugin.setDecoding(event.target.checked); setDecoding(plugin.decodeIncoming); }
-                }), "Decoding incoming messages"),
-                h("p", null, "Base64 is not encryption."),
-                h("label", {className: "qcord-field"}, "PQC key demo", h("select", {
+                }), "Decrypt incoming messages (also decode older Base64)"),
+                h("p", null, "Runtime: Node " + (versions.node || "unavailable") + "; OpenSSL " + (versions.openssl || "unavailable") +
+                    "; crypto " + (Crypto ? "loaded" : "unavailable") + "; KEM API " + (Crypto?.encapsulate && Crypto?.decapsulate ? "available" : "unavailable")),
+                h("label", {className: "qcord-field"}, "Chat encryption scheme", h("select", {
                     value: scheme, disabled: busy || !plugin.running,
                     onChange: event => {
-                        plugin.scheme = event.target.value;
-                        BdApi.Data.save(NAME, "scheme", plugin.scheme);
-                        setScheme(plugin.scheme); setStatus("");
-                        setPublicKey(plugin.keys?.scheme === plugin.scheme
-                            ? plugin.keys.publicKey.export({type: "spki", format: "pem"}) : "");
+                        const value = event.target.value;
+                        plugin.scheme = value; BdApi.Data.save(KEY_STORE, "scheme", value); setScheme(value);
+                        const recipients = BdApi.Data.load(KEY_STORE, "recipients")?.[channelId];
+                        setRecipientText(recipients?.scheme === value ? recipients.publicKeys.join("\n") : "");
+                        loadKeys(value);
                     }
-                }, ...SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase())))),
-                h("p", null, scheme.startsWith("ml-kem") ? "Key agreement" : "Digital signatures"),
-                h("button", {
-                    type: "button", disabled: busy || !plugin.running || !canGenerate,
-                    onClick: async () => {
-                        setBusy(true); setStatus("Generating…");
-                        try {
-                            const generated = await plugin.generateKeys(scheme);
-                            if (generated) {
-                                setPublicKey(generated.publicKey.export({type: "spki", format: "pem"}));
-                                setStatus("Demo keys generated locally.");
-                            }
-                            else setStatus("Qcord stopped; generated keys discarded.");
-                        }
-                        catch (error) { setStatus(`Key generation failed: ${error.message}`); }
-                        finally { setBusy(false); }
+                }, ...KEM_SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase())))),
+                h("button", {type: "button", disabled: busy || !plugin.running || !canGenerate, onClick: () => loadKeys(scheme)}, "Load/generate my encryption key"),
+                publicKey && h("label", {className: "qcord-field"}, "My public encryption key (share this)", h("textarea", {readOnly: true, rows: 4, value: publicKey})),
+                publicKey && h("p", null, "SHA-256 fingerprint: " + plugin.keyId(Crypto.createPublicKey(publicKey))),
+                h("label", {className: "qcord-field"}, "Recipient public keys for channel " + (channelId || "(none selected)"), h("textarea", {
+                    rows: 4, value: recipientText, disabled: busy || !channelId,
+                    placeholder: "Paste each recipient's complete PUBLIC KEY PEM block here.",
+                    onChange: event => setRecipientText(event.target.value)
+                })),
+                h("button", {type: "button", disabled: busy || !channelId || !Crypto,
+                    onClick: () => {
+                        try { plugin.saveRecipients(channelId, recipientText, scheme); setStatus("Recipient keys saved for this channel."); }
+                        catch (error) { setStatus(error.message); }
                     }
-                }, busy ? "Generating…" : "Generate keys"),
-                h("div", {role: "status"}, status),
-                publicKey && h("label", {className: "qcord-field"}, "Public key", h("textarea", {readOnly: true, rows: 4, value: publicKey})),
-                h("p", null, `${plugin.running ? "Qcord running" : "Qcord stopped"} · Crypto ${Crypto ? "loaded" : "unavailable"} · Key API ${canGenerate ? "available" : "unavailable"}`),
-                h("p", null, "Demo keys are session-only; messages are not encrypted.")
+                }, "Save recipient keys"),
+                h("p", null, "Verify public-key fingerprints with your recipients before saving. Use the same ML-KEM scheme. Your own key is included automatically so you can read sent files."),
+                h("p", null, "Private keys are saved unencrypted in local qcord.config.json. Keep that file private and backed up. These experimental files do not authenticate the sender's identity."),
+                h("label", {className: "qcord-field"}, "Native PQC algorithm test", h("select", {
+                    value: testAlgorithm, disabled: busy,
+                    onChange: event => setTestAlgorithm(event.target.value)
+                }, ...SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase() + (KEM_SCHEMES.includes(value) ? " (KEM)" : " (signature)"))))),
+                h("label", {className: "qcord-field"}, "Signature test text", h("textarea", {rows: 2, value: sample, disabled: busy, onChange: event => setSample(event.target.value)})),
+                h("button", {type: "button", disabled: busy || !plugin.running || !canGenerate, onClick: () => runTests([testAlgorithm])}, "Test selected algorithm"),
+                h("button", {type: "button", disabled: busy || !plugin.running || !canGenerate, onClick: () => runTests(SCHEMES)}, "Test all listed algorithms"),
+                h("div", {role: "status"}, busy ? status + " " + elapsed.toFixed(0) + " ms elapsed" : status),
+                h("pre", null, SCHEMES.map(value => value + ": " + (plugin.schemeStatus[value] || "not tested")).join("\n")),
+                h("pre", null, timingLines.join("\n") || "No timings yet."),
+                h("p", null, "Timings are local elapsed milliseconds, including async scheduling. Encryption excludes key generation; decryption excludes download. CPU clock cycles are unavailable through this JavaScript API."),
+                h("p", null, "ML-KEM, ML-DSA and SLH-DSA are standardized PQC families. Candidates such as HQC/Falcon require implementations beyond this native-only plugin. Signature tests do not encrypt text.")
             );
         });
     }
@@ -519,6 +782,8 @@ module.exports = class Qcord {
     stop() {
         this.running = false;
         this.keys = null;
+        this.keyPairs.clear();
+        this.keyTasks.clear();
         this.session = null;
         if (this.frame !== null && this.frame !== undefined) cancelAnimationFrame(this.frame);
         this.frame = null;
