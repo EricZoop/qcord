@@ -36,8 +36,20 @@ const DECODED_SELECTOR = ".qcord-plain";
 const FILE_NAME_RE = /\.qcord$|^qcord_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.txt$/i;
 const MAX_DECODED_FILE_SIZE = 1024 * 1024;
 const PLUGIN_CSS = `
-    [class*="channelTextArea"]:has(.qcord-button[data-enabled="true"]) [class*="scrollableContainer"] {
-        background-image: linear-gradient(to top, #2786de, transparent);
+    [class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {
+        position: relative;
+    }
+    [class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"]::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        padding: 2px;
+        border-radius: inherit;
+        background: linear-gradient(to top, #2786de, transparent);
+        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask-composite: exclude;
+        pointer-events: none;
+        z-index: 1;
     }
     .qcord-button {
 
@@ -70,7 +82,8 @@ const PLUGIN_CSS = `
 
     
     .qcord-button:focus-visible { outline: 2px solid var(--text-link); }
-    .qcord-button[data-enabled="true"], .qcord-button:hover {
+    .qcord-button:hover { color: var(--qcord-icon-on); }
+    .qcord-button[data-decoding="true"] {
         color: var(--qcord-icon-on);
         background: linear-gradient(to top, var(--qcord-accent), transparent);
     }
@@ -216,7 +229,7 @@ module.exports = class Qcord {
             const now = new Date();
             const parts = [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()]
                 .map(value => String(value).padStart(2, "0"));
-            const filename = `qcord_${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.qcord`;
+            const filename = `${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.qcord`;
             const file = new File([content], filename, {type: "application/octet-stream"});
             // Stage the encoded envelope for review; never send the plaintext draft.
             await attachments.addFiles({
@@ -242,6 +255,7 @@ module.exports = class Qcord {
         if (!this.running) return;
         BdApi.Data.save(NAME, "decodeIncoming", Boolean(enabled));
         this.decodeIncoming = Boolean(enabled);
+        for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
         this.scanMessages();
     }
 
@@ -280,10 +294,12 @@ module.exports = class Qcord {
     }
 
     updateButton(button) {
-        const checked = String(this.enabled);
-        if (button.getAttribute("data-enabled") === checked) return;
-        button.setAttribute("data-enabled", checked);
-        button.title = `Qcord settings - Base64 encoding ${this.enabled ? "on" : "off"}`;
+        const encoding = String(this.enabled);
+        const decoding = String(this.decodeIncoming);
+        if (button.getAttribute("data-encoding") === encoding && button.getAttribute("data-decoding") === decoding) return;
+        button.setAttribute("data-encoding", encoding);
+        button.setAttribute("data-decoding", decoding);
+        button.title = `Qcord settings - Encoding ${this.enabled ? "on" : "off"}, decoding ${this.decodeIncoming ? "on" : "off"}`;
         button.setAttribute("aria-label", button.title);
     }
 
