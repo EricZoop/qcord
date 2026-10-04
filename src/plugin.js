@@ -4,7 +4,7 @@ const MessageCrypto = require("./messaging");
 const getSettingsPanel = require("./settings");
 const BUTTON_SVG = require("./button.svg");
 const PLUGIN_CSS = require("./styles.css");
-const { NAME, KEY_STORE, KEM_SCHEMES, PREFIX, ENCRYPTED_PREFIX, BASE64_RE, MESSAGE_SELECTOR, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
+const { NAME, KEY_STORE, KEM_SCHEMES, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
 
 module.exports = class Qcord extends MessageCrypto {
     start() {
@@ -20,7 +20,6 @@ module.exports = class Qcord extends MessageCrypto {
         this.keys = null;
         this.keyPairs = new Map();
         this.keyTasks = new Map();
-        this.metrics = {};
         this.schemeStatus = {};
         const savedScheme = BdApi.Data.load(KEY_STORE, "scheme");
         this.scheme = KEM_SCHEMES.includes(savedScheme) ? savedScheme : "ml-kem-768";
@@ -67,31 +66,6 @@ module.exports = class Qcord extends MessageCrypto {
         BdApi.UI.showToast("Qcord ready - open the shield for settings.", {type: "success"});
     }
 
-    // Base64 via Node's Buffer (Node core, same runtime as `crypto`).
-    // Note: Node's crypto module has no Base64 primitive; Buffer is the built-in for it.
-    encodeText(text) {
-        return text ? PREFIX + Buffer.from(text, "utf8").toString("base64") : "";
-    }
-
-    // Returns the decoded string, or null if `text` is not a valid Qcord Base64 message.
-    // Strict on purpose, so ordinary chat is never misread as ciphertext.
-    decodeText(text) {
-        if (typeof text !== "string") return null;
-        if (!text.startsWith(PREFIX)) return null;
-        const payload = text.slice(PREFIX.length);
-        // Base64 output length is always a multiple of 4 ("=" / "==" pad the last group).
-        if (!payload || payload.length % 4 !== 0 || !BASE64_RE.test(payload)) return null;
-        try {
-            const bytes = Buffer.from(payload, "base64");
-            // Canonical check: re-encoding must reproduce the input exactly.
-            if (bytes.toString("base64") !== payload) return null;
-            return new TextDecoder("utf-8", {fatal: true}).decode(bytes);
-        }
-        catch {
-            return null;
-        }
-    }
-
     blockSend(reason) {
         BdApi.UI.showToast(reason, {type: "error"});
         // Discord's normal send result instructs the composer whether to clear
@@ -127,8 +101,7 @@ module.exports = class Qcord extends MessageCrypto {
                 channelId, draftType: 0, showLargeMessageDialog: false,
                 files: [{file, platform: 1, isThumbnail: false}]
             });
-            const timing = this.metrics.encrypt;
-            BdApi.UI.showToast(`Qcord attached your encrypted message${timing ? ` (${timing.ms.toFixed(3)} ms, ${file.size} bytes)` : ""}. Press Send.`, {type: "success"});
+            BdApi.UI.showToast("Qcord attached your encrypted message. Press Send.", {type: "success"});
             return {shouldClear: true, shouldRefocus: true};
         }
         catch {
@@ -154,7 +127,6 @@ module.exports = class Qcord extends MessageCrypto {
     clearDecoded() {
         for (const span of this.renderedMessages.keys()) this.removeDecoded(span);
         for (const span of document.querySelectorAll(DECODED_SELECTOR)) this.removeDecoded(span);
-        for (const element of document.querySelectorAll(".qcord-decoded")) element.classList.remove("qcord-decoded");
         for (const element of document.querySelectorAll(".qcord-file-hidden")) element.classList.remove("qcord-file-hidden");
     }
 
@@ -223,7 +195,7 @@ module.exports = class Qcord extends MessageCrypto {
         }
     }
 
-    // Read visible chat messages and decode any that carry the Qcord prefix.
+    // Decrypt visible .qcord attachments.
     // Idempotent: safe to run on every DOM mutation. The original React-owned
     // nodes are hidden, never edited; Discord's Markdown renderer owns our nodes.
     scanMessages() {
@@ -231,29 +203,6 @@ module.exports = class Qcord extends MessageCrypto {
         if (!this.decodeIncoming) { this.clearDecoded(); return; }
         for (const element of this.renderedMessages.keys()) {
             if (!element.isConnected) this.removeDecoded(element);
-        }
-        for (const element of document.querySelectorAll(MESSAGE_SELECTOR)) {
-            let span = element.querySelector(`:scope > ${DECODED_SELECTOR}`);
-            const source = Array.from(element.childNodes)
-                .filter(node => node !== span)
-                .map(node => node.textContent)
-                .join("");
-            const decoded = this.decodeText(source);
-            if (decoded === null) {
-                if (span) {
-                    this.removeDecoded(span);
-                    element.classList.remove("qcord-decoded");
-                }
-                continue;
-            }
-            if (!span) {
-                span = document.createElement("div");
-                span.className = `qcord-plain ${this.markupClass}`;
-                span.title = "Decoded from Qcord Base64 (encoded, not encrypted)";
-                element.append(span);
-            }
-            this.renderDecoded(span, decoded);
-            element.classList.add("qcord-decoded");
         }
         for (const link of document.querySelectorAll('[id^="chat-messages-"] a[href]')) {
             this.decodeFile(link);
@@ -269,8 +218,7 @@ module.exports = class Qcord extends MessageCrypto {
             !["cdn.discordapp.com", "media.discordapp.net"].includes(url.hostname) ||
             !/^\/attachments\/\d+\/\d+\//.test(url.pathname)) return;
         if (!FILE_NAME_RE.test(url.pathname.split("/").pop())) return;
-        // Discord renders .txt uploads as text previews as well as ordinary file
-        // cards. Hide the outer attachment item so its preview leaves no blank tile.
+        // Hide the outer attachment item so its preview leaves no blank tile.
         const card = link.closest('[class*="mosaicItem_"]') || link.closest(
             '[class*="textContainer_"], [class*="fileWrapper_"], [class*="file_"], [class*="attachment_"]'
         );
@@ -295,10 +243,7 @@ module.exports = class Qcord extends MessageCrypto {
                 const text = await response.text();
                 if (text.length > MAX_DECODED_FILE_SIZE || this.session !== session) return;
                 const channelId = link.closest('[id^="chat-messages-"]')?.id?.match(/^chat-messages-(\d+)-\d+$/)?.[1];
-                state.encrypted = text.startsWith(ENCRYPTED_PREFIX);
-                const started = performance.now();
                 state.decoded = await this.decryptMessage(text, channelId);
-                state.decryptMs = state.encrypted ? performance.now() - started : null;
                 if (this.session !== session) return;
             }
             catch (error) {
@@ -312,7 +257,7 @@ module.exports = class Qcord extends MessageCrypto {
         if (!state.span?.isConnected) {
             state.span = document.createElement("div");
             state.span.className = `qcord-plain qcord-file-plain ${this.markupClass}`;
-            state.span.title = state.encrypted ? `Decrypted locally by Qcord in ${state.decryptMs?.toFixed(3)} ms (ML-KEM + AES-256-GCM)` : "Decoded from Qcord Base64 attachment (encoded, not encrypted)";
+            state.span.title = "Decrypted locally by Qcord (ML-KEM + AES-256-GCM)";
             card.after(state.span);
             this.renderDecoded(state.span, state.decoded);
         }
@@ -345,6 +290,6 @@ module.exports = class Qcord extends MessageCrypto {
         BdApi.Patcher.unpatchAll(NAME);
         BdApi.DOM.removeStyle(NAME);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) button.remove();
-        this.clearDecoded(); //test
+        this.clearDecoded();
     }
 };

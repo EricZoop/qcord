@@ -1,25 +1,22 @@
 "use strict";
 
-const { Crypto, PQC } = require("./pqc");
-const { KEY_STORE, SCHEMES, KEM_SCHEMES } = require("./constants");
+const {PQC} = require("./pqc");
+const {KEY_STORE, SCHEMES, KEM_SCHEMES} = require("./constants");
 
 module.exports = function getSettingsPanel(plugin) {
     const {createElement: h, useState, useEffect} = BdApi.React;
     const channelId = BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId();
-    const savedRecipients = BdApi.Data.load(KEY_STORE, "recipients")?.[channelId];
-    const versions = typeof process === "object" ? process.versions || {} : {};
-    const canGenerate = typeof Crypto?.randomBytes === "function";
     return h(function Panel() {
         const [enabled, setEnabled] = useState(Boolean(plugin.enabled));
         const [decoding, setDecoding] = useState(plugin.decodeIncoming !== false);
         const [scheme, setScheme] = useState(plugin.scheme);
-        const [testAlgorithm, setTestAlgorithm] = useState(plugin.scheme);
         const [publicKey, setPublicKey] = useState("");
-        const [recipientText, setRecipientText] = useState(savedRecipients?.scheme === plugin.scheme ? savedRecipients.publicKeys.join("\n") : "");
-        const [sample, setSample] = useState("Qcord PQC round-trip test");
+        const [recipients, setRecipients] = useState(() => plugin.getRecipients(channelId, plugin.scheme));
+        const [username, setUsername] = useState("");
+        const [recipientKey, setRecipientKey] = useState("");
+        const [testAlgorithm, setTestAlgorithm] = useState(plugin.scheme);
         const [busy, setBusy] = useState(true);
-        const [status, setStatus] = useState("Loading or generating your encryption key...");
-        const [elapsed, setElapsed] = useState(0);
+        const [status, setStatus] = useState("Loading your encryption key...");
         useEffect(() => {
             let active = true;
             plugin.generateKeys(plugin.scheme).then(keys => {
@@ -27,96 +24,120 @@ module.exports = function getSettingsPanel(plugin) {
                     setPublicKey(keys.publicKey.export({type: "spki", format: "pem"}));
                     setStatus("Encryption key ready and saved locally.");
                 }
-            }).catch(error => {
-                if (active) setStatus(error.message);
-            }).finally(() => { if (active) setBusy(false); });
+            }).catch(error => { if (active) setStatus(error.message); })
+                .finally(() => { if (active) setBusy(false); });
             return () => { active = false; };
         }, []);
-        useEffect(() => {
-            if (!busy) return;
-            const started = performance.now();
-            setElapsed(0);
-            const timer = setInterval(() => setElapsed(performance.now() - started), 100);
-            return () => clearInterval(timer);
-        }, [busy]);
-        const loadKeys = async value => {
-            setBusy(true); setStatus("Loading or generating encryption keys...");
+        const button = (label, onClick, disabled = false, variant = "") => h("button", {
+            type: "button", className: variant, disabled: disabled || busy || !plugin.running, onClick
+        }, label);
+        const copy = async text => {
+            try { await navigator.clipboard.writeText(text); setStatus("Public key copied."); }
+            catch { setStatus("Clipboard unavailable. Select and copy the public key manually."); }
+        };
+        const paste = async () => {
+            try { setRecipientKey(await navigator.clipboard.readText()); setStatus("Public key pasted. Add the recipient to save it."); }
+            catch { setStatus("Clipboard unavailable. Paste into the public key field manually."); }
+        };
+        const loadScheme = async value => {
+            setBusy(true); setPublicKey(""); setStatus("Loading your encryption key...");
+            plugin.scheme = value;
+            BdApi.Data.save(KEY_STORE, "scheme", value);
+            setScheme(value); setRecipients(plugin.getRecipients(channelId, value));
+            setRecipientKey(""); setUsername("");
             try {
                 const keys = await plugin.generateKeys(value);
                 setPublicKey(keys.publicKey.export({type: "spki", format: "pem"}));
                 setStatus("Encryption key ready and saved locally.");
             }
-            catch (error) { setPublicKey(""); setStatus(error.message); }
+            catch (error) { setStatus(error.message); }
             finally { setBusy(false); }
         };
-        const runTests = async algorithms => {
-            setBusy(true);
-            for (const algorithm of algorithms) {
-                if (!plugin.running) break;
-                setStatus("Testing " + algorithm.toUpperCase() + "...");
-                try { await plugin.testScheme(algorithm, sample); }
-                catch (error) { plugin.schemeStatus[algorithm] = error.message; }
-            }
-            setStatus("Tests finished. See algorithm results below."); setBusy(false);
+        const saveRows = rows => {
+            plugin.saveRecipients(channelId, rows, scheme);
+            setRecipients(plugin.getRecipients(channelId, scheme));
         };
-        const metrics = plugin.metrics;
-        const ms = value => Number.isFinite(value) ? value.toFixed(3) + " ms" : "not measured";
-        const timingLines = [];
-        if (metrics.keygen) timingLines.push("Key generation (saved measurement): " + metrics.keygen.scheme + ", " + ms(metrics.keygen.ms) +
-            "; public " + metrics.keygen.publicBytes + " B, private " + metrics.keygen.privateBytes + " B (DER)");
-        if (metrics.encrypt) timingLines.push("Last encryption: " + ms(metrics.encrypt.ms) + "; " + metrics.encrypt.inputBytes + " B text -> " + metrics.encrypt.fileBytes + " B file; " + metrics.encrypt.recipients + " keys");
-        if (metrics.decrypt) timingLines.push("Last decryption: " + ms(metrics.decrypt.ms) + "; " + metrics.decrypt.fileBytes + " B file -> " + metrics.decrypt.inputBytes + " B text");
-        if (metrics.test?.encapsulateMs !== undefined) timingLines.push("Last KEM test: " + metrics.test.scheme + "; encapsulate " + ms(metrics.test.encapsulateMs) + ", decapsulate " + ms(metrics.test.decapsulateMs) + "; " + metrics.test.kemBytes + " B KEM ciphertext");
-        if (metrics.test?.signMs !== undefined) timingLines.push("Last signature test: " + metrics.test.scheme + "; sign " + ms(metrics.test.signMs) + ", verify " + ms(metrics.test.verifyMs) + "; " + metrics.test.signatureBytes + " B signature for " + metrics.test.inputBytes + " B input");
+        const addRecipient = () => {
+            try {
+                if (!username.trim().replace(/^@/, "")) throw new Error("Enter a username for this public key.");
+                saveRows([...recipients, {username: "@" + username.trim().replace(/^@/, ""), publicKey: recipientKey}]);
+                setUsername(""); setRecipientKey(""); setStatus("Recipient added and saved.");
+            }
+            catch (error) { setStatus(error.message); }
+        };
+        const removeRecipient = index => {
+            try { saveRows(recipients.filter((_, i) => i !== index)); setStatus("Recipient removed."); }
+            catch (error) { setStatus(error.message); }
+        };
+        const testAlgorithmNow = async () => {
+            setBusy(true); setStatus("Checking " + testAlgorithm.toUpperCase() + "...");
+            try { await plugin.testScheme(testAlgorithm, "Qcord encryption check"); setStatus(testAlgorithm.toUpperCase() + ": round-trip passed."); }
+            catch (error) { setStatus(error.message); }
+            finally { setBusy(false); }
+        };
         return h("div", {className: "qcord-panel"},
-            h("label", null, h("input", {
-                type: "checkbox", checked: enabled, disabled: !plugin.running,
-                onChange: event => { plugin.setEnabled(event.target.checked); setEnabled(plugin.enabled); }
-            }), "Encrypt outgoing messages"),
-            h("label", null, h("input", {
-                type: "checkbox", checked: decoding, disabled: !plugin.running,
-                onChange: event => { plugin.setDecoding(event.target.checked); setDecoding(plugin.decodeIncoming); }
-            }), "Decrypt incoming messages (also decode older Base64)"),
-            h("p", null, "Runtime: Node " + (versions.node || "unavailable") + "; OpenSSL " + (versions.openssl || "unavailable") +
-                "; AES/HKDF " + (Crypto?.createCipheriv && Crypto?.hkdfSync ? "available" : "unavailable") + "; PQC: " + PQC.backend),
-            h("label", {className: "qcord-field"}, "Chat encryption scheme", h("select", {
-                value: scheme, disabled: busy || !plugin.running,
-                onChange: event => {
-                    const value = event.target.value;
-                    plugin.scheme = value; BdApi.Data.save(KEY_STORE, "scheme", value); setScheme(value);
-                    const recipients = BdApi.Data.load(KEY_STORE, "recipients")?.[channelId];
-                    setRecipientText(recipients?.scheme === value ? recipients.publicKeys.join("\n") : "");
-                    loadKeys(value);
-                }
-            }, ...KEM_SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase())))),
-            h("button", {type: "button", disabled: busy || !plugin.running || !canGenerate, onClick: () => loadKeys(scheme)}, "Load/generate my encryption key"),
-            publicKey && h("label", {className: "qcord-field"}, "My public encryption key (share this)", h("textarea", {readOnly: true, rows: 4, value: publicKey})),
-            publicKey && h("p", null, "SHA-256 fingerprint: " + plugin.keyId(PQC.createPublicKey(publicKey))),
-            h("label", {className: "qcord-field"}, "Recipient public keys for channel " + (channelId || "(none selected)"), h("textarea", {
-                rows: 4, value: recipientText, disabled: busy || !channelId,
-                placeholder: "Paste each recipient's complete PUBLIC KEY PEM block here.",
-                onChange: event => setRecipientText(event.target.value)
-            })),
-            h("button", {type: "button", disabled: busy || !channelId || !Crypto,
-                onClick: () => {
-                    try { plugin.saveRecipients(channelId, recipientText, scheme); setStatus("Recipient keys saved for this channel."); }
-                    catch (error) { setStatus(error.message); }
-                }
-            }, "Save recipient keys"),
-            h("p", null, "Verify public-key fingerprints with your recipients before saving. Use the same ML-KEM scheme. Your own key is included automatically so you can read sent files."),
-            h("p", null, "Private keys are saved unencrypted in local qcord.config.json. Keep that file private and backed up. These experimental files do not authenticate the sender's identity."),
-            h("label", {className: "qcord-field"}, "Bundled PQC algorithm test", h("select", {
-                value: testAlgorithm, disabled: busy,
-                onChange: event => setTestAlgorithm(event.target.value)
-            }, ...SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase() + (KEM_SCHEMES.includes(value) ? " (KEM)" : " (signature)"))))),
-            h("label", {className: "qcord-field"}, "Signature test text", h("textarea", {rows: 2, value: sample, disabled: busy, onChange: event => setSample(event.target.value)})),
-            h("button", {type: "button", disabled: busy || !plugin.running || !canGenerate, onClick: () => runTests([testAlgorithm])}, "Test selected algorithm"),
-            h("button", {type: "button", disabled: busy || !plugin.running || !canGenerate, onClick: () => runTests(SCHEMES)}, "Test all listed algorithms"),
-            h("div", {role: "status"}, busy ? status + " " + elapsed.toFixed(0) + " ms elapsed" : status),
-            h("pre", null, SCHEMES.map(value => value + ": " + (plugin.schemeStatus[value] || "not tested")).join("\n")),
-            h("pre", null, timingLines.join("\n") || "No timings yet."),
-            h("p", null, "Timings are local elapsed milliseconds, including async scheduling. Encryption excludes key generation; decryption excludes download. CPU clock cycles are unavailable through this JavaScript API."),
-            h("p", null, "ML-KEM, ML-DSA and SLH-DSA are standardized PQC families. This build includes these seven schemes; other candidates are not enabled. Signature tests do not encrypt text.")
+            h("section", {className: "qcord-section"},
+                h("h3", null, "Messages"),
+                h("label", null, h("input", {
+                    type: "checkbox", checked: enabled, disabled: !plugin.running,
+                    onChange: event => { plugin.setEnabled(event.target.checked); setEnabled(plugin.enabled); }
+                }), "Encrypt outgoing messages"),
+                h("label", null, h("input", {
+                    type: "checkbox", checked: decoding, disabled: !plugin.running,
+                    onChange: event => { plugin.setDecoding(event.target.checked); setDecoding(plugin.decodeIncoming); }
+                }), "Decrypt incoming .qcord files"),
+                h("p", null, "Enter prepares an encrypted file. Press Send or Enter again to send it.")
+            ),
+            h("section", {className: "qcord-section"},
+                h("h3", null, "My encryption key"),
+                h("label", {className: "qcord-field"}, "Scheme and saved key", h("select", {
+                    value: scheme, disabled: busy || !plugin.running, onChange: event => loadScheme(event.target.value)
+                }, ...KEM_SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase())))),
+                h("p", null, "Choosing a scheme loads your saved key or creates one the first time. Your own key is always included in sent files."),
+                h("label", {className: "qcord-field"}, "My public key", h("textarea", {readOnly: true, rows: 3, value: publicKey, placeholder: "Loading public key..."})),
+                h("div", {className: "qcord-actions"},
+                    button("Copy my public key", () => copy(publicKey), !publicKey, "qcord-primary"),
+                    button("Reload saved key", () => loadScheme(scheme))
+                ),
+                publicKey && h("p", {className: "qcord-fingerprint"}, "Fingerprint: " + plugin.keyId(PQC.createPublicKey(publicKey)))
+            ),
+            h("section", {className: "qcord-section"},
+                h("h3", null, "Recipients"),
+                h("p", null, channelId ? "Channel " + channelId + " / " + scheme.toUpperCase() : "Open a Discord channel to add recipients."),
+                h("p", null, "Usernames are labels, not verified Discord identities. Compare public-key fingerprints with each person before adding them."),
+                h("label", {className: "qcord-field"}, "Username", h("input", {
+                    type: "text", value: username, maxLength: 100, placeholder: "@username", disabled: busy || !channelId,
+                    onChange: event => setUsername(event.target.value)
+                })),
+                h("label", {className: "qcord-field"}, "Their public key", h("textarea", {
+                    rows: 3, value: recipientKey, placeholder: "-----BEGIN PUBLIC KEY-----", disabled: busy || !channelId,
+                    onChange: event => setRecipientKey(event.target.value)
+                })),
+                h("div", {className: "qcord-actions"},
+                    button("Paste public key", paste, !channelId),
+                    button("Add recipient", addRecipient, !channelId || !username.trim() || !recipientKey.trim(), "qcord-primary")
+                ),
+                recipients.length ? h("div", {className: "qcord-table-scroll"}, h("table", null,
+                    h("thead", null, h("tr", null, h("th", {scope: "col"}, "Recipient"), h("th", {scope: "col"}, "Public key"), h("th", {scope: "col"}, "Actions"))),
+                    h("tbody", null, ...recipients.map((row, index) => h("tr", {key: row.publicKey},
+                        h("td", null, row.username || "Saved recipient"),
+                        h("td", null, h("details", null, h("summary", null, "View key and fingerprint"),
+                            h("p", {className: "qcord-fingerprint"}, plugin.keyId(PQC.createPublicKey(row.publicKey))),
+                            h("textarea", {readOnly: true, rows: 3, value: row.publicKey, "aria-label": "Public key for " + (row.username || "saved recipient")}))),
+                        h("td", null, h("div", {className: "qcord-actions"}, button("Copy key", () => copy(row.publicKey)), button("Remove", () => removeRecipient(index), false, "qcord-danger")))
+                    )))
+                )) : h("p", null, "No recipients for this channel and scheme yet.")
+            ),
+            h("details", {className: "qcord-section"},
+                h("summary", null, "Algorithm check"),
+                h("label", {className: "qcord-field"}, "Algorithm", h("select", {
+                    value: testAlgorithm, disabled: busy, onChange: event => setTestAlgorithm(event.target.value)
+                }, ...SCHEMES.map(value => h("option", {key: value, value}, value.toUpperCase() + (KEM_SCHEMES.includes(value) ? " (encryption)" : " (signature check only)"))))),
+                h("div", {className: "qcord-actions"}, button("Run check", testAlgorithmNow)),
+                h("p", null, "Signature checks do not sign chat messages.")
+            ),
+            h("div", {className: "qcord-status", role: "status", "aria-live": "polite"}, status),
+            h("p", null, "Private keys stay in your local qcord.config.json, stored unencrypted. Keep it private and backed up. Chat files do not verify the sender's identity.")
         );
     });
 };

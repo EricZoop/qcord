@@ -5,7 +5,7 @@ import {fileURLToPath} from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const metadata = JSON.parse(await readFile(new URL("../src/metadata.json", import.meta.url), "utf8"));
 const header = "/**\n" + Object.entries(metadata).map(([key, value]) => ` * @${key} ${value}`).join("\n") + "\n */";
-const licenses = await Promise.all(["post-quantum", "hashes"].map(async name =>
+const licenses = await Promise.all(["post-quantum", "hashes", "ciphers"].map(async name =>
     `@noble/${name}\n\n` + await readFile(new URL(`../node_modules/@noble/${name}/LICENSE`, import.meta.url), "utf8")));
 const notices = licenses.join("\n\n");
 await build({

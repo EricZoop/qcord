@@ -2,8 +2,8 @@
   "name": "Qcord",
   "author": "Eric, Arsh, Yasser",
   "authorId": "215269534540496896",
-  "version": "0.0.2",
-  "description": "Experimental encrypted chat files with bundled ML-KEM, saved local keys, and PQC timing tests.",
+  "version": "0.0.3",
+  "description": "Encrypted chat files with bundled ML-KEM, saved local keys, and a channel recipient list.",
   "invite": "GSdMfMBW5g",
   "source": "https://github.com/EricZoop/qcord"
 }

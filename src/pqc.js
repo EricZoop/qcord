@@ -6,10 +6,6 @@ const {slh_dsa_sha2_128f} = require("@noble/post-quantum/slh-dsa.js");
 const {equalBytes} = require("@noble/post-quantum/utils.js");
 const {pack, unpack, readPem, writePem} = require("./pem");
 
-let Crypto;
-try { Crypto = require("crypto"); }
-catch { Crypto = null; }
-
 // NIST algorithm identifiers used by SPKI / PKCS#8, including existing Node keys.
 const algorithms = {
     "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"},
@@ -27,8 +23,8 @@ function algorithm(scheme) {
 }
 
 function randomBytes(size) {
-    if (!Crypto?.randomBytes) throw new Error("Discord must expose crypto.randomBytes for secure randomness.");
-    return Uint8Array.from(Crypto.randomBytes(size));
+    if (!globalThis.crypto?.getRandomValues) throw new Error("Secure browser randomness is unavailable. Reload Discord.");
+    return globalThis.crypto.getRandomValues(new Uint8Array(size));
 }
 
 // ponytail: bounded PQC operations run in the renderer; use a worker if larger
@@ -129,4 +125,4 @@ const PQC = {
     verify: (data, key, signature) => run(() => requireKey(key, "public").verify(Uint8Array.from(signature), Uint8Array.from(data), key.bytes))
 };
 
-module.exports = {Crypto, PQC};
+module.exports = {PQC, randomBytes, equalBytes};

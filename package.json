@@ -1,12 +1,14 @@
 {
   "name": "qcord",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "Build the Qcord BetterDiscord plugin with bundled PQC support",
   "scripts": {
     "build": "node scripts/build.mjs"
   },
   "dependencies": {
+    "@noble/ciphers": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@noble/post-quantum": "0.7.1"
   },
   "devDependencies": {
