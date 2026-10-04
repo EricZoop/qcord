@@ -20,4 +20,4 @@ Messages use `protocol:version:scheme:payload`, for example:
 qcord:v1:b64:SGVsbG8gd29ybGQ=
 ```
 
-The composer border has a blue gradient fading to transparent at the top while outgoing encoding is enabled. Its normal background stays unchanged. The shield button lights up while incoming decoding is enabled. Decoded messages and attachments use Discord's Markdown renderer for clickable links, code blocks, and text formatting. Link previews are not generated from the decoded text.
+The composer has a translucent navy-to-blue background, a subtle blue edge, and brighter text and placeholder colors while outgoing encoding is enabled. The shield button lights up while incoming decoding is enabled. Decoded messages and attachments use Discord's Markdown renderer for clickable links, code blocks, and text formatting. Link previews are not generated from the decoded text.

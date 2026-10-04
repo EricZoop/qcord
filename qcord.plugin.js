@@ -37,19 +37,17 @@ const FILE_NAME_RE = /\.qcord$|^qcord_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.txt$/
 const MAX_DECODED_FILE_SIZE = 1024 * 1024;
 const PLUGIN_CSS = `
     [class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {
-        position: relative;
+        background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));
+        backdrop-filter: blur(10px);
+        box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);
     }
-    [class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"]::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        padding: 2px;
-        border-radius: inherit;
-        background: linear-gradient(to top, #2786de, transparent);
-        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-        mask-composite: exclude;
-        pointer-events: none;
-        z-index: 1;
+    [class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {
+        color: #f1f6ff;
+        caret-color: #8bc8ff;
+    }
+    [class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {
+        color: #b7c9df;
+        opacity: 1;
     }
     .qcord-button {
 
