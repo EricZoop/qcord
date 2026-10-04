@@ -1,0 +1,93 @@
+[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {
+    background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));
+    backdrop-filter: blur(10px);
+    box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);
+}
+[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {
+    color: #f1f6ff;
+    caret-color: #8bc8ff;
+}
+[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {
+    color: #b7c9df;
+    opacity: 1;
+}
+.qcord-button {
+
+    --qcord-icon-off: #c5c6ca;
+    --qcord-icon-on: #ffffff;
+    --qcord-accent: #2786de;
+    
+    display: inline-flex; 
+    align-items: center; 
+    justify-content: center;
+
+    align-self: center; 
+    flex-shrink: 0; 
+    margin: 0;
+    
+    width: 32px; 
+    height: 32px; 
+    margin-left: 2px;
+
+    padding: 4px 4px; 
+    
+    box-sizing: border-box;
+    border: 0; 
+    border-radius: 25%; 
+    cursor: pointer;
+    
+    background: transparent; 
+    color: var(--qcord-icon-off);
+}
+
+
+.qcord-button:focus-visible { outline: 2px solid var(--text-link); }
+.qcord-button:hover { color: var(--qcord-icon-on); }
+.qcord-button[data-decoding="true"] {
+    color: var(--qcord-icon-on);
+    background: linear-gradient(to top, var(--qcord-accent), transparent);
+}
+.qcord-button svg {
+    display: block; 
+    flex-shrink: 0;
+    width: 22px; 
+    height: 22px;
+    
+    transform: translateY(-2px) translateX(0.5px);
+
+    
+    fill: currentColor; 
+    
+    pointer-events: none;
+    transition: transform 180ms ease;
+}
+.qcord-button:hover svg { 
+    transform: translateY(-2px) translateX(0.5px) scale(1.075);
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qcord-button svg { transition: none; }
+}
+
+.qcord-decoded > :not(.qcord-plain) { display: none !important; }
+.qcord-plain { white-space: pre-wrap; }
+.qcord-file-hidden { display: none !important; }
+.qcord-file-plain { color: #fff; font-size: 16px; line-height: 1.375; overflow-wrap: anywhere; }
+.qcord-panel { display: grid; gap: 12px; }
+.qcord-panel label { display: flex; align-items: center; gap: 8px; }
+.qcord-panel .qcord-field { display: grid; gap: 6px; }
+.qcord-panel input[type="checkbox"] { accent-color: #2786de; }
+.qcord-panel select, .qcord-panel button, .qcord-panel textarea {
+    padding: 8px; border: 1px solid var(--background-modifier-accent);
+    border-radius: 6px; background: var(--background-secondary);
+    color: var(--text-normal); font: inherit;
+}
+.qcord-panel select, .qcord-panel textarea { width: 100%; box-sizing: border-box; }
+.qcord-panel select { color-scheme: dark; }
+.qcord-panel select, .qcord-panel option { background: #172638; color: #f1f6ff; }
+.qcord-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.qcord-panel textarea { font-family: monospace; }
+.qcord-panel button { cursor: pointer; }
+.qcord-panel button:disabled { opacity: .5; cursor: default; }
+.qcord-panel p { margin: 0; color: var(--text-muted); font-size: 12px; }

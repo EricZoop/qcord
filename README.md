@@ -8,7 +8,7 @@ A **Qcord ready** toast confirms startup. Click the shield beside the default te
 
 - **Encrypt outgoing messages** - creates ML-KEM + AES-256-GCM encrypted files for the public keys configured in the current channel.
 - **Decrypt incoming messages** - displays files addressed to your saved private key, with Discord Markdown formatting. Also reads older Base64 messages.
-- **Native PQC algorithm test** - tests actual key generation and KEM round trips or signature verification in Discord's runtime. A readable dark dropdown distinguishes KEMs from signatures.
+- **Bundled PQC algorithm test** - tests key generation and KEM round trips or signature verification using the included implementation. A readable dark dropdown distinguishes KEMs from signatures.
 
 Open the panel for the first time to generate and save your default ML-KEM-768 public/private key pair. Later openings reuse those keys. Settings, PEM key pairs for each tested scheme, and recipient public keys are stored through BetterDiscord in its Plugins folder's `qcord.config.json`. Private keys are stored unencrypted: keep this file private and backed up. Config files, tests, and examples are excluded from Git.
 
@@ -23,8 +23,28 @@ Only Discord-hosted `.qcord` files with a valid envelope are processed, up to 1 
 
 Encrypted files use `qcord:v2:pqc:` followed by JSON. A fresh random AES-256-GCM key encrypts the message. Each recipient gets a separate ML-KEM encapsulation and an AES-GCM wrapped copy of that message key, derived through HKDF-SHA256. The channel, scheme, and recipient IDs are bound as authenticated data; files copied into another channel will not decrypt there. This is an experimental, unaudited format with no sender identity signatures or forward secrecy. ML-DSA/SLH-DSA tests do not add signatures to chat files.
 
-The panel reports runtime Node/OpenSSL versions, crypto/KEM API availability, per-scheme test results, saved key-generation time, public/private DER key sizes, last message encryption/decryption time, and actual `.qcord` file bytes. Hover over a decrypted message for its time; staging an outgoing file also shows its encryption time and size. Timings are local elapsed milliseconds including async scheduling, not isolated CPU benchmarks. Encryption excludes key generation and upload; decryption excludes download. CPU clock cycles are unavailable through the JavaScript APIs and are not estimated from elapsed time.
+The panel reports runtime Node/OpenSSL versions, AES/HKDF availability, the bundled PQC provider, per-scheme test results, saved key-generation time, public/private DER key sizes, last message encryption/decryption time, and actual `.qcord` file bytes. Hover over a decrypted message for its time; staging an outgoing file also shows its encryption time and size. Timings are local elapsed milliseconds including async scheduling, not isolated CPU benchmarks. Encryption excludes key generation and upload; decryption excludes download. CPU clock cycles are unavailable through the JavaScript APIs and are not estimated from elapsed time.
 
-The listed ML-KEM, ML-DSA and SLH-DSA families are standardized by NIST. Other candidates or selected algorithms such as HQC and Falcon require implementations outside this native-only plugin. See [NIST's PQC project](https://csrc.nist.gov/projects/post-quantum-cryptography) and [Node's crypto API](https://nodejs.org/api/crypto.html). Discord's embedded runtime must support the chosen APIs; installing a newer standalone Node does not upgrade Discord's crypto runtime. No administrator/root access is required.
+The plugin bundles [@noble/post-quantum](https://github.com/paulmillr/noble-post-quantum) 0.7.1 for ML-KEM-512/768/1024, ML-DSA-44/65/87, and SLH-DSA-SHA2-128f. These families are standardized by [NIST](https://csrc.nist.gov/projects/post-quantum-cryptography). Other candidates are not included. Discord only needs basic Node crypto functions for secure randomness, SHA-256, HKDF and AES-GCM; native ML-KEM encapsulation/decapsulation APIs are no longer required. No runtime download or administrator/root access is required. Existing PEM keys, fingerprints and version 2 encrypted files remain compatible.
 
 The composer has a translucent navy-to-blue background while encryption is enabled. The shield button lights up while decryption is enabled.
+
+To develop or rebuild, use Node 20.19+ and run:
+
+```sh
+npm ci --ignore-scripts
+npm run build
+```
+
+Edit `src/`, then rebuild. [esbuild](https://esbuild.github.io/api/#bundle) combines the source and pinned dependencies into the standalone `qcord.plugin.js`. Copy only that generated file into BetterDiscord's Plugins folder; `node_modules` is needed only for building. The generated file includes dependency licenses, also recorded in `THIRD_PARTY_NOTICES.md`.
+
+| Source | Responsibility |
+| --- | --- |
+| `src/plugin.js` | Discord lifecycle, composer hooks and attachment rendering |
+| `src/messaging.js` | Saved keys, recipients, encrypted file format and timings |
+| `src/pqc.js` | Bundled PQC operations and key import/export |
+| `src/pem.js` | PEM and DER framing for existing keys |
+| `src/settings.js` | Settings panel |
+| `src/styles.css`, `src/button.svg` | Appearance |
+| `src/constants.js`, `src/metadata.json` | Shared values and plugin metadata |
+| `scripts/build.mjs` | Build and third-party notices |
