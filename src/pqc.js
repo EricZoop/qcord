@@ -1,8 +1,6 @@
 "use strict";
 
 const {ml_kem512, ml_kem768, ml_kem1024} = require("@noble/post-quantum/ml-kem.js");
-const {ml_dsa44, ml_dsa65, ml_dsa87} = require("@noble/post-quantum/ml-dsa.js");
-const {slh_dsa_sha2_128f} = require("@noble/post-quantum/slh-dsa.js");
 const {equalBytes} = require("@noble/post-quantum/utils.js");
 const {pack, unpack, readPem, writePem} = require("./pem");
 
@@ -10,11 +8,7 @@ const {pack, unpack, readPem, writePem} = require("./pem");
 const algorithms = {
     "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"},
     "ml-kem-768": {impl: ml_kem768, oid: "608648016503040402"},
-    "ml-kem-1024": {impl: ml_kem1024, oid: "608648016503040403"},
-    "ml-dsa-44": {impl: ml_dsa44, oid: "608648016503040311"},
-    "ml-dsa-65": {impl: ml_dsa65, oid: "608648016503040312"},
-    "ml-dsa-87": {impl: ml_dsa87, oid: "608648016503040313"},
-    "slh-dsa-sha2-128f": {impl: slh_dsa_sha2_128f, oid: "608648016503040315"}
+    "ml-kem-1024": {impl: ml_kem1024, oid: "608648016503040403"}
 };
 
 function algorithm(scheme) {
@@ -27,8 +21,7 @@ function randomBytes(size) {
     return globalThis.crypto.getRandomValues(new Uint8Array(size));
 }
 
-// ponytail: bounded PQC operations run in the renderer; use a worker if larger
-// signature suites cause UI stalls. Yield first so status updates can render.
+// Yield before bounded PQC operations so status updates can render.
 async function run(operation) {
     await new Promise(resolve => setTimeout(resolve, 0));
     return operation();
@@ -50,14 +43,14 @@ class Key {
 
     export({type, format}) {
         const privateKey = this.type === "private";
-        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "pem"].includes(format)) throw new Error("Unsupported key export format.");
+        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "pem", "base64"].includes(format)) throw new Error("Unsupported key export format.");
         const identifier = pack(0x30, pack(0x06, Buffer.from(algorithm(this.asymmetricKeyType).oid, "hex")));
-        // RFC 9935 / RFC 9881 expanded-key CHOICE. SLH-DSA stores raw key bytes.
-        const body = this.asymmetricKeyType.startsWith("slh-") ? this.bytes : pack(0x04, this.bytes);
+        // RFC 9935 expanded-key CHOICE.
+        const body = pack(0x04, this.bytes);
         const der = privateKey
             ? pack(0x30, pack(0x02, Buffer.from([0])), identifier, pack(0x04, body))
             : pack(0x30, identifier, pack(0x03, Buffer.from([0]), this.bytes));
-        return format === "der" ? der : writePem(der, privateKey ? "PRIVATE" : "PUBLIC");
+        return format === "der" ? der : format === "base64" ? der.toString("base64") : writePem(der, privateKey ? "PRIVATE" : "PUBLIC");
     }
 }
 
@@ -81,7 +74,6 @@ function importKey(pem, type) {
         return new Key(scheme, type, data.value.subarray(1));
     }
     if (data.tag !== 0x04) throw new Error("Invalid private-key octet string.");
-    if (scheme.startsWith("slh-")) return new Key(scheme, type, data.value);
     const choice = unpack(data.value);
     if (choice.length !== 1) throw new Error("Invalid private-key encoding.");
     const {tag, value} = choice[0];
@@ -117,12 +109,7 @@ const PQC = {
         const {cipherText, sharedSecret} = impl.encapsulate(key.bytes, randomBytes(impl.lengths.msgRand));
         return {ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret)};
     }),
-    decapsulate: (key, ciphertext) => run(() => Buffer.from(requireKey(key, "private").decapsulate(Uint8Array.from(ciphertext), key.bytes))),
-    sign: (data, key) => run(() => {
-        const impl = requireKey(key, "private");
-        return Buffer.from(impl.sign(Uint8Array.from(data), key.bytes, {extraEntropy: randomBytes(impl.lengths.signRand)}));
-    }),
-    verify: (data, key, signature) => run(() => requireKey(key, "public").verify(Uint8Array.from(signature), Uint8Array.from(data), key.bytes))
+    decapsulate: (key, ciphertext) => run(() => Buffer.from(requireKey(key, "private").decapsulate(Uint8Array.from(ciphertext), key.bytes)))
 };
 
 module.exports = {PQC, randomBytes, equalBytes};

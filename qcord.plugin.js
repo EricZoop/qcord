@@ -250,37 +250,6 @@ function bytesToHex(bytes) {
   }
   return hex;
 }
-function asciiToBase16(ch) {
-  return ch >= 48 && ch <= 57 ? ch - 48 : ch >= 65 && ch <= 70 ? ch - (65 - 10) : ch >= 97 && ch <= 102 ? ch - (97 - 10) : void 0;
-}
-function hexToBytes(hex) {
-  if (typeof hex !== "string")
-    throw new TypeError("hex string expected, got " + typeof hex);
-  if (hasHexBuiltin) {
-    try {
-      return Uint8Array.fromHex(hex);
-    } catch (error) {
-      if (error instanceof SyntaxError)
-        throw new RangeError(error.message);
-      throw error;
-    }
-  }
-  const hl = hex.length;
-  const al = hl / 2;
-  if (hl % 2)
-    throw new RangeError("hex string expected, got unpadded hex of length " + hl);
-  const array = new Uint8Array(al);
-  for (let ai = 0, hi = 0; ai < al; ai++, hi += 2) {
-    const n1 = asciiToBase16(hex.charCodeAt(hi));
-    const n2 = asciiToBase16(hex.charCodeAt(hi + 1));
-    if (n1 === void 0 || n2 === void 0) {
-      const char = hex[hi] + hex[hi + 1];
-      throw new RangeError('hex string expected, got non-hex character "' + char + '" at index ' + hi);
-    }
-    array[ai] = n1 * 16 + n2;
-  }
-  return array;
-}
 function concatBytes(...arrays) {
   let sum = 0;
   for (let i = 0; i < arrays.length; i++) {
@@ -609,41 +578,6 @@ function aobject2(value, title = "object") {
     throw new TypeError(title === "object" ? "expected valid options object" : `"${title}" expected object, got type=${typeof value}`);
   return value;
 }
-function abool2(value, title = "") {
-  if (typeof value !== "boolean")
-    throw new TypeError(atitle2(title) + "expected boolean, got type=" + typeof value);
-  return value;
-}
-function abignumber(n) {
-  if (typeof n === "bigint") {
-    if (!isPosBig(n))
-      throw new RangeError("positive bigint expected, got " + n);
-  } else
-    anumber2(n);
-  return n;
-}
-function hexToNumber(hex) {
-  if (typeof hex !== "string")
-    throw new TypeError("hex string expected, got " + typeof hex);
-  return hex === "" ? _0n2 : BigInt("0x" + hex);
-}
-function bytesToNumberBE(bytes) {
-  return hexToNumber(bytesToHex(bytes));
-}
-function numberToBytesBE(n, len) {
-  anumber(len);
-  if (len === 0)
-    throw new Error("zero output length is invalid");
-  n = abignumber(n);
-  const expectedLen = len * 2;
-  const hex = n.toString(16);
-  if (hex.length > expectedLen)
-    throw new RangeError("number is too large");
-  return hexToBytes(hex.padStart(expectedLen, "0"));
-}
-function isPosBig(n) {
-  return typeof n === "bigint" && _0n2 <= n;
-}
 function validateObject(object, fields = {}, optFields = {}, title = "object") {
   aobject2(object, title);
   aobject2(fields, "fields");
@@ -664,14 +598,9 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
   iter(fields, false);
   iter(optFields, true);
 }
-var anumber2, _0n2, atitle2;
 var init_utils2 = __esm({
   "node_modules/@noble/curves/utils.js"() {
-    init_utils();
     /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-    anumber2 = anumber;
-    _0n2 = /* @__PURE__ */ BigInt(0);
-    atitle2 = (title) => title ? `"${title}" ` : "";
   }
 });
 
@@ -723,22 +652,22 @@ var FFTCore;
 var init_fft = __esm({
   "node_modules/@noble/curves/abstract/fft.js"() {
     init_utils2();
-    FFTCore = (F3, coreOpts) => {
+    FFTCore = (F2, coreOpts) => {
       validateObject(coreOpts, { N: "number", roots: "object", dit: "boolean" }, { invertButterflies: "boolean", skipStages: "number", brp: "boolean" }, "coreOpts");
-      const { N: N3, roots, dit, invertButterflies = false, skipStages = 0, brp = true } = coreOpts;
-      checkU32(N3, "coreOpts.N");
-      const bits = log2(N3);
-      if (!isPowerOfTwo(N3))
+      const { N: N2, roots, dit, invertButterflies = false, skipStages = 0, brp = true } = coreOpts;
+      checkU32(N2, "coreOpts.N");
+      const bits = log2(N2);
+      if (!isPowerOfTwo(N2))
         throw new Error("FFT: Polynomial size should be power of two");
       checkU32(skipStages, "coreOpts.skipStages");
       const maxSkipStages = bits === 0 ? 0 : bits - 1;
       if (skipStages > maxSkipStages)
         throw new Error(`FFT: wrong skipStages: expected 0 <= skipStages <= ${maxSkipStages}`);
-      if (roots.length !== N3)
-        throw new Error(`FFT: wrong roots length: expected ${N3}, got ${roots.length}`);
+      if (roots.length !== N2)
+        throw new Error(`FFT: wrong roots length: expected ${N2}, got ${roots.length}`);
       const isDit = dit !== invertButterflies;
       return (values) => {
-        if (values.length !== N3)
+        if (values.length !== N2)
           throw new Error("FFT: wrong Polynomial length");
         if (dit && brp)
           bitReversalInplace(values);
@@ -746,25 +675,25 @@ var init_fft = __esm({
           const s = dit ? i + 1 + skipStages : bits - i;
           const m = 1 << s;
           const m2 = m >> 1;
-          const stride = N3 >> s;
-          for (let k = 0; k < N3; k += m) {
+          const stride = N2 >> s;
+          for (let k = 0; k < N2; k += m) {
             for (let j = 0, grp = g++; j < m2; j++) {
-              const rootPos = invertButterflies ? dit ? N3 - grp : grp : j * stride;
+              const rootPos = invertButterflies ? dit ? N2 - grp : grp : j * stride;
               const i0 = k + j;
               const i1 = k + j + m2;
               const omega = roots[rootPos];
               const b = values[i1];
               const a = values[i0];
               if (isDit) {
-                const t = F3.mul(b, omega);
-                values[i0] = F3.add(a, t);
-                values[i1] = F3.sub(a, t);
+                const t = F2.mul(b, omega);
+                values[i0] = F2.add(a, t);
+                values[i1] = F2.sub(a, t);
               } else if (invertButterflies) {
-                values[i0] = F3.add(b, a);
-                values[i1] = F3.mul(F3.sub(b, a), omega);
+                values[i0] = F2.add(b, a);
+                values[i1] = F2.mul(F2.sub(b, a), omega);
               } else {
-                values[i0] = F3.add(a, b);
-                values[i1] = F3.mul(F3.sub(a, b), omega);
+                values[i0] = F2.add(a, b);
+                values[i1] = F2.mul(F2.sub(a, b), omega);
               }
             }
           }
@@ -1025,7 +954,7 @@ var init_utils3 = __esm({
 });
 
 // node_modules/@noble/post-quantum/_crystals.js
-var genCrystals, createXofShake, XOF128, XOF256;
+var genCrystals, createXofShake, XOF128;
 var init_crystals = __esm({
   "node_modules/@noble/post-quantum/_crystals.js"() {
     init_fft();
@@ -1033,20 +962,20 @@ var init_crystals = __esm({
     init_utils3();
     /*! noble-post-quantum - MIT License (c) 2024 Paul Miller (paulmillr.com) */
     genCrystals = (opts2) => {
-      const { newPoly: newPoly2, N: N3, Q: Q3, F: F3, ROOT_OF_UNITY: ROOT_OF_UNITY3, brvBits, isKyber } = opts2;
-      const mod = (a, modulo = Q3) => {
+      const { newPoly, N: N2, Q: Q2, F: F2, ROOT_OF_UNITY: ROOT_OF_UNITY2, brvBits, isKyber } = opts2;
+      const mod = (a, modulo = Q2) => {
         const result = a % modulo | 0;
         return (result >= 0 ? result | 0 : modulo + result | 0) | 0;
       };
-      const smod = (a, modulo = Q3) => {
+      const smod = (a, modulo = Q2) => {
         const r = mod(a, modulo) | 0;
         return (r > modulo >> 1 ? r - modulo | 0 : r) | 0;
       };
       function getZettas() {
-        const out = newPoly2(N3);
-        for (let i = 0; i < N3; i++) {
+        const out = newPoly(N2);
+        for (let i = 0; i < N2; i++) {
           const b = reverseBits(i, brvBits);
-          const p = BigInt(ROOT_OF_UNITY3) ** BigInt(b) % BigInt(Q3);
+          const p = BigInt(ROOT_OF_UNITY2) ** BigInt(b) % BigInt(Q2);
           out[i] = Number(p) | 0;
         }
         return out;
@@ -1058,11 +987,11 @@ var init_crystals = __esm({
       const field = isKyber ? {
         add: (a, b) => {
           const r = a + b | 0;
-          return r >= Q3 ? r - Q3 | 0 : r;
+          return r >= Q2 ? r - Q2 | 0 : r;
         },
         sub: (a, b) => {
           const r = a - b | 0;
-          return r < 0 ? r + Q3 | 0 : r;
+          return r < 0 ? r + Q2 | 0 : r;
         },
         mul: (a, b) => mod((a | 0) * (b | 0)) | 0,
         inv
@@ -1073,7 +1002,7 @@ var init_crystals = __esm({
         inv
       };
       const nttOpts = {
-        N: N3,
+        N: N2,
         roots: nttZetas,
         invertButterflies: true,
         skipStages: isKyber ? 1 : 0,
@@ -1088,19 +1017,19 @@ var init_crystals = __esm({
         decode: (r) => {
           dit(r);
           for (let i = 0; i < r.length; i++)
-            r[i] = mod(F3 * r[i]);
+            r[i] = mod(F2 * r[i]);
           return r;
         }
       };
       const bitsCoder = (d, c) => {
-        for (let i = 0, bufLen = 0; i < N3; i++) {
+        for (let i = 0, bufLen = 0; i < N2; i++) {
           bufLen += d;
           if (bufLen > 32)
             getMask(bufLen);
           bufLen %= 8;
         }
         const mask = getMask(d);
-        const bytesLen = d * (N3 / 8);
+        const bytesLen = d * (N2 / 8);
         return {
           bytesLen,
           encode: (poly_) => {
@@ -1115,7 +1044,7 @@ var init_crystals = __esm({
             return r;
           },
           decode: (bytes) => {
-            const r = newPoly2(N3);
+            const r = newPoly(N2);
             for (let i = 0, buf = 0, bufLen = 0, pos = 0; i < bytes.length; i++) {
               buf |= bytes[i] << bufLen;
               bufLen += 8;
@@ -1167,7 +1096,6 @@ var init_crystals = __esm({
       };
     };
     XOF128 = /* @__PURE__ */ createXofShake(shake128);
-    XOF256 = /* @__PURE__ */ createXofShake(shake256);
   }
 });
 
@@ -1581,10 +1509,10 @@ var init_ml_kem = __esm({
           throw new Error(`Decompress_d: expected d in [1..11], got ${d}`);
         return compress(d).decode(y);
       },
-      ByteEncode_d: (F3, d) => {
+      ByteEncode_d: (F2, d) => {
         if (d < 1 || d > 12)
           throw new Error(`ByteEncode_d: expected d in [1..12], got ${d}`);
-        return byteCoder(d).encode(F3);
+        return byteCoder(d).encode(F2);
       },
       ByteDecode_d: (B2, d) => {
         if (d < 1 || d > 12)
@@ -1608,1936 +1536,6 @@ var init_ml_kem = __esm({
         }
       }
     }))();
-  }
-});
-
-// node_modules/@noble/post-quantum/ml-dsa.js
-var ml_dsa_exports = {};
-__export(ml_dsa_exports, {
-  PARAMS: () => PARAMS2,
-  ml_dsa44: () => ml_dsa44,
-  ml_dsa65: () => ml_dsa65,
-  ml_dsa87: () => ml_dsa87
-});
-function validateInternalOpts(opts2, allowed) {
-  const normalized = checkOptKeys(opts2, allowed);
-  if (normalized.externalMu !== void 0)
-    abool2(normalized.externalMu, "opts.externalMu");
-  return normalized;
-}
-function RejNTTPoly(xof_) {
-  const xof = xof_;
-  const r = newPoly(N2);
-  for (let j = 0; j < N2; ) {
-    const b = xof();
-    if (b.length % 3)
-      throw new Error("RejNTTPoly: unaligned block");
-    for (let i = 0; j < N2 && i <= b.length - 3; i += 3) {
-      const t = (b[i + 0] | b[i + 1] << 8 | b[i + 2] << 16) & 8388607;
-      if (t < Q2)
-        r[j++] = t;
-    }
-  }
-  return r;
-}
-function getDilithium(opts_) {
-  const opts2 = opts_;
-  const { K, L, GAMMA1, GAMMA2, TAU, ETA, OMEGA } = opts2;
-  const { CRH_BYTES, TR_BYTES, C_TILDE_BYTES, XOF128: XOF1282, XOF256: XOF2562, securityLevel } = opts2;
-  if (![2, 4].includes(ETA))
-    throw new Error("Wrong ETA");
-  if (![1 << 17, 1 << 19].includes(GAMMA1))
-    throw new Error("Wrong GAMMA1");
-  if (![GAMMA2_1, GAMMA2_2].includes(GAMMA2))
-    throw new Error("Wrong GAMMA2");
-  const BETA = TAU * ETA;
-  const decompose = (r) => {
-    const rPlus = crystals2.mod(r);
-    const r0 = crystals2.smod(rPlus, 2 * GAMMA2) | 0;
-    if (rPlus - r0 === Q2 - 1)
-      return { r1: 0 | 0, r0: r0 - 1 | 0 };
-    const r1 = Math.floor((rPlus - r0) / (2 * GAMMA2)) | 0;
-    return { r1, r0 };
-  };
-  const HighBits = (r) => decompose(r).r1;
-  const LowBits = (r) => decompose(r).r0;
-  const MakeHint = (z, r) => {
-    const res0 = z <= GAMMA2 || z > Q2 - GAMMA2 || z === Q2 - GAMMA2 && r === 0 ? 0 : 1;
-    return res0;
-  };
-  const HINT_M = Math.floor((Q2 - 1) / (2 * GAMMA2));
-  const UseHint = (h, r) => {
-    const { r1, r0 } = decompose(r);
-    if (h === 1)
-      return r0 > 0 ? crystals2.mod(r1 + 1, HINT_M) | 0 : crystals2.mod(r1 - 1, HINT_M) | 0;
-    return r1 | 0;
-  };
-  const Power2Round = (r) => {
-    const rPlus = crystals2.mod(r);
-    const r0 = crystals2.smod(rPlus, 2 ** D) | 0;
-    return { r1: Math.floor((rPlus - r0) / 2 ** D) | 0, r0 };
-  };
-  const hintCoder = {
-    bytesLen: OMEGA + K,
-    encode: (h_) => {
-      const h = h_;
-      if (h === false)
-        throw new Error("hint.encode: hint is false");
-      const res = new Uint8Array(OMEGA + K);
-      for (let i = 0, k = 0; i < K; i++) {
-        for (let j = 0; j < N2; j++)
-          if (h[i][j] !== 0)
-            res[k++] = j;
-        res[OMEGA + i] = k;
-      }
-      return res;
-    },
-    decode: (buf) => {
-      const h = [];
-      let k = 0;
-      for (let i = 0; i < K; i++) {
-        const hi = newPoly(N2);
-        if (buf[OMEGA + i] < k || buf[OMEGA + i] > OMEGA)
-          return false;
-        for (let j = k; j < buf[OMEGA + i]; j++) {
-          if (j > k && buf[j] <= buf[j - 1])
-            return false;
-          hi[buf[j]] = 1;
-        }
-        k = buf[OMEGA + i];
-        h.push(hi);
-      }
-      for (let j = k; j < OMEGA; j++)
-        if (buf[j] !== 0)
-          return false;
-      return h;
-    }
-  };
-  const ETACoder = polyCoder2(ETA === 2 ? 3 : 4, (i) => ETA - i, (i) => {
-    if (!(-ETA <= i && i <= ETA))
-      throw new Error(`malformed key s1/s3 ${i} outside of ETA range [${-ETA}, ${ETA}]`);
-    return i;
-  });
-  const T0Coder = polyCoder2(13, (i) => (1 << D - 1) - i);
-  const T1Coder = polyCoder2(10);
-  const ZCoder = polyCoder2(GAMMA1 === 1 << 17 ? 18 : 20, (i) => crystals2.smod(GAMMA1 - i));
-  const W1Coder = polyCoder2(GAMMA2 === GAMMA2_1 ? 6 : 4);
-  const W1Vec = vecCoder(W1Coder, K);
-  const publicCoder = splitCoder("publicKey", 32, vecCoder(T1Coder, K));
-  const secretCoder = splitCoder("secretKey", 32, 32, TR_BYTES, vecCoder(ETACoder, L), vecCoder(ETACoder, K), vecCoder(T0Coder, K));
-  const sigCoder = splitCoder("signature", C_TILDE_BYTES, vecCoder(ZCoder, L), hintCoder);
-  const CoefFromHalfByte = ETA === 2 ? (n) => n < 15 ? 2 - n % 5 : false : (n) => n < 9 ? 4 - n : false;
-  function RejBoundedPoly(xof_) {
-    const xof = xof_;
-    const r = newPoly(N2);
-    for (let j = 0; j < N2; ) {
-      const b = xof();
-      for (let i = 0; j < N2 && i < b.length; i += 1) {
-        const d1 = CoefFromHalfByte(b[i] & 15);
-        const d2 = CoefFromHalfByte(b[i] >> 4 & 15);
-        if (d1 !== false)
-          r[j++] = d1;
-        if (j < N2 && d2 !== false)
-          r[j++] = d2;
-      }
-    }
-    return r;
-  }
-  const SampleInBall = (seed) => {
-    const pre = newPoly(N2);
-    const s = shake256.create({}).update(seed);
-    const buf = new Uint8Array(shake256.blockLen);
-    s.xofInto(buf);
-    const masks = buf.slice(0, 8);
-    for (let i = N2 - TAU, pos = 8, maskPos = 0, maskBit = 0; i < N2; i++) {
-      let b = i + 1;
-      for (; b > i; ) {
-        b = buf[pos++];
-        if (pos < shake256.blockLen)
-          continue;
-        s.xofInto(buf);
-        pos = 0;
-      }
-      pre[i] = pre[b];
-      pre[b] = 1 - ((masks[maskPos] >> maskBit++ & 1) << 1);
-      if (maskBit >= 8) {
-        maskPos++;
-        maskBit = 0;
-      }
-    }
-    return pre;
-  };
-  const polyPowerRound = (p_) => {
-    const p = p_;
-    const res0 = newPoly(N2);
-    const res1 = newPoly(N2);
-    for (let i = 0; i < p.length; i++) {
-      const { r0, r1 } = Power2Round(p[i]);
-      res0[i] = r0;
-      res1[i] = r1;
-    }
-    return { r0: res0, r1: res1 };
-  };
-  const polyUseHint = (u_, h_) => {
-    const u = u_;
-    const h = h_;
-    for (let i = 0; i < N2; i++)
-      u[i] = UseHint(h[i], u[i]);
-    return u;
-  };
-  const polyMakeHint = (a_, b_) => {
-    const a = a_;
-    const b = b_;
-    const v = newPoly(N2);
-    let cnt = 0;
-    for (let i = 0; i < N2; i++) {
-      const h = MakeHint(a[i], b[i]);
-      v[i] = h;
-      cnt += h;
-    }
-    return { v, cnt };
-  };
-  const signRandBytes = 32;
-  const seedCoder = splitCoder("seed", 32, 64, 32);
-  const internal = Object.freeze({
-    info: Object.freeze({ type: "internal-ml-dsa" }),
-    lengths: Object.freeze({
-      secretKey: secretCoder.bytesLen,
-      publicKey: publicCoder.bytesLen,
-      seed: 32,
-      signature: sigCoder.bytesLen,
-      signRand: signRandBytes
-    }),
-    keygen: (seed) => {
-      const seedDst = new Uint8Array(32 + 2);
-      const randSeed = seed === void 0;
-      if (randSeed)
-        seed = randomBytes2(32);
-      abytesDoc(seed, 32, "seed");
-      seedDst.set(seed);
-      if (randSeed)
-        cleanBytes(seed);
-      seedDst[32] = K;
-      seedDst[33] = L;
-      const [rho, rhoPrime, K_] = seedCoder.decode(shake256(seedDst, { dkLen: seedCoder.bytesLen }));
-      const xofPrime = XOF2562(rhoPrime);
-      const s1 = [];
-      for (let i = 0; i < L; i++)
-        s1.push(RejBoundedPoly(xofPrime.get(i & 255, i >> 8 & 255)));
-      const s2 = [];
-      for (let i = L; i < L + K; i++)
-        s2.push(RejBoundedPoly(xofPrime.get(i & 255, i >> 8 & 255)));
-      const s1Hat = s1.map((i) => crystals2.NTT.encode(i.slice()));
-      const t0 = [];
-      const t1 = [];
-      const xof = XOF1282(rho);
-      const t = newPoly(N2);
-      for (let i = 0; i < K; i++) {
-        cleanBytes(t);
-        for (let j = 0; j < L; j++) {
-          const aij = RejNTTPoly(xof.get(j, i));
-          polyAdd2(t, MultiplyNTTs2(aij, s1Hat[j]));
-        }
-        crystals2.NTT.decode(t);
-        const { r0, r1 } = polyPowerRound(polyAdd2(t, s2[i]));
-        t0.push(r0);
-        t1.push(r1);
-      }
-      const publicKey = publicCoder.encode([rho, t1]);
-      const tr = shake256(publicKey, { dkLen: TR_BYTES });
-      const secretKey = secretCoder.encode([rho, K_, tr, s1, s2, t0]);
-      xof.clean();
-      xofPrime.clean();
-      cleanBytes(rho, rhoPrime, K_, s1, s2, s1Hat, t, t0, t1, tr, seedDst);
-      return {
-        publicKey,
-        secretKey
-      };
-    },
-    getPublicKey: (secretKey) => {
-      const [rho, _K, _tr, s1, s2, _t0] = secretCoder.decode(secretKey);
-      const xof = XOF1282(rho);
-      const s1Hat = s1.map((p) => crystals2.NTT.encode(p.slice()));
-      const t1 = [];
-      const tmp = newPoly(N2);
-      for (let i = 0; i < K; i++) {
-        tmp.fill(0);
-        for (let j = 0; j < L; j++) {
-          const aij = RejNTTPoly(xof.get(j, i));
-          polyAdd2(tmp, MultiplyNTTs2(aij, s1Hat[j]));
-        }
-        crystals2.NTT.decode(tmp);
-        polyAdd2(tmp, s2[i]);
-        const { r1 } = polyPowerRound(tmp);
-        t1.push(r1);
-      }
-      xof.clean();
-      cleanBytes(tmp, s1Hat, _t0, s1, s2);
-      return publicCoder.encode([rho, t1]);
-    },
-    // NOTE: random is optional.
-    sign: (msg, secretKey, opts3 = {}) => {
-      opts3 = validateSigOpts(opts3, INTERNAL_SIG_OPT_KEYS);
-      opts3 = validateInternalOpts(opts3, INTERNAL_SIG_OPT_KEYS);
-      const { extraEntropy: random, externalMu = false } = opts3;
-      if (externalMu)
-        abytesDoc(msg, CRH_BYTES, "mu");
-      const ownRnd = random === false || random === void 0;
-      const rnd = random === false ? new Uint8Array(32) : random === void 0 ? randomBytes2(signRandBytes) : random;
-      abytesDoc(rnd, 32, "extraEntropy");
-      const decoded = (() => {
-        try {
-          return secretCoder.decode(secretKey);
-        } catch (error) {
-          if (ownRnd)
-            cleanBytes(rnd);
-          throw error;
-        }
-      })();
-      const [rho, _K, tr, s1, s2, t0] = decoded;
-      const A = [];
-      const xof = XOF1282(rho);
-      for (let i = 0; i < K; i++) {
-        const pv = [];
-        for (let j = 0; j < L; j++)
-          pv.push(RejNTTPoly(xof.get(j, i)));
-        A.push(pv);
-      }
-      xof.clean();
-      for (let i = 0; i < L; i++)
-        crystals2.NTT.encode(s1[i]);
-      for (let i = 0; i < K; i++) {
-        crystals2.NTT.encode(s2[i]);
-        crystals2.NTT.encode(t0[i]);
-      }
-      const mu = externalMu ? msg : (
-        // 6: µ ← H(tr||M, 512)
-        //    ▷ Compute message representative µ
-        shake256.create({ dkLen: CRH_BYTES }).update(tr).update(msg).digest()
-      );
-      const rhoprime = shake256.create({ dkLen: CRH_BYTES }).update(_K).update(rnd).update(mu).digest();
-      if (ownRnd)
-        cleanBytes(rnd);
-      abytesDoc(rhoprime, CRH_BYTES);
-      const x256 = XOF2562(rhoprime, ZCoder.bytesLen);
-      main_loop: for (let kappa = 0; ; ) {
-        const y = [];
-        for (let i = 0; i < L; i++, kappa++)
-          y.push(ZCoder.decode(x256.get(kappa & 255, kappa >> 8)()));
-        const z = y.map((i) => crystals2.NTT.encode(i.slice()));
-        const w = [];
-        for (let i = 0; i < K; i++) {
-          const wi = newPoly(N2);
-          for (let j = 0; j < L; j++)
-            polyAdd2(wi, MultiplyNTTs2(A[i][j], z[j]));
-          crystals2.NTT.decode(wi);
-          w.push(wi);
-        }
-        const w1 = w.map((j) => j.map(HighBits));
-        const cTilde = shake256.create({ dkLen: C_TILDE_BYTES }).update(mu).update(W1Vec.encode(w1)).digest();
-        const cHat = crystals2.NTT.encode(SampleInBall(cTilde));
-        const cs1 = s1.map((i) => MultiplyNTTs2(i, cHat));
-        for (let i = 0; i < L; i++) {
-          polyAdd2(crystals2.NTT.decode(cs1[i]), y[i]);
-          if (polyChknorm(cs1[i], GAMMA1 - BETA)) {
-            cleanBytes(cTilde, cs1, cHat, w1, w, z, y);
-            continue main_loop;
-          }
-        }
-        let cnt = 0;
-        const h = [];
-        for (let i = 0; i < K; i++) {
-          const cs2 = crystals2.NTT.decode(MultiplyNTTs2(s2[i], cHat));
-          const r0 = polySub2(w[i], cs2).map(LowBits);
-          if (polyChknorm(r0, GAMMA2 - BETA)) {
-            cleanBytes(cTilde, cs1, cHat, w1, w, z, y, h, cs2, r0);
-            continue main_loop;
-          }
-          const ct0 = crystals2.NTT.decode(MultiplyNTTs2(t0[i], cHat));
-          if (polyChknorm(ct0, GAMMA2)) {
-            cleanBytes(cTilde, cs1, cHat, w1, w, z, y, h, cs2, r0, ct0);
-            continue main_loop;
-          }
-          polyAdd2(r0, ct0);
-          const hint = polyMakeHint(r0, w1[i]);
-          h.push(hint.v);
-          cnt += hint.cnt;
-        }
-        if (cnt > OMEGA) {
-          cleanBytes(cTilde, cs1, cHat, w1, w, z, y, h);
-          continue;
-        }
-        x256.clean();
-        const res = sigCoder.encode([cTilde, cs1, h]);
-        cleanBytes(cTilde, cs1, h, cHat, w1, w, z, y, rhoprime, s1, s2, t0, ...A);
-        if (!externalMu)
-          cleanBytes(mu);
-        return res;
-      }
-      throw new Error("Unreachable code path reached, report this error");
-    },
-    verify: (sig, msg, publicKey, opts3 = {}) => {
-      opts3 = validateInternalOpts(opts3, INTERNAL_VER_OPT_KEYS);
-      const { externalMu = false } = opts3;
-      if (externalMu)
-        abytesDoc(msg, CRH_BYTES, "mu");
-      const [rho, t1] = publicCoder.decode(publicKey);
-      const tr = shake256(publicKey, { dkLen: TR_BYTES });
-      if (sig.length !== sigCoder.bytesLen)
-        return false;
-      const [cTilde, z, h] = sigCoder.decode(sig);
-      if (h === false)
-        return false;
-      for (let i = 0; i < L; i++)
-        if (polyChknorm(z[i], GAMMA1 - BETA))
-          return false;
-      const mu = externalMu ? msg : (
-        // 7: µ ← H(tr||M, 512)
-        shake256.create({ dkLen: CRH_BYTES }).update(tr).update(msg).digest()
-      );
-      const c = crystals2.NTT.encode(SampleInBall(cTilde));
-      const zNtt = z.map((i) => i.slice());
-      for (let i = 0; i < L; i++)
-        crystals2.NTT.encode(zNtt[i]);
-      const wTick1 = [];
-      const xof = XOF1282(rho);
-      for (let i = 0; i < K; i++) {
-        const ct12d = MultiplyNTTs2(crystals2.NTT.encode(polyShiftl(t1[i])), c);
-        const Az = newPoly(N2);
-        for (let j = 0; j < L; j++) {
-          const aij = RejNTTPoly(xof.get(j, i));
-          polyAdd2(Az, MultiplyNTTs2(aij, zNtt[j]));
-        }
-        const wApprox = crystals2.NTT.decode(polySub2(Az, ct12d));
-        wTick1.push(polyUseHint(wApprox, h[i]));
-      }
-      xof.clean();
-      const c2 = shake256.create({ dkLen: C_TILDE_BYTES }).update(mu).update(W1Vec.encode(wTick1)).digest();
-      for (const t of h) {
-        const sum = t.reduce((acc, i) => acc + i, 0);
-        if (!(sum <= OMEGA))
-          return false;
-      }
-      for (const t of z)
-        if (polyChknorm(t, GAMMA1 - BETA))
-          return false;
-      return equalBytes(cTilde, c2);
-    }
-  });
-  return Object.freeze({
-    info: Object.freeze({ type: "ml-dsa" }),
-    internal,
-    securityLevel,
-    keygen: internal.keygen,
-    lengths: internal.lengths,
-    getPublicKey: internal.getPublicKey,
-    sign: (msg, secretKey, opts3 = {}) => {
-      opts3 = validateSigOpts(opts3);
-      const M = getMessage(msg, opts3.context);
-      const res = internal.sign(M, secretKey, {
-        extraEntropy: opts3.extraEntropy,
-        externalMu: false
-      });
-      cleanBytes(M);
-      return res;
-    },
-    verify: (sig, msg, publicKey, opts3 = {}) => {
-      opts3 = validateVerOpts(opts3);
-      abytesDoc(sig, void 0, "signature");
-      return internal.verify(sig, getMessage(msg, opts3.context), publicKey, { externalMu: false });
-    },
-    prehash: (hash) => {
-      checkHash(hash, securityLevel);
-      const rawHash = hash;
-      return Object.freeze({
-        info: Object.freeze({ type: "hashml-dsa" }),
-        securityLevel,
-        lengths: internal.lengths,
-        keygen: internal.keygen,
-        getPublicKey: internal.getPublicKey,
-        sign: (msg, secretKey, opts3 = {}) => {
-          opts3 = validateSigOpts(opts3);
-          const M = getMessagePrehash(rawHash, msg, opts3.context);
-          const res = internal.sign(M, secretKey, {
-            extraEntropy: opts3.extraEntropy,
-            externalMu: false
-          });
-          cleanBytes(M);
-          return res;
-        },
-        verify: (sig, msg, publicKey, opts3 = {}) => {
-          opts3 = validateVerOpts(opts3);
-          abytesDoc(sig, void 0, "signature");
-          return internal.verify(sig, getMessagePrehash(rawHash, msg, opts3.context), publicKey, {
-            externalMu: false
-          });
-        }
-      });
-    }
-  });
-}
-var INTERNAL_SIG_OPT_KEYS, INTERNAL_VER_OPT_KEYS, N2, Q2, ROOT_OF_UNITY2, F2, D, GAMMA2_1, GAMMA2_2, PARAMS2, newPoly, crystals2, id, polyCoder2, polyAdd2, polySub2, polyShiftl, polyChknorm, MultiplyNTTs2, ml_dsa44, ml_dsa65, ml_dsa87;
-var init_ml_dsa = __esm({
-  "node_modules/@noble/post-quantum/ml-dsa.js"() {
-    init_utils2();
-    init_sha3();
-    init_crystals();
-    init_utils3();
-    /*! noble-post-quantum - MIT License (c) 2024 Paul Miller (paulmillr.com) */
-    INTERNAL_SIG_OPT_KEYS = /* @__PURE__ */ Object.freeze([
-      "extraEntropy",
-      "externalMu"
-    ]);
-    INTERNAL_VER_OPT_KEYS = /* @__PURE__ */ Object.freeze(["externalMu"]);
-    N2 = 256;
-    Q2 = 8380417;
-    ROOT_OF_UNITY2 = 1753;
-    F2 = 8347681;
-    D = 13;
-    GAMMA2_1 = Math.floor((Q2 - 1) / 88) | 0;
-    GAMMA2_2 = Math.floor((Q2 - 1) / 32) | 0;
-    PARAMS2 = /* @__PURE__ */ (() => Object.freeze({
-      2: Object.freeze({
-        K: 4,
-        L: 4,
-        D,
-        GAMMA1: 2 ** 17,
-        GAMMA2: GAMMA2_1,
-        TAU: 39,
-        ETA: 2,
-        OMEGA: 80
-      }),
-      3: Object.freeze({
-        K: 6,
-        L: 5,
-        D,
-        GAMMA1: 2 ** 19,
-        GAMMA2: GAMMA2_2,
-        TAU: 49,
-        ETA: 4,
-        OMEGA: 55
-      }),
-      5: Object.freeze({
-        K: 8,
-        L: 7,
-        D,
-        GAMMA1: 2 ** 19,
-        GAMMA2: GAMMA2_2,
-        TAU: 60,
-        ETA: 2,
-        OMEGA: 75
-      })
-    }))();
-    newPoly = (n) => new Int32Array(n);
-    crystals2 = /* @__PURE__ */ genCrystals({
-      N: N2,
-      Q: Q2,
-      F: F2,
-      ROOT_OF_UNITY: ROOT_OF_UNITY2,
-      newPoly,
-      isKyber: false,
-      brvBits: 8
-    });
-    id = (n) => n;
-    polyCoder2 = (d, compress2 = id, verify = id) => crystals2.bitsCoder(d, {
-      encode: (i) => compress2(verify(i)),
-      decode: (i) => verify(compress2(i))
-    });
-    polyAdd2 = (a_, b_) => {
-      const a = a_;
-      const b = b_;
-      for (let i = 0; i < a.length; i++)
-        a[i] = crystals2.mod(a[i] + b[i]);
-      return a;
-    };
-    polySub2 = (a_, b_) => {
-      const a = a_;
-      const b = b_;
-      for (let i = 0; i < a.length; i++)
-        a[i] = crystals2.mod(a[i] - b[i]);
-      return a;
-    };
-    polyShiftl = (p_) => {
-      const p = p_;
-      for (let i = 0; i < N2; i++)
-        p[i] <<= D;
-      return p;
-    };
-    polyChknorm = (p_, B2) => {
-      const p = p_;
-      for (let i = 0; i < N2; i++)
-        if (Math.abs(crystals2.smod(p[i])) >= B2)
-          return true;
-      return false;
-    };
-    MultiplyNTTs2 = (a_, b_) => {
-      const a = a_;
-      const b = b_;
-      const c = newPoly(N2);
-      for (let i = 0; i < a.length; i++)
-        c[i] = crystals2.mod(a[i] * b[i]);
-      return c;
-    };
-    ml_dsa44 = /* @__PURE__ */ (() => getDilithium({
-      ...PARAMS2[2],
-      CRH_BYTES: 64,
-      TR_BYTES: 64,
-      C_TILDE_BYTES: 32,
-      XOF128,
-      XOF256,
-      securityLevel: 128
-    }))();
-    ml_dsa65 = /* @__PURE__ */ (() => getDilithium({
-      ...PARAMS2[3],
-      CRH_BYTES: 64,
-      TR_BYTES: 64,
-      C_TILDE_BYTES: 48,
-      XOF128,
-      XOF256,
-      securityLevel: 192
-    }))();
-    ml_dsa87 = /* @__PURE__ */ (() => getDilithium({
-      ...PARAMS2[5],
-      CRH_BYTES: 64,
-      TR_BYTES: 64,
-      C_TILDE_BYTES: 64,
-      XOF128,
-      XOF256,
-      securityLevel: 256
-    }))();
-  }
-});
-
-// node_modules/@noble/hashes/hmac.js
-var _HMAC, hmac;
-var init_hmac = __esm({
-  "node_modules/@noble/hashes/hmac.js"() {
-    init_utils();
-    _HMAC = class {
-      constructor(hash, key) {
-        __publicField(this, "oHash");
-        __publicField(this, "iHash");
-        __publicField(this, "blockLen");
-        __publicField(this, "outputLen");
-        __publicField(this, "canXOF", false);
-        __publicField(this, "finished", false);
-        __publicField(this, "destroyed", false);
-        ahash(hash);
-        abytes(key, void 0, "key");
-        this.iHash = hash.create();
-        if (typeof this.iHash.update !== "function")
-          throw new Error("expected Hash instance");
-        this.blockLen = this.iHash.blockLen;
-        this.outputLen = this.iHash.outputLen;
-        const blockLen = this.blockLen;
-        const pad = new Uint8Array(blockLen);
-        pad.set(key.length > blockLen ? hash.create().update(key).digest() : key);
-        for (let i = 0; i < pad.length; i++)
-          pad[i] ^= 54;
-        this.iHash.update(pad);
-        this.oHash = hash.create();
-        for (let i = 0; i < pad.length; i++)
-          pad[i] ^= 54 ^ 92;
-        this.oHash.update(pad);
-        clean(pad);
-      }
-      update(buf) {
-        aexists(this);
-        this.iHash.update(buf);
-        return this;
-      }
-      digestInto(out) {
-        aexists(this);
-        aoutput(out, this);
-        this.finished = true;
-        const buf = out.subarray(0, this.outputLen);
-        this.iHash.digestInto(buf);
-        this.oHash.update(buf);
-        this.oHash.digestInto(buf);
-        this.destroy();
-      }
-      digest() {
-        const out = new Uint8Array(this.oHash.outputLen);
-        this.digestInto(out);
-        return out;
-      }
-      _cloneInto(to) {
-        to || (to = Object.create(Object.getPrototypeOf(this), {}));
-        const { oHash, iHash, finished, destroyed, blockLen, outputLen, canXOF } = this;
-        to = to;
-        to.finished = finished;
-        to.destroyed = destroyed;
-        to.blockLen = blockLen;
-        to.outputLen = outputLen;
-        to.canXOF = canXOF;
-        to.oHash = oHash._cloneInto(to.oHash);
-        to.iHash = iHash._cloneInto(to.iHash);
-        return to;
-      }
-      clone() {
-        return this._cloneInto();
-      }
-      destroy() {
-        this.destroyed = true;
-        this.oHash.destroy();
-        this.iHash.destroy();
-      }
-    };
-    hmac = /* @__PURE__ */ (() => {
-      const hmac_ = ((hash, key, message) => new _HMAC(hash, key).update(message).digest());
-      hmac_.create = (hash, key) => new _HMAC(hash, key);
-      return hmac_;
-    })();
-  }
-});
-
-// node_modules/@noble/hashes/_md.js
-function Chi(a, b, c) {
-  return a & b ^ ~a & c;
-}
-function Maj(a, b, c) {
-  return a & b ^ a & c ^ b & c;
-}
-var HashMD, SHA256_IV, SHA224_IV, SHA384_IV, SHA512_IV;
-var init_md = __esm({
-  "node_modules/@noble/hashes/_md.js"() {
-    init_u64();
-    init_utils();
-    HashMD = class {
-      constructor(blockLen, outputLen, padOffset, isLE3) {
-        __publicField(this, "blockLen");
-        __publicField(this, "outputLen");
-        __publicField(this, "canXOF", false);
-        __publicField(this, "padOffset");
-        __publicField(this, "isLE");
-        // For partial updates less than block size
-        __publicField(this, "buffer");
-        __publicField(this, "view");
-        __publicField(this, "finished", false);
-        __publicField(this, "length", 0);
-        __publicField(this, "pos", 0);
-        __publicField(this, "destroyed", false);
-        this.blockLen = blockLen;
-        this.outputLen = outputLen;
-        this.padOffset = padOffset;
-        this.isLE = isLE3;
-        this.buffer = new Uint8Array(blockLen);
-        this.view = createView(this.buffer);
-      }
-      update(data) {
-        aexists(this);
-        abytes(data);
-        const { view, buffer, blockLen } = this;
-        const len = data.length;
-        let processed = false;
-        for (let pos = 0; pos < len; ) {
-          const take = Math.min(blockLen - this.pos, len - pos);
-          if (take === blockLen) {
-            const dataView = createView(data);
-            for (; blockLen <= len - pos; pos += blockLen)
-              this.process(dataView, pos);
-            processed = true;
-            continue;
-          }
-          buffer.set(pos === 0 && take === len ? data : data.subarray(pos, pos + take), this.pos);
-          this.pos += take;
-          pos += take;
-          if (this.pos === blockLen) {
-            this.process(view, 0);
-            this.pos = 0;
-            processed = true;
-          }
-        }
-        this.length += data.length;
-        if (processed)
-          this.roundClean();
-        return this;
-      }
-      digestInto(out) {
-        aexists(this);
-        aoutput(out, this);
-        this.finished = true;
-        const { buffer, view, blockLen, isLE: isLE3 } = this;
-        let { pos } = this;
-        buffer[pos++] = 128;
-        buffer.fill(0, pos);
-        if (this.padOffset > blockLen - pos) {
-          this.process(view, 0);
-          buffer.fill(0);
-        }
-        setU64FromNum(view, blockLen - 8, this.length * 8, isLE3);
-        this.process(view, 0);
-        this.roundClean();
-        const oview = out === buffer ? view : createView(out);
-        const len = this.outputLen;
-        const outLen = len / 4;
-        const state = this.get();
-        if (len % 4 || outLen > state.length)
-          throw new Error("invalid outputLen");
-        for (let i = 0; i < outLen; i++)
-          oview.setUint32(4 * i, state[i], isLE3);
-      }
-      digest() {
-        const { buffer, outputLen } = this;
-        this.digestInto(buffer);
-        const res = buffer.slice(0, outputLen);
-        this.destroy();
-        return res;
-      }
-      _cloneIntoMeta(to) {
-        const { buffer, length, finished, destroyed, pos } = this;
-        to.destroyed = destroyed;
-        to.finished = finished;
-        to.length = length;
-        to.pos = pos;
-        if (pos)
-          to.buffer.set(buffer);
-        return to;
-      }
-      clone() {
-        return this._cloneInto();
-      }
-    };
-    SHA256_IV = /* @__PURE__ */ Uint32Array.from([
-      1779033703,
-      3144134277,
-      1013904242,
-      2773480762,
-      1359893119,
-      2600822924,
-      528734635,
-      1541459225
-    ]);
-    SHA224_IV = /* @__PURE__ */ Uint32Array.from([
-      3238371032,
-      914150663,
-      812702999,
-      4144912697,
-      4290775857,
-      1750603025,
-      1694076839,
-      3204075428
-    ]);
-    SHA384_IV = /* @__PURE__ */ Uint32Array.from([
-      3418070365,
-      3238371032,
-      1654270250,
-      914150663,
-      2438529370,
-      812702999,
-      355462360,
-      4144912697,
-      1731405415,
-      4290775857,
-      2394180231,
-      1750603025,
-      3675008525,
-      1694076839,
-      1203062813,
-      3204075428
-    ]);
-    SHA512_IV = /* @__PURE__ */ Uint32Array.from([
-      1779033703,
-      4089235720,
-      3144134277,
-      2227873595,
-      1013904242,
-      4271175723,
-      2773480762,
-      1595750129,
-      1359893119,
-      2917565137,
-      2600822924,
-      725511199,
-      528734635,
-      4215389547,
-      1541459225,
-      327033209
-    ]);
-  }
-});
-
-// node_modules/@noble/hashes/sha2.js
-var sha2_exports = {};
-__export(sha2_exports, {
-  _SHA224: () => _SHA224,
-  _SHA256: () => _SHA256,
-  _SHA384: () => _SHA384,
-  _SHA512: () => _SHA512,
-  _SHA512_224: () => _SHA512_224,
-  _SHA512_256: () => _SHA512_256,
-  sha224: () => sha224,
-  sha256: () => sha256,
-  sha384: () => sha384,
-  sha512: () => sha512,
-  sha512_224: () => sha512_224,
-  sha512_256: () => sha512_256
-});
-var SHA256_K, SHA256_W, SHA2_32B, _SHA256, _SHA224, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, _SHA384, T224_IV, T256_IV, _SHA512_224, _SHA512_256, sha256, sha224, sha512, sha384, sha512_256, sha512_224;
-var init_sha2 = __esm({
-  "node_modules/@noble/hashes/sha2.js"() {
-    init_md();
-    init_u64();
-    init_utils();
-    SHA256_K = /* @__PURE__ */ Uint32Array.from([
-      1116352408,
-      1899447441,
-      3049323471,
-      3921009573,
-      961987163,
-      1508970993,
-      2453635748,
-      2870763221,
-      3624381080,
-      310598401,
-      607225278,
-      1426881987,
-      1925078388,
-      2162078206,
-      2614888103,
-      3248222580,
-      3835390401,
-      4022224774,
-      264347078,
-      604807628,
-      770255983,
-      1249150122,
-      1555081692,
-      1996064986,
-      2554220882,
-      2821834349,
-      2952996808,
-      3210313671,
-      3336571891,
-      3584528711,
-      113926993,
-      338241895,
-      666307205,
-      773529912,
-      1294757372,
-      1396182291,
-      1695183700,
-      1986661051,
-      2177026350,
-      2456956037,
-      2730485921,
-      2820302411,
-      3259730800,
-      3345764771,
-      3516065817,
-      3600352804,
-      4094571909,
-      275423344,
-      430227734,
-      506948616,
-      659060556,
-      883997877,
-      958139571,
-      1322822218,
-      1537002063,
-      1747873779,
-      1955562222,
-      2024104815,
-      2227730452,
-      2361852424,
-      2428436474,
-      2756734187,
-      3204031479,
-      3329325298
-    ]);
-    SHA256_W = /* @__PURE__ */ new Uint32Array(64);
-    SHA2_32B = class extends HashMD {
-      constructor(outputLen, IV) {
-        super(64, outputLen, 8, false);
-        // We cannot use array here since array allows indexing by variable
-        // which means optimizer/compiler cannot use registers.
-        // Numeric initializers matter: starting the fields as `undefined` changes
-        // V8's field representation and makes sha256 3x slower (measured).
-        __publicField(this, "A", 0);
-        __publicField(this, "B", 0);
-        __publicField(this, "C", 0);
-        __publicField(this, "D", 0);
-        __publicField(this, "E", 0);
-        __publicField(this, "F", 0);
-        __publicField(this, "G", 0);
-        __publicField(this, "H", 0);
-        this.A = IV[0] | 0;
-        this.B = IV[1] | 0;
-        this.C = IV[2] | 0;
-        this.D = IV[3] | 0;
-        this.E = IV[4] | 0;
-        this.F = IV[5] | 0;
-        this.G = IV[6] | 0;
-        this.H = IV[7] | 0;
-      }
-      get() {
-        const { A, B: B2, C, D: D2, E, F: F3, G, H } = this;
-        return [A, B2, C, D2, E, F3, G, H];
-      }
-      // prettier-ignore
-      set(A, B2, C, D2, E, F3, G, H) {
-        this.A = A | 0;
-        this.B = B2 | 0;
-        this.C = C | 0;
-        this.D = D2 | 0;
-        this.E = E | 0;
-        this.F = F3 | 0;
-        this.G = G | 0;
-        this.H = H | 0;
-      }
-      _cloneInto(to) {
-        (to || (to = new this.constructor())).set(...this.get());
-        return this._cloneIntoMeta(to);
-      }
-      process(view, offset) {
-        for (let i = 0; i < 16; i++, offset += 4)
-          SHA256_W[i] = view.getUint32(offset, false);
-        for (let i = 16; i < 64; i++) {
-          const W15 = SHA256_W[i - 15];
-          const W2 = SHA256_W[i - 2];
-          const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ W15 >>> 3;
-          const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ W2 >>> 10;
-          SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
-        }
-        let { A, B: B2, C, D: D2, E, F: F3, G, H } = this;
-        for (let i = 0; i < 64; i++) {
-          const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
-          const T1 = H + sigma1 + Chi(E, F3, G) + SHA256_K[i] + SHA256_W[i] | 0;
-          const sigma0 = rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22);
-          const T2 = sigma0 + Maj(A, B2, C) | 0;
-          H = G;
-          G = F3;
-          F3 = E;
-          E = D2 + T1 | 0;
-          D2 = C;
-          C = B2;
-          B2 = A;
-          A = T1 + T2 | 0;
-        }
-        A = A + this.A | 0;
-        B2 = B2 + this.B | 0;
-        C = C + this.C | 0;
-        D2 = D2 + this.D | 0;
-        E = E + this.E | 0;
-        F3 = F3 + this.F | 0;
-        G = G + this.G | 0;
-        H = H + this.H | 0;
-        this.set(A, B2, C, D2, E, F3, G, H);
-      }
-      roundClean() {
-        clean(SHA256_W);
-      }
-      destroy() {
-        this.destroyed = true;
-        this.set(0, 0, 0, 0, 0, 0, 0, 0);
-        clean(this.buffer);
-      }
-    };
-    _SHA256 = class extends SHA2_32B {
-      constructor() {
-        super(32, SHA256_IV);
-      }
-    };
-    _SHA224 = class extends SHA2_32B {
-      constructor() {
-        super(28, SHA224_IV);
-      }
-    };
-    K512 = /* @__PURE__ */ (() => split([
-      "0x428a2f98d728ae22",
-      "0x7137449123ef65cd",
-      "0xb5c0fbcfec4d3b2f",
-      "0xe9b5dba58189dbbc",
-      "0x3956c25bf348b538",
-      "0x59f111f1b605d019",
-      "0x923f82a4af194f9b",
-      "0xab1c5ed5da6d8118",
-      "0xd807aa98a3030242",
-      "0x12835b0145706fbe",
-      "0x243185be4ee4b28c",
-      "0x550c7dc3d5ffb4e2",
-      "0x72be5d74f27b896f",
-      "0x80deb1fe3b1696b1",
-      "0x9bdc06a725c71235",
-      "0xc19bf174cf692694",
-      "0xe49b69c19ef14ad2",
-      "0xefbe4786384f25e3",
-      "0x0fc19dc68b8cd5b5",
-      "0x240ca1cc77ac9c65",
-      "0x2de92c6f592b0275",
-      "0x4a7484aa6ea6e483",
-      "0x5cb0a9dcbd41fbd4",
-      "0x76f988da831153b5",
-      "0x983e5152ee66dfab",
-      "0xa831c66d2db43210",
-      "0xb00327c898fb213f",
-      "0xbf597fc7beef0ee4",
-      "0xc6e00bf33da88fc2",
-      "0xd5a79147930aa725",
-      "0x06ca6351e003826f",
-      "0x142929670a0e6e70",
-      "0x27b70a8546d22ffc",
-      "0x2e1b21385c26c926",
-      "0x4d2c6dfc5ac42aed",
-      "0x53380d139d95b3df",
-      "0x650a73548baf63de",
-      "0x766a0abb3c77b2a8",
-      "0x81c2c92e47edaee6",
-      "0x92722c851482353b",
-      "0xa2bfe8a14cf10364",
-      "0xa81a664bbc423001",
-      "0xc24b8b70d0f89791",
-      "0xc76c51a30654be30",
-      "0xd192e819d6ef5218",
-      "0xd69906245565a910",
-      "0xf40e35855771202a",
-      "0x106aa07032bbd1b8",
-      "0x19a4c116b8d2d0c8",
-      "0x1e376c085141ab53",
-      "0x2748774cdf8eeb99",
-      "0x34b0bcb5e19b48a8",
-      "0x391c0cb3c5c95a63",
-      "0x4ed8aa4ae3418acb",
-      "0x5b9cca4f7763e373",
-      "0x682e6ff3d6b2b8a3",
-      "0x748f82ee5defb2fc",
-      "0x78a5636f43172f60",
-      "0x84c87814a1f0ab72",
-      "0x8cc702081a6439ec",
-      "0x90befffa23631e28",
-      "0xa4506cebde82bde9",
-      "0xbef9a3f7b2c67915",
-      "0xc67178f2e372532b",
-      "0xca273eceea26619c",
-      "0xd186b8c721c0c207",
-      "0xeada7dd6cde0eb1e",
-      "0xf57d4f7fee6ed178",
-      "0x06f067aa72176fba",
-      "0x0a637dc5a2c898a6",
-      "0x113f9804bef90dae",
-      "0x1b710b35131c471b",
-      "0x28db77f523047d84",
-      "0x32caab7b40c72493",
-      "0x3c9ebe0a15c9bebc",
-      "0x431d67c49c100d4c",
-      "0x4cc5d4becb3e42b6",
-      "0x597f299cfc657e2a",
-      "0x5fcb6fab3ad6faec",
-      "0x6c44198c4a475817"
-    ].map((n) => BigInt(n))))();
-    SHA512_Kh = /* @__PURE__ */ (() => K512[0])();
-    SHA512_Kl = /* @__PURE__ */ (() => K512[1])();
-    SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
-    SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
-    SHA2_64B = class extends HashMD {
-      constructor(outputLen, IV) {
-        super(128, outputLen, 16, false);
-        // We cannot use array here since array allows indexing by variable
-        // which means optimizer/compiler cannot use registers.
-        // h -- high 32 bits, l -- low 32 bits
-        // Numeric initializers matter: starting the fields as `undefined` changes
-        // V8's field representation and slows hashing down (measured on sha256).
-        __publicField(this, "Ah", 0);
-        __publicField(this, "Al", 0);
-        __publicField(this, "Bh", 0);
-        __publicField(this, "Bl", 0);
-        __publicField(this, "Ch", 0);
-        __publicField(this, "Cl", 0);
-        __publicField(this, "Dh", 0);
-        __publicField(this, "Dl", 0);
-        __publicField(this, "Eh", 0);
-        __publicField(this, "El", 0);
-        __publicField(this, "Fh", 0);
-        __publicField(this, "Fl", 0);
-        __publicField(this, "Gh", 0);
-        __publicField(this, "Gl", 0);
-        __publicField(this, "Hh", 0);
-        __publicField(this, "Hl", 0);
-        this.Ah = IV[0] | 0;
-        this.Al = IV[1] | 0;
-        this.Bh = IV[2] | 0;
-        this.Bl = IV[3] | 0;
-        this.Ch = IV[4] | 0;
-        this.Cl = IV[5] | 0;
-        this.Dh = IV[6] | 0;
-        this.Dl = IV[7] | 0;
-        this.Eh = IV[8] | 0;
-        this.El = IV[9] | 0;
-        this.Fh = IV[10] | 0;
-        this.Fl = IV[11] | 0;
-        this.Gh = IV[12] | 0;
-        this.Gl = IV[13] | 0;
-        this.Hh = IV[14] | 0;
-        this.Hl = IV[15] | 0;
-      }
-      // prettier-ignore
-      get() {
-        const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
-        return [Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl];
-      }
-      // prettier-ignore
-      set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
-        this.Ah = Ah | 0;
-        this.Al = Al | 0;
-        this.Bh = Bh | 0;
-        this.Bl = Bl | 0;
-        this.Ch = Ch | 0;
-        this.Cl = Cl | 0;
-        this.Dh = Dh | 0;
-        this.Dl = Dl | 0;
-        this.Eh = Eh | 0;
-        this.El = El | 0;
-        this.Fh = Fh | 0;
-        this.Fl = Fl | 0;
-        this.Gh = Gh | 0;
-        this.Gl = Gl | 0;
-        this.Hh = Hh | 0;
-        this.Hl = Hl | 0;
-      }
-      _cloneInto(to) {
-        (to || (to = new this.constructor())).set(...this.get());
-        return this._cloneIntoMeta(to);
-      }
-      process(view, offset) {
-        for (let i = 0; i < 16; i++, offset += 4) {
-          SHA512_W_H[i] = view.getUint32(offset);
-          SHA512_W_L[i] = view.getUint32(offset += 4);
-        }
-        for (let i = 16; i < 80; i++) {
-          const W15h = SHA512_W_H[i - 15] | 0;
-          const W15l = SHA512_W_L[i - 15] | 0;
-          const s0h = rotrSH(W15h, W15l, 1) ^ rotrSH(W15h, W15l, 8) ^ shrSH(W15h, W15l, 7);
-          const s0l = rotrSL(W15h, W15l, 1) ^ rotrSL(W15h, W15l, 8) ^ shrSL(W15h, W15l, 7);
-          const W2h = SHA512_W_H[i - 2] | 0;
-          const W2l = SHA512_W_L[i - 2] | 0;
-          const s1h = rotrSH(W2h, W2l, 19) ^ rotrBH(W2h, W2l, 61) ^ shrSH(W2h, W2l, 6);
-          const s1l = rotrSL(W2h, W2l, 19) ^ rotrBL(W2h, W2l, 61) ^ shrSL(W2h, W2l, 6);
-          const SUMl = add4L(s0l, s1l, SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
-          const SUMh = add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
-          SHA512_W_H[i] = SUMh | 0;
-          SHA512_W_L[i] = SUMl | 0;
-        }
-        let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
-        for (let i = 0; i < 80; i++) {
-          const sigma1h = rotrSH(Eh, El, 14) ^ rotrSH(Eh, El, 18) ^ rotrBH(Eh, El, 41);
-          const sigma1l = rotrSL(Eh, El, 14) ^ rotrSL(Eh, El, 18) ^ rotrBL(Eh, El, 41);
-          const CHIh = Eh & Fh ^ ~Eh & Gh;
-          const CHIl = El & Fl ^ ~El & Gl;
-          const T1ll = add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
-          const T1h = add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
-          const T1l = T1ll | 0;
-          const sigma0h = rotrSH(Ah, Al, 28) ^ rotrBH(Ah, Al, 34) ^ rotrBH(Ah, Al, 39);
-          const sigma0l = rotrSL(Ah, Al, 28) ^ rotrBL(Ah, Al, 34) ^ rotrBL(Ah, Al, 39);
-          const MAJh = Ah & Bh ^ Ah & Ch ^ Bh & Ch;
-          const MAJl = Al & Bl ^ Al & Cl ^ Bl & Cl;
-          Hh = Gh | 0;
-          Hl = Gl | 0;
-          Gh = Fh | 0;
-          Gl = Fl | 0;
-          Fh = Eh | 0;
-          Fl = El | 0;
-          ({ h: Eh, l: El } = add(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
-          Dh = Ch | 0;
-          Dl = Cl | 0;
-          Ch = Bh | 0;
-          Cl = Bl | 0;
-          Bh = Ah | 0;
-          Bl = Al | 0;
-          const All = add3L(T1l, sigma0l, MAJl);
-          Ah = add3H(All, T1h, sigma0h, MAJh);
-          Al = All | 0;
-        }
-        ({ h: Ah, l: Al } = add(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
-        ({ h: Bh, l: Bl } = add(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
-        ({ h: Ch, l: Cl } = add(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
-        ({ h: Dh, l: Dl } = add(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
-        ({ h: Eh, l: El } = add(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
-        ({ h: Fh, l: Fl } = add(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
-        ({ h: Gh, l: Gl } = add(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
-        ({ h: Hh, l: Hl } = add(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
-        this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
-      }
-      roundClean() {
-        clean(SHA512_W_H, SHA512_W_L);
-      }
-      destroy() {
-        this.destroyed = true;
-        clean(this.buffer);
-        this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-      }
-    };
-    _SHA512 = class extends SHA2_64B {
-      constructor() {
-        super(64, SHA512_IV);
-      }
-    };
-    _SHA384 = class extends SHA2_64B {
-      constructor() {
-        super(48, SHA384_IV);
-      }
-    };
-    T224_IV = /* @__PURE__ */ Uint32Array.from([
-      2352822216,
-      424955298,
-      1944164710,
-      2312950998,
-      502970286,
-      855612546,
-      1738396948,
-      1479516111,
-      258812777,
-      2077511080,
-      2011393907,
-      79989058,
-      1067287976,
-      1780299464,
-      286451373,
-      2446758561
-    ]);
-    T256_IV = /* @__PURE__ */ Uint32Array.from([
-      573645204,
-      4230739756,
-      2673172387,
-      3360449730,
-      596883563,
-      1867755857,
-      2520282905,
-      1497426621,
-      2519219938,
-      2827943907,
-      3193839141,
-      1401305490,
-      721525244,
-      746961066,
-      246885852,
-      2177182882
-    ]);
-    _SHA512_224 = class extends SHA2_64B {
-      constructor() {
-        super(28, T224_IV);
-      }
-    };
-    _SHA512_256 = class extends SHA2_64B {
-      constructor() {
-        super(32, T256_IV);
-      }
-    };
-    sha256 = /* @__PURE__ */ createHasher(
-      () => new _SHA256(),
-      /* @__PURE__ */ oidNist(1)
-    );
-    sha224 = /* @__PURE__ */ createHasher(
-      () => new _SHA224(),
-      /* @__PURE__ */ oidNist(4)
-    );
-    sha512 = /* @__PURE__ */ createHasher(
-      () => new _SHA512(),
-      /* @__PURE__ */ oidNist(3)
-    );
-    sha384 = /* @__PURE__ */ createHasher(
-      () => new _SHA384(),
-      /* @__PURE__ */ oidNist(2)
-    );
-    sha512_256 = /* @__PURE__ */ createHasher(
-      () => new _SHA512_256(),
-      /* @__PURE__ */ oidNist(6)
-    );
-    sha512_224 = /* @__PURE__ */ createHasher(
-      () => new _SHA512_224(),
-      /* @__PURE__ */ oidNist(5)
-    );
-  }
-});
-
-// node_modules/@noble/post-quantum/slh-dsa.js
-var slh_dsa_exports = {};
-__export(slh_dsa_exports, {
-  PARAMS: () => PARAMS3,
-  slh_dsa_sha2_128f: () => slh_dsa_sha2_128f,
-  slh_dsa_sha2_128s: () => slh_dsa_sha2_128s,
-  slh_dsa_sha2_192f: () => slh_dsa_sha2_192f,
-  slh_dsa_sha2_192s: () => slh_dsa_sha2_192s,
-  slh_dsa_sha2_256f: () => slh_dsa_sha2_256f,
-  slh_dsa_sha2_256s: () => slh_dsa_sha2_256s,
-  slh_dsa_shake_128f: () => slh_dsa_shake_128f,
-  slh_dsa_shake_128s: () => slh_dsa_shake_128s,
-  slh_dsa_shake_192f: () => slh_dsa_shake_192f,
-  slh_dsa_shake_192s: () => slh_dsa_shake_192s,
-  slh_dsa_shake_256f: () => slh_dsa_shake_256f,
-  slh_dsa_shake_256s: () => slh_dsa_shake_256s
-});
-function getMaskBig(bits) {
-  return (_1n2 << BigInt(bits)) - _1n2;
-}
-function gen(opts2, hashOpts_) {
-  const hashOpts = hashOpts_;
-  const { N: N3, W, H, D: D2, K, A, securityLevel } = opts2;
-  const getContext = hashOpts.getContext(opts2);
-  if (W !== 16)
-    throw new Error("Unsupported Winternitz parameter");
-  const WOTS_LOGW = 4;
-  const WOTS_LEN1 = Math.floor(8 * N3 / WOTS_LOGW);
-  const WOTS_LEN2 = N3 <= 8 ? 2 : N3 <= 136 ? 3 : 4;
-  const TREE_HEIGHT = Math.floor(H / D2);
-  const WOTS_LEN = WOTS_LEN1 + WOTS_LEN2;
-  let ADDR_BYTES = 22;
-  let OFFSET_LAYER = 0;
-  let OFFSET_TREE = 1;
-  let OFFSET_TYPE = 9;
-  let OFFSET_KP_ADDR2 = 12;
-  let OFFSET_KP_ADDR1 = 13;
-  let OFFSET_CHAIN_ADDR = 17;
-  let OFFSET_TREE_INDEX = 18;
-  let OFFSET_HASH_ADDR = 21;
-  if (!hashOpts.isCompressed) {
-    ADDR_BYTES = 32;
-    OFFSET_LAYER += 3;
-    OFFSET_TREE += 7;
-    OFFSET_TYPE += 10;
-    OFFSET_KP_ADDR2 += 10;
-    OFFSET_KP_ADDR1 += 10;
-    OFFSET_CHAIN_ADDR += 10;
-    OFFSET_TREE_INDEX += 10;
-    OFFSET_HASH_ADDR += 10;
-  }
-  const setAddr = (opts3, addr = new Uint8Array(ADDR_BYTES)) => {
-    const type = Object.hasOwn(opts3, "type") ? opts3.type : void 0;
-    const height = Object.hasOwn(opts3, "height") ? opts3.height : void 0;
-    const tree = Object.hasOwn(opts3, "tree") ? opts3.tree : void 0;
-    const layer = Object.hasOwn(opts3, "layer") ? opts3.layer : void 0;
-    const index = Object.hasOwn(opts3, "index") ? opts3.index : void 0;
-    const chain = Object.hasOwn(opts3, "chain") ? opts3.chain : void 0;
-    const hash = Object.hasOwn(opts3, "hash") ? opts3.hash : void 0;
-    const keypair = Object.hasOwn(opts3, "keypair") ? opts3.keypair : void 0;
-    const subtreeAddr = Object.hasOwn(opts3, "subtreeAddr") ? opts3.subtreeAddr : void 0;
-    const keypairAddr = Object.hasOwn(opts3, "keypairAddr") ? opts3.keypairAddr : void 0;
-    if (height !== void 0)
-      addr[OFFSET_CHAIN_ADDR] = height;
-    if (layer !== void 0)
-      addr[OFFSET_LAYER] = layer;
-    if (type !== void 0)
-      addr[OFFSET_TYPE] = type;
-    if (chain !== void 0)
-      addr[OFFSET_CHAIN_ADDR] = chain;
-    if (hash !== void 0)
-      addr[OFFSET_HASH_ADDR] = hash;
-    if (index !== void 0) {
-      addr[OFFSET_TREE_INDEX + 0] = index >>> 24;
-      addr[OFFSET_TREE_INDEX + 1] = index >>> 16;
-      addr[OFFSET_TREE_INDEX + 2] = index >>> 8;
-      addr[OFFSET_TREE_INDEX + 3] = index;
-    }
-    if (subtreeAddr)
-      addr.set(subtreeAddr.subarray(0, OFFSET_TREE + 8));
-    if (tree !== void 0) {
-      let t = tree;
-      for (let i = 7; i >= 0; i--, t >>= _8n)
-        addr[OFFSET_TREE + i] = Number(t & _0xffn);
-    }
-    if (keypair !== void 0) {
-      addr[OFFSET_KP_ADDR1] = keypair;
-      if (TREE_HEIGHT > 8)
-        addr[OFFSET_KP_ADDR2] = keypair >>> 8;
-    }
-    if (keypairAddr) {
-      addr.set(keypairAddr.subarray(0, OFFSET_TREE + 8));
-      addr[OFFSET_KP_ADDR1] = keypairAddr[OFFSET_KP_ADDR1];
-      if (TREE_HEIGHT > 8)
-        addr[OFFSET_KP_ADDR2] = keypairAddr[OFFSET_KP_ADDR2];
-    }
-    return addr;
-  };
-  const chainCoder = base2b(WOTS_LEN2, WOTS_LOGW);
-  const chainLengths = (msg) => {
-    const W1 = base2b(WOTS_LEN1, WOTS_LOGW)(msg);
-    let csum = 0;
-    for (let i = 0; i < W1.length; i++)
-      csum += W - 1 - W1[i];
-    csum <<= (8 - WOTS_LEN2 * WOTS_LOGW % 8) % 8;
-    const W2 = chainCoder(numberToBytesBE(csum, Math.ceil(WOTS_LEN2 * WOTS_LOGW / 8)));
-    const lengths = new Uint32Array(WOTS_LEN);
-    lengths.set(W1);
-    lengths.set(W2, W1.length);
-    return lengths;
-  };
-  const messageToIndices = base2b(K, A);
-  const TREE_BITS = TREE_HEIGHT * (D2 - 1);
-  const LEAF_BITS = TREE_HEIGHT;
-  const hashMsgCoder = splitCoder("hashedMessage", Math.ceil(A * K / 8), Math.ceil(TREE_BITS / 8), Math.ceil(TREE_HEIGHT / 8));
-  const hashMessage = (R, pkSeed, msg, context) => {
-    const rawContext = context;
-    const digest = rawContext.Hmsg(R, pkSeed, msg, hashMsgCoder.bytesLen);
-    const [md, tmpIdxTree, tmpIdxLeaf] = hashMsgCoder.decode(digest);
-    const tree = bytesToNumberBE(tmpIdxTree) & getMaskBig(TREE_BITS);
-    const leafIdx = Number(bytesToNumberBE(tmpIdxLeaf)) & getMask(LEAF_BITS);
-    return { tree, leafIdx, md };
-  };
-  const treehash = (height, fn) => function treehash_i(context, leafIdx, idxOffset, treeAddr, info) {
-    const rawContext = context;
-    const leafFn = fn;
-    const maxIdx = (1 << height) - 1;
-    const stack = new Uint8Array(height * N3);
-    const authPath = new Uint8Array(height * N3);
-    const current = new Uint8Array(2 * N3);
-    const cur0 = current.subarray(0, N3);
-    const cur1 = current.subarray(N3);
-    for (let idx = 0; ; idx++) {
-      const addrOffset = idx + idxOffset;
-      cur1.set(leafFn(leafIdx, addrOffset, rawContext, info));
-      let h = 0;
-      for (let i = idx, o = idxOffset, l = leafIdx; ; h++, i >>>= 1, l >>>= 1, o >>>= 1) {
-        if (h === height)
-          return { root: cur1, authPath };
-        if ((i ^ l) === 1)
-          authPath.subarray(h * N3).set(cur1);
-        if ((i & 1) === 0 && idx < maxIdx)
-          break;
-        setAddr({ height: h + 1, index: (i >> 1) + (o >> 1) }, treeAddr);
-        cur0.set(stack.subarray(h * N3).subarray(0, N3));
-        cur1.set(rawContext.thashN(2, current, treeAddr));
-      }
-      stack.subarray(h * N3).set(cur1);
-    }
-    throw new Error("Unreachable code path reached, report this error");
-  };
-  const wotsTreehash = treehash(TREE_HEIGHT, (leafIdx, addrOffset, context, info) => {
-    const rawContext = context;
-    const wotsPk = new Uint8Array(WOTS_LEN * N3);
-    const wotsKmask = addrOffset === leafIdx ? 0 : ~0 >>> 0;
-    setAddr({ keypair: addrOffset }, info.leafAddr);
-    setAddr({ keypair: addrOffset }, info.pkAddr);
-    for (let i = 0; i < WOTS_LEN; i++) {
-      const wotsK = info.wotsSteps[i] | wotsKmask;
-      const pk = wotsPk.subarray(i * N3, (i + 1) * N3);
-      setAddr({ chain: i, hash: 0, type: AddressType.WOTSPRF }, info.leafAddr);
-      pk.set(rawContext.PRFaddr(info.leafAddr));
-      setAddr({ type: AddressType.WOTS }, info.leafAddr);
-      for (let k = 0; ; k++) {
-        if (k === wotsK)
-          info.wotsSig.subarray(i * N3).set(pk);
-        if (k === W - 1)
-          break;
-        setAddr({ hash: k }, info.leafAddr);
-        pk.set(rawContext.thash1(pk, info.leafAddr));
-      }
-    }
-    return rawContext.thashN(WOTS_LEN, wotsPk, info.pkAddr);
-  });
-  const forsTreehash = treehash(A, (_, addrOffset, context, forsLeafAddr) => {
-    const rawContext = context;
-    setAddr({ type: AddressType.FORSPRF, index: addrOffset }, forsLeafAddr);
-    const prf = rawContext.PRFaddr(forsLeafAddr);
-    setAddr({ type: AddressType.FORSTREE }, forsLeafAddr);
-    return rawContext.thash1(prf, forsLeafAddr);
-  });
-  const merkleSign = (context, wotsAddr, treeAddr, leafIdx, prevRoot = new Uint8Array(N3)) => {
-    setAddr({ type: AddressType.HASHTREE }, treeAddr);
-    const info = {
-      wotsSig: new Uint8Array(wotsCoder.bytesLen),
-      wotsSteps: chainLengths(prevRoot),
-      leafAddr: setAddr({ subtreeAddr: wotsAddr }),
-      pkAddr: setAddr({ type: AddressType.WOTSPK, subtreeAddr: wotsAddr })
-    };
-    const { root, authPath } = wotsTreehash(context, leafIdx, 0, treeAddr, info);
-    return {
-      root,
-      sigWots: info.wotsSig.subarray(0, WOTS_LEN * N3),
-      sigAuth: authPath
-    };
-  };
-  const computeRoot = (leaf, leafIdx, idxOffset, authPath, treeHeight, context, addr) => {
-    const rawContext = context;
-    const buffer = new Uint8Array(2 * N3);
-    const b0 = buffer.subarray(0, N3);
-    const b1 = buffer.subarray(N3, 2 * N3);
-    if ((leafIdx & 1) !== 0) {
-      b1.set(leaf.subarray(0, N3));
-      b0.set(authPath.subarray(0, N3));
-    } else {
-      b0.set(leaf.subarray(0, N3));
-      b1.set(authPath.subarray(0, N3));
-    }
-    leafIdx >>>= 1;
-    idxOffset >>>= 1;
-    for (let i = 0; i < treeHeight - 1; i++, leafIdx >>= 1, idxOffset >>= 1) {
-      setAddr({ height: i + 1, index: leafIdx + idxOffset }, addr);
-      const a = authPath.subarray((i + 1) * N3, (i + 2) * N3);
-      if ((leafIdx & 1) !== 0) {
-        b1.set(rawContext.thashN(2, buffer, addr));
-        b0.set(a);
-      } else {
-        buffer.set(rawContext.thashN(2, buffer, addr));
-        b1.set(a);
-      }
-    }
-    setAddr({ height: treeHeight, index: leafIdx + idxOffset }, addr);
-    return rawContext.thashN(2, buffer, addr);
-  };
-  const seedCoder = splitCoder("seed", N3, N3, N3);
-  const publicCoder = splitCoder("publicKey", N3, N3);
-  const secretCoder = splitCoder("secretKey", N3, N3, publicCoder.bytesLen);
-  const forsCoder = vecCoder(splitCoder("fors", N3, N3 * A), K);
-  const wotsCoder = vecCoder(splitCoder("wots", WOTS_LEN * N3, TREE_HEIGHT * N3), D2);
-  const sigCoder = splitCoder("signature", N3, forsCoder, wotsCoder);
-  const internal = Object.freeze({
-    info: Object.freeze({ type: "internal-slh-dsa" }),
-    lengths: Object.freeze({
-      publicKey: publicCoder.bytesLen,
-      secretKey: secretCoder.bytesLen,
-      signature: sigCoder.bytesLen,
-      seed: seedCoder.bytesLen,
-      signRand: N3
-    }),
-    keygen(seed) {
-      if (seed !== void 0)
-        abytesDoc(seed, seedCoder.bytesLen, "seed");
-      seed = seed === void 0 ? randomBytes2(seedCoder.bytesLen) : copyBytes(seed);
-      const [secretSeed, secretPRF, publicSeed] = seedCoder.decode(seed);
-      const context = getContext(publicSeed, secretSeed);
-      const topTreeAddr = setAddr({ layer: D2 - 1 });
-      const wotsAddr = setAddr({ layer: D2 - 1 });
-      const { root } = merkleSign(context, wotsAddr, topTreeAddr, ~0 >>> 0);
-      const publicKey = publicCoder.encode([publicSeed, root]);
-      const secretKey = secretCoder.encode([secretSeed, secretPRF, publicKey]);
-      context.clean();
-      cleanBytes(secretSeed, secretPRF, root, wotsAddr, topTreeAddr);
-      return {
-        publicKey,
-        secretKey
-      };
-    },
-    getPublicKey: (secretKey) => {
-      const [_skSeed, _skPRF, pk] = secretCoder.decode(secretKey);
-      return Uint8Array.from(pk);
-    },
-    sign: (msg, sk, opts3 = {}) => {
-      opts3 = validateSigOpts(opts3, INTERNAL_SIG_OPT_KEYS2);
-      let { extraEntropy: random } = opts3;
-      const [skSeed, skPRF, pk] = secretCoder.decode(sk);
-      const [pkSeed, _] = publicCoder.decode(pk);
-      if (random === false)
-        random = copyBytes(pkSeed);
-      else if (random === void 0)
-        random = randomBytes2(N3);
-      else
-        random = copyBytes(random);
-      abytesDoc(random, N3);
-      const context = getContext(pkSeed, skSeed);
-      const R = context.PRFmsg(skPRF, random, msg);
-      let { tree, leafIdx, md } = hashMessage(R, pk, msg, context);
-      const wotsAddr = setAddr({
-        type: AddressType.WOTS,
-        tree,
-        keypair: leafIdx
-      });
-      const roots = [];
-      const forsLeaf = setAddr({ keypairAddr: wotsAddr });
-      const forsTreeAddr = setAddr({ keypairAddr: wotsAddr });
-      const indices = messageToIndices(md);
-      const fors = [];
-      for (let i = 0; i < indices.length; i++) {
-        const idxOffset = i << A;
-        setAddr({
-          type: AddressType.FORSPRF,
-          height: 0,
-          index: indices[i] + idxOffset
-        }, forsTreeAddr);
-        const prf = copyBytes(context.PRFaddr(forsTreeAddr));
-        setAddr({ type: AddressType.FORSTREE }, forsTreeAddr);
-        const { root: root2, authPath } = forsTreehash(context, indices[i], idxOffset, forsTreeAddr, forsLeaf);
-        roots.push(root2);
-        fors.push([prf, authPath]);
-      }
-      const forsPkAddr = setAddr({
-        type: AddressType.FORSPK,
-        keypairAddr: wotsAddr
-      });
-      const root = copyBytes(context.thashN(K, concatBytes(...roots), forsPkAddr));
-      const treeAddr = setAddr({ type: AddressType.HASHTREE });
-      const wots = [];
-      for (let i = 0; i < D2; i++, tree >>= BigInt(TREE_HEIGHT)) {
-        setAddr({ tree, layer: i }, treeAddr);
-        setAddr({ subtreeAddr: treeAddr, keypair: leafIdx }, wotsAddr);
-        const { sigWots, sigAuth, root: r } = merkleSign(context, wotsAddr, treeAddr, leafIdx, root);
-        root.set(r);
-        cleanBytes(r);
-        wots.push([sigWots, sigAuth]);
-        leafIdx = Number(tree & getMaskBig(TREE_HEIGHT));
-      }
-      context.clean();
-      const SIG = sigCoder.encode([R, fors, wots]);
-      cleanBytes(R, random, treeAddr, wotsAddr, forsLeaf, forsTreeAddr, indices, roots);
-      return SIG;
-    },
-    verify: (sig, msg, publicKey, opts3 = {}) => {
-      validateVerOpts(opts3, INTERNAL_VER_OPT_KEYS2);
-      const [pkSeed, pubRoot] = publicCoder.decode(publicKey);
-      const pk = publicKey;
-      abytesDoc(sig, void 0, "signature");
-      if (sig.length !== sigCoder.bytesLen)
-        return false;
-      const [random, forsVec, wotsVec] = sigCoder.decode(sig);
-      const context = getContext(pkSeed);
-      let { tree, leafIdx, md } = hashMessage(random, pk, msg, context);
-      const wotsAddr = setAddr({
-        type: AddressType.WOTS,
-        tree,
-        keypair: leafIdx
-      });
-      const roots = [];
-      const forsTreeAddr = setAddr({
-        type: AddressType.FORSTREE,
-        keypairAddr: wotsAddr
-      });
-      const indices = messageToIndices(md);
-      for (let i = 0; i < forsVec.length; i++) {
-        const [prf, authPath] = forsVec[i];
-        const idxOffset = i << A;
-        setAddr({ height: 0, index: indices[i] + idxOffset }, forsTreeAddr);
-        const leaf = context.thash1(prf, forsTreeAddr);
-        roots.push(copyBytes(computeRoot(leaf, indices[i], idxOffset, authPath, A, context, forsTreeAddr)));
-      }
-      const forsPkAddr = setAddr({
-        type: AddressType.FORSPK,
-        keypairAddr: wotsAddr
-      });
-      let root = copyBytes(context.thashN(K, concatBytes(...roots), forsPkAddr));
-      const treeAddr = setAddr({ type: AddressType.HASHTREE });
-      const wotsPkAddr = setAddr({ type: AddressType.WOTSPK });
-      const wotsPk = new Uint8Array(WOTS_LEN * N3);
-      for (let i = 0; i < wotsVec.length; i++, tree >>= BigInt(TREE_HEIGHT)) {
-        const [wots, sigAuth] = wotsVec[i];
-        setAddr({ tree, layer: i }, treeAddr);
-        setAddr({ subtreeAddr: treeAddr, keypair: leafIdx }, wotsAddr);
-        setAddr({ keypairAddr: wotsAddr }, wotsPkAddr);
-        const lengths = chainLengths(root);
-        for (let i2 = 0; i2 < WOTS_LEN; i2++) {
-          setAddr({ chain: i2 }, wotsAddr);
-          const steps = W - 1 - lengths[i2];
-          const start = lengths[i2];
-          const out = wotsPk.subarray(i2 * N3);
-          out.set(wots.subarray(i2 * N3, (i2 + 1) * N3));
-          for (let j = start; j < start + steps && j < W; j++) {
-            setAddr({ hash: j }, wotsAddr);
-            out.set(context.thash1(out, wotsAddr));
-          }
-        }
-        const leaf = context.thashN(WOTS_LEN, wotsPk, wotsPkAddr);
-        root = copyBytes(computeRoot(leaf, leafIdx, 0, sigAuth, TREE_HEIGHT, context, treeAddr));
-        leafIdx = Number(tree & getMaskBig(TREE_HEIGHT));
-      }
-      return equalBytes(root, pubRoot);
-    }
-  });
-  return Object.freeze({
-    info: Object.freeze({ type: "slh-dsa" }),
-    internal,
-    securityLevel,
-    lengths: internal.lengths,
-    keygen: internal.keygen,
-    getPublicKey: internal.getPublicKey,
-    sign: (msg, secretKey, opts3 = {}) => {
-      opts3 = validateSigOpts(opts3);
-      const M = getMessage(msg, opts3.context);
-      const res = internal.sign(M, secretKey, { extraEntropy: opts3.extraEntropy });
-      cleanBytes(M);
-      return res;
-    },
-    verify: (sig, msg, publicKey, opts3 = {}) => {
-      opts3 = validateVerOpts(opts3);
-      return internal.verify(sig, getMessage(msg, opts3.context), publicKey);
-    },
-    prehash: (hash) => {
-      checkHash(hash, securityLevel);
-      const rawHash = hash;
-      return Object.freeze({
-        info: Object.freeze({ type: "hashslh-dsa" }),
-        lengths: internal.lengths,
-        keygen: internal.keygen,
-        getPublicKey: internal.getPublicKey,
-        sign: (msg, secretKey, opts3 = {}) => {
-          opts3 = validateSigOpts(opts3);
-          const M = getMessagePrehash(rawHash, msg, opts3.context);
-          const res = internal.sign(M, secretKey, { extraEntropy: opts3.extraEntropy });
-          cleanBytes(M);
-          return res;
-        },
-        verify: (sig, msg, publicKey, opts3 = {}) => {
-          opts3 = validateVerOpts(opts3);
-          return internal.verify(sig, getMessagePrehash(rawHash, msg, opts3.context), publicKey);
-        }
-      });
-    }
-  });
-}
-var INTERNAL_SIG_OPT_KEYS2, INTERNAL_VER_OPT_KEYS2, PARAMS3, AddressType, base2b, _1n2, _8n, _0xffn, genShake2, SHAKE_SIMPLE, slh_dsa_shake_128f, slh_dsa_shake_128s, slh_dsa_shake_192f, slh_dsa_shake_192s, slh_dsa_shake_256f, slh_dsa_shake_256s, genSha, SHA256_SIMPLE, SHA512_SIMPLE, slh_dsa_sha2_128f, slh_dsa_sha2_128s, slh_dsa_sha2_192f, slh_dsa_sha2_192s, slh_dsa_sha2_256f, slh_dsa_sha2_256s;
-var init_slh_dsa = __esm({
-  "node_modules/@noble/post-quantum/slh-dsa.js"() {
-    init_hmac();
-    init_utils2();
-    init_sha2();
-    init_sha3();
-    init_utils();
-    init_utils3();
-    /*! noble-post-quantum - MIT License (c) 2024 Paul Miller (paulmillr.com) */
-    INTERNAL_SIG_OPT_KEYS2 = /* @__PURE__ */ Object.freeze(["extraEntropy"]);
-    INTERNAL_VER_OPT_KEYS2 = /* @__PURE__ */ Object.freeze([]);
-    PARAMS3 = /* @__PURE__ */ (() => Object.freeze({
-      "128f": Object.freeze({ W: 16, N: 16, H: 66, D: 22, K: 33, A: 6, securityLevel: 128 }),
-      "128s": Object.freeze({ W: 16, N: 16, H: 63, D: 7, K: 14, A: 12, securityLevel: 128 }),
-      "192f": Object.freeze({ W: 16, N: 24, H: 66, D: 22, K: 33, A: 8, securityLevel: 192 }),
-      "192s": Object.freeze({ W: 16, N: 24, H: 63, D: 7, K: 17, A: 14, securityLevel: 192 }),
-      "256f": Object.freeze({ W: 16, N: 32, H: 68, D: 17, K: 35, A: 9, securityLevel: 256 }),
-      "256s": Object.freeze({ W: 16, N: 32, H: 64, D: 8, K: 22, A: 14, securityLevel: 256 })
-    }))();
-    AddressType = {
-      WOTS: 0,
-      WOTSPK: 1,
-      HASHTREE: 2,
-      FORSTREE: 3,
-      FORSPK: 4,
-      WOTSPRF: 5,
-      FORSPRF: 6
-    };
-    base2b = (outLen, b) => {
-      const mask = getMask(b);
-      return (bytes) => {
-        const baseB = new Uint32Array(outLen);
-        for (let out = 0, pos = 0, bits = 0, total = 0; out < outLen; out++) {
-          while (bits < b) {
-            total = total << 8 | bytes[pos++];
-            bits += 8;
-          }
-          bits -= b;
-          baseB[out] = total >>> bits & mask;
-        }
-        return baseB;
-      };
-    };
-    _1n2 = /* @__PURE__ */ BigInt(1);
-    _8n = /* @__PURE__ */ BigInt(8);
-    _0xffn = /* @__PURE__ */ BigInt(255);
-    genShake2 = () => (opts2) => (pubSeed, skSeed) => {
-      const { N: N3 } = opts2;
-      const stats = { prf: 0, thash: 0, hmsg: 0, gen_message_random: 0 };
-      const h0 = shake256.create({}).update(pubSeed);
-      const h0tmp = h0.clone();
-      const thashOut = new Uint8Array(N3);
-      const prfOut = new Uint8Array(N3);
-      const thash = (blocks, input, addr) => {
-        stats.thash++;
-        const len = blocks * N3;
-        h0._cloneInto(h0tmp).update(addr).update(input.length === len ? input : input.subarray(0, len)).xofInto(thashOut);
-        return thashOut;
-      };
-      return {
-        PRFaddr: (addr) => {
-          if (!skSeed)
-            throw new Error("no sk seed");
-          stats.prf++;
-          h0._cloneInto(h0tmp).update(addr).update(skSeed).xofInto(prfOut);
-          return prfOut;
-        },
-        PRFmsg: (skPRF, random, msg) => {
-          stats.gen_message_random++;
-          return shake256.create({}).update(skPRF).update(random).update(msg).digest().subarray(0, N3);
-        },
-        Hmsg: (R, pk, m, outLen) => {
-          stats.hmsg++;
-          return shake256.create({}).update(R.subarray(0, N3)).update(pk).update(m).xof(outLen);
-        },
-        thash1: thash.bind(null, 1),
-        thashN: thash,
-        clean: () => {
-          h0.destroy();
-          h0tmp.destroy();
-          cleanBytes(thashOut, prfOut);
-        }
-      };
-    };
-    SHAKE_SIMPLE = /* @__PURE__ */ (() => ({ isCompressed: false, getContext: genShake2() }))();
-    slh_dsa_shake_128f = /* @__PURE__ */ (() => gen(PARAMS3["128f"], SHAKE_SIMPLE))();
-    slh_dsa_shake_128s = /* @__PURE__ */ (() => gen(PARAMS3["128s"], SHAKE_SIMPLE))();
-    slh_dsa_shake_192f = /* @__PURE__ */ (() => gen(PARAMS3["192f"], SHAKE_SIMPLE))();
-    slh_dsa_shake_192s = /* @__PURE__ */ (() => gen(PARAMS3["192s"], SHAKE_SIMPLE))();
-    slh_dsa_shake_256f = /* @__PURE__ */ (() => gen(PARAMS3["256f"], SHAKE_SIMPLE))();
-    slh_dsa_shake_256s = /* @__PURE__ */ (() => gen(PARAMS3["256s"], SHAKE_SIMPLE))();
-    genSha = (h0, h1) => (opts2) => (pub_seed, sk_seed) => {
-      const { N: N3 } = opts2;
-      const stats = { prf: 0, thash: 0, hmsg: 0, gen_message_random: 0, mgf1: 0 };
-      const counterB = new Uint8Array(4);
-      const counterV = createView(counterB);
-      const h0ps = h0.create().update(pub_seed).update(new Uint8Array(h0.blockLen - N3));
-      const h1ps = h1.create().update(pub_seed).update(new Uint8Array(h1.blockLen - N3));
-      const h0tmp = h0ps.clone();
-      const h1tmp = h1ps.clone();
-      const h0out = new Uint8Array(h0.outputLen);
-      const h1out = new Uint8Array(h1.outputLen);
-      const prfOut = new Uint8Array(h0.outputLen);
-      const h0outN = h0out.subarray(0, N3);
-      const h1outN = h1out.subarray(0, N3);
-      const prfOutN = prfOut.subarray(0, N3);
-      function mgf1(seed, length, hash) {
-        stats.mgf1++;
-        const out = new Uint8Array(Math.ceil(length / hash.outputLen) * hash.outputLen);
-        if (length > 2 ** 32)
-          throw new Error("mask too long");
-        for (let counter = 0, o = out; o.length; counter++) {
-          counterV.setUint32(0, counter, false);
-          hash.create().update(seed).update(counterB).digestInto(o);
-          o = o.subarray(hash.outputLen);
-        }
-        cleanBytes(out.subarray(length));
-        return out.subarray(0, length);
-      }
-      const thash = (h, hTmp, out, outN) => (blocks, input, addr) => {
-        stats.thash++;
-        const len = blocks * N3;
-        h._cloneInto(hTmp).update(addr).update(input.length === len ? input : input.subarray(0, len)).digestInto(out);
-        return outN;
-      };
-      return {
-        PRFaddr: (addr) => {
-          if (!sk_seed)
-            throw new Error("No sk seed");
-          stats.prf++;
-          h0ps._cloneInto(h0tmp).update(addr).update(sk_seed).digestInto(prfOut);
-          return prfOutN;
-        },
-        PRFmsg: (skPRF, random, msg) => {
-          stats.gen_message_random++;
-          return hmac.create(h1, skPRF).update(random).update(msg).digest().subarray(0, N3);
-        },
-        Hmsg: (R, pk, m, outLen) => {
-          stats.hmsg++;
-          const seed = concatBytes(R.subarray(0, N3), pk.subarray(0, N3), h1.create().update(R.subarray(0, N3)).update(pk).update(m).digest());
-          return mgf1(seed, outLen, h1);
-        },
-        thash1: thash(h0ps, h0tmp, h0out, h0outN).bind(null, 1),
-        thashN: thash(h1ps, h1tmp, h1out, h1outN),
-        clean: () => {
-          h0ps.destroy();
-          h1ps.destroy();
-          h0tmp.destroy();
-          h1tmp.destroy();
-          cleanBytes(h0out, h1out, prfOut);
-        }
-      };
-    };
-    SHA256_SIMPLE = /* @__PURE__ */ (() => ({
-      isCompressed: true,
-      getContext: genSha(sha256, sha256)
-    }))();
-    SHA512_SIMPLE = /* @__PURE__ */ (() => ({
-      isCompressed: true,
-      getContext: genSha(sha256, sha512)
-    }))();
-    slh_dsa_sha2_128f = /* @__PURE__ */ (() => gen(PARAMS3["128f"], SHA256_SIMPLE))();
-    slh_dsa_sha2_128s = /* @__PURE__ */ (() => gen(PARAMS3["128s"], SHA256_SIMPLE))();
-    slh_dsa_sha2_192f = /* @__PURE__ */ (() => gen(PARAMS3["192f"], SHA512_SIMPLE))();
-    slh_dsa_sha2_192s = /* @__PURE__ */ (() => gen(PARAMS3["192s"], SHA512_SIMPLE))();
-    slh_dsa_sha2_256f = /* @__PURE__ */ (() => gen(PARAMS3["256f"], SHA512_SIMPLE))();
-    slh_dsa_sha2_256s = /* @__PURE__ */ (() => gen(PARAMS3["256s"], SHA512_SIMPLE))();
   }
 });
 
@@ -3573,8 +1571,9 @@ var require_pem = __commonJS({
     function readPem(text, type) {
       if (typeof text !== "string" || text.length > 65536) throw new Error("Invalid PEM key.");
       const match = text.trim().match(/^-----BEGIN (PUBLIC|PRIVATE) KEY-----\s+([A-Za-z0-9+/=\s]+)-----END \1 KEY-----$/);
-      if (!match || match[1] !== type) throw new Error("Invalid PEM key type.");
-      const encoded = match[2].replace(/\s/g, "");
+      if (match && match[1] !== type) throw new Error("Invalid key type.");
+      const encoded = (match ? match[2] : text).replace(/\s/g, "");
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error("Paste a complete Base64 public key or PEM key.");
       const bytes = Buffer.from(encoded, "base64");
       if (!bytes.length || bytes.toString("base64") !== encoded) throw new Error("Invalid PEM Base64.");
       return bytes;
@@ -3594,18 +1593,12 @@ var require_pqc = __commonJS({
   "src/pqc.js"(exports2, module2) {
     "use strict";
     var { ml_kem512: ml_kem5122, ml_kem768: ml_kem7682, ml_kem1024: ml_kem10242 } = (init_ml_kem(), __toCommonJS(ml_kem_exports));
-    var { ml_dsa44: ml_dsa442, ml_dsa65: ml_dsa652, ml_dsa87: ml_dsa872 } = (init_ml_dsa(), __toCommonJS(ml_dsa_exports));
-    var { slh_dsa_sha2_128f: slh_dsa_sha2_128f2 } = (init_slh_dsa(), __toCommonJS(slh_dsa_exports));
     var { equalBytes: equalBytes3 } = (init_utils3(), __toCommonJS(utils_exports));
     var { pack, unpack, readPem, writePem } = require_pem();
     var algorithms = {
       "ml-kem-512": { impl: ml_kem5122, oid: "608648016503040401" },
       "ml-kem-768": { impl: ml_kem7682, oid: "608648016503040402" },
-      "ml-kem-1024": { impl: ml_kem10242, oid: "608648016503040403" },
-      "ml-dsa-44": { impl: ml_dsa442, oid: "608648016503040311" },
-      "ml-dsa-65": { impl: ml_dsa652, oid: "608648016503040312" },
-      "ml-dsa-87": { impl: ml_dsa872, oid: "608648016503040313" },
-      "slh-dsa-sha2-128f": { impl: slh_dsa_sha2_128f2, oid: "608648016503040315" }
+      "ml-kem-1024": { impl: ml_kem10242, oid: "608648016503040403" }
     };
     function algorithm(scheme) {
       if (!Object.hasOwn(algorithms, scheme)) throw new Error("Unsupported PQC algorithm.");
@@ -3632,11 +1625,11 @@ var require_pqc = __commonJS({
       }
       export({ type, format }) {
         const privateKey = this.type === "private";
-        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "pem"].includes(format)) throw new Error("Unsupported key export format.");
+        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "pem", "base64"].includes(format)) throw new Error("Unsupported key export format.");
         const identifier = pack(48, pack(6, Buffer.from(algorithm(this.asymmetricKeyType).oid, "hex")));
-        const body = this.asymmetricKeyType.startsWith("slh-") ? this.bytes : pack(4, this.bytes);
+        const body = pack(4, this.bytes);
         const der = privateKey ? pack(48, pack(2, Buffer.from([0])), identifier, pack(4, body)) : pack(48, identifier, pack(3, Buffer.from([0]), this.bytes));
-        return format === "der" ? der : writePem(der, privateKey ? "PRIVATE" : "PUBLIC");
+        return format === "der" ? der : format === "base64" ? der.toString("base64") : writePem(der, privateKey ? "PRIVATE" : "PUBLIC");
       }
     };
     function importKey(pem, type) {
@@ -3659,7 +1652,6 @@ var require_pqc = __commonJS({
         return new Key(scheme, type, data.value.subarray(1));
       }
       if (data.tag !== 4) throw new Error("Invalid private-key octet string.");
-      if (scheme.startsWith("slh-")) return new Key(scheme, type, data.value);
       const choice = unpack(data.value);
       if (choice.length !== 1) throw new Error("Invalid private-key encoding.");
       const { tag, value } = choice[0];
@@ -3691,12 +1683,7 @@ var require_pqc = __commonJS({
         const { cipherText, sharedSecret } = impl.encapsulate(key.bytes, randomBytes3(impl.lengths.msgRand));
         return { ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret) };
       }),
-      decapsulate: (key, ciphertext) => run(() => Buffer.from(requireKey(key, "private").decapsulate(Uint8Array.from(ciphertext), key.bytes))),
-      sign: (data, key) => run(() => {
-        const impl = requireKey(key, "private");
-        return Buffer.from(impl.sign(Uint8Array.from(data), key.bytes, { extraEntropy: randomBytes3(impl.lengths.signRand) }));
-      }),
-      verify: (data, key, signature) => run(() => requireKey(key, "public").verify(Uint8Array.from(signature), Uint8Array.from(data), key.bytes))
+      decapsulate: (key, ciphertext) => run(() => Buffer.from(requireKey(key, "private").decapsulate(Uint8Array.from(ciphertext), key.bytes)))
     };
     module2.exports = { PQC, randomBytes: randomBytes3, equalBytes: equalBytes3 };
   }
@@ -3706,27 +1693,27 @@ var require_pqc = __commonJS({
 function isBytes2(a) {
   return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 }
-function abool3(value, title = "") {
+function abool2(value, title = "") {
   if (typeof value !== "boolean")
-    throw new TypeError(atitle3(title) + "expected boolean, got type=" + typeof value);
+    throw new TypeError(atitle2(title) + "expected boolean, got type=" + typeof value);
   return value;
 }
-function anumber3(n, title = "") {
+function anumber2(n, title = "") {
   if (typeof n !== "number")
-    throw new TypeError(atitle3(title) + "expected number, got " + typeof n);
+    throw new TypeError(atitle2(title) + "expected number, got " + typeof n);
   if (!Number.isSafeInteger(n) || n < 0)
-    throw new RangeError(atitle3(title) + "expected integer >= 0, got " + n);
+    throw new RangeError(atitle2(title) + "expected integer >= 0, got " + n);
   return n;
 }
 function abytes2(value, length, title = "") {
   if (isBytes2(value) && (length === void 0 || value.length === length))
     return value;
   if (length !== void 0)
-    anumber3(length, "length");
+    anumber2(length, "length");
   const bytes = isBytes2(value);
   const ofLen = length !== void 0 ? ` of length ${length}` : "";
   const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
-  const message = atitle3(title) + "expected Uint8Array" + ofLen + ", got " + got;
+  const message = atitle2(title) + "expected Uint8Array" + ofLen + ", got " + got;
   if (!bytes)
     throw new TypeError(message);
   throw new RangeError(message);
@@ -3827,9 +1814,9 @@ function getOutput(expectedLength, out, onlyAligned = true) {
   return out;
 }
 function u64Lengths(dataLength, aadLength, isLE3) {
-  anumber3(dataLength);
-  anumber3(aadLength);
-  abool3(isLE3);
+  anumber2(dataLength);
+  anumber2(aadLength);
+  abool2(isLE3);
   const num = new Uint8Array(16);
   const view = createView2(num);
   view.setBigUint64(0, BigInt(aadLength), isLE3);
@@ -3842,11 +1829,11 @@ function isAligned32(bytes) {
 function copyBytes2(bytes) {
   return Uint8Array.from(abytes2(bytes));
 }
-var atitle3, isLE2, swap8IfBE, swap32IfBE2, wrapCipher;
+var atitle2, isLE2, swap8IfBE, swap32IfBE2, wrapCipher;
 var init_utils4 = __esm({
   "node_modules/@noble/ciphers/utils.js"() {
     /*! noble-ciphers - MIT License (c) 2023 Paul Miller (paulmillr.com) */
-    atitle3 = (title) => title ? `"${title}" ` : "";
+    atitle2 = (title) => title ? `"${title}" ` : "";
     isLE2 = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
     swap8IfBE = isLE2 ? (n) => n : (n) => byteSwap2(n) >>> 0;
     swap32IfBE2 = isLE2 ? (u) => u : byteSwap322;
@@ -5038,7 +3025,7 @@ var init_aes = __esm({
       randomBytes(len, info) {
         if (this.destroyed)
           throw new Error("cannot use destroyed DRBG");
-        anumber3(len);
+        anumber2(len);
         if (len > 2 ** 16)
           throw new Error("requested output is too big");
         if (this.reseedCnt > 2 ** 48)
@@ -5235,6 +3222,747 @@ var init_aes = __esm({
   }
 });
 
+// node_modules/@noble/hashes/_md.js
+function Chi(a, b, c) {
+  return a & b ^ ~a & c;
+}
+function Maj(a, b, c) {
+  return a & b ^ a & c ^ b & c;
+}
+var HashMD, SHA256_IV, SHA224_IV, SHA384_IV, SHA512_IV;
+var init_md = __esm({
+  "node_modules/@noble/hashes/_md.js"() {
+    init_u64();
+    init_utils();
+    HashMD = class {
+      constructor(blockLen, outputLen, padOffset, isLE3) {
+        __publicField(this, "blockLen");
+        __publicField(this, "outputLen");
+        __publicField(this, "canXOF", false);
+        __publicField(this, "padOffset");
+        __publicField(this, "isLE");
+        // For partial updates less than block size
+        __publicField(this, "buffer");
+        __publicField(this, "view");
+        __publicField(this, "finished", false);
+        __publicField(this, "length", 0);
+        __publicField(this, "pos", 0);
+        __publicField(this, "destroyed", false);
+        this.blockLen = blockLen;
+        this.outputLen = outputLen;
+        this.padOffset = padOffset;
+        this.isLE = isLE3;
+        this.buffer = new Uint8Array(blockLen);
+        this.view = createView(this.buffer);
+      }
+      update(data) {
+        aexists(this);
+        abytes(data);
+        const { view, buffer, blockLen } = this;
+        const len = data.length;
+        let processed = false;
+        for (let pos = 0; pos < len; ) {
+          const take = Math.min(blockLen - this.pos, len - pos);
+          if (take === blockLen) {
+            const dataView = createView(data);
+            for (; blockLen <= len - pos; pos += blockLen)
+              this.process(dataView, pos);
+            processed = true;
+            continue;
+          }
+          buffer.set(pos === 0 && take === len ? data : data.subarray(pos, pos + take), this.pos);
+          this.pos += take;
+          pos += take;
+          if (this.pos === blockLen) {
+            this.process(view, 0);
+            this.pos = 0;
+            processed = true;
+          }
+        }
+        this.length += data.length;
+        if (processed)
+          this.roundClean();
+        return this;
+      }
+      digestInto(out) {
+        aexists(this);
+        aoutput(out, this);
+        this.finished = true;
+        const { buffer, view, blockLen, isLE: isLE3 } = this;
+        let { pos } = this;
+        buffer[pos++] = 128;
+        buffer.fill(0, pos);
+        if (this.padOffset > blockLen - pos) {
+          this.process(view, 0);
+          buffer.fill(0);
+        }
+        setU64FromNum(view, blockLen - 8, this.length * 8, isLE3);
+        this.process(view, 0);
+        this.roundClean();
+        const oview = out === buffer ? view : createView(out);
+        const len = this.outputLen;
+        const outLen = len / 4;
+        const state = this.get();
+        if (len % 4 || outLen > state.length)
+          throw new Error("invalid outputLen");
+        for (let i = 0; i < outLen; i++)
+          oview.setUint32(4 * i, state[i], isLE3);
+      }
+      digest() {
+        const { buffer, outputLen } = this;
+        this.digestInto(buffer);
+        const res = buffer.slice(0, outputLen);
+        this.destroy();
+        return res;
+      }
+      _cloneIntoMeta(to) {
+        const { buffer, length, finished, destroyed, pos } = this;
+        to.destroyed = destroyed;
+        to.finished = finished;
+        to.length = length;
+        to.pos = pos;
+        if (pos)
+          to.buffer.set(buffer);
+        return to;
+      }
+      clone() {
+        return this._cloneInto();
+      }
+    };
+    SHA256_IV = /* @__PURE__ */ Uint32Array.from([
+      1779033703,
+      3144134277,
+      1013904242,
+      2773480762,
+      1359893119,
+      2600822924,
+      528734635,
+      1541459225
+    ]);
+    SHA224_IV = /* @__PURE__ */ Uint32Array.from([
+      3238371032,
+      914150663,
+      812702999,
+      4144912697,
+      4290775857,
+      1750603025,
+      1694076839,
+      3204075428
+    ]);
+    SHA384_IV = /* @__PURE__ */ Uint32Array.from([
+      3418070365,
+      3238371032,
+      1654270250,
+      914150663,
+      2438529370,
+      812702999,
+      355462360,
+      4144912697,
+      1731405415,
+      4290775857,
+      2394180231,
+      1750603025,
+      3675008525,
+      1694076839,
+      1203062813,
+      3204075428
+    ]);
+    SHA512_IV = /* @__PURE__ */ Uint32Array.from([
+      1779033703,
+      4089235720,
+      3144134277,
+      2227873595,
+      1013904242,
+      4271175723,
+      2773480762,
+      1595750129,
+      1359893119,
+      2917565137,
+      2600822924,
+      725511199,
+      528734635,
+      4215389547,
+      1541459225,
+      327033209
+    ]);
+  }
+});
+
+// node_modules/@noble/hashes/sha2.js
+var sha2_exports = {};
+__export(sha2_exports, {
+  _SHA224: () => _SHA224,
+  _SHA256: () => _SHA256,
+  _SHA384: () => _SHA384,
+  _SHA512: () => _SHA512,
+  _SHA512_224: () => _SHA512_224,
+  _SHA512_256: () => _SHA512_256,
+  sha224: () => sha224,
+  sha256: () => sha256,
+  sha384: () => sha384,
+  sha512: () => sha512,
+  sha512_224: () => sha512_224,
+  sha512_256: () => sha512_256
+});
+var SHA256_K, SHA256_W, SHA2_32B, _SHA256, _SHA224, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, _SHA384, T224_IV, T256_IV, _SHA512_224, _SHA512_256, sha256, sha224, sha512, sha384, sha512_256, sha512_224;
+var init_sha2 = __esm({
+  "node_modules/@noble/hashes/sha2.js"() {
+    init_md();
+    init_u64();
+    init_utils();
+    SHA256_K = /* @__PURE__ */ Uint32Array.from([
+      1116352408,
+      1899447441,
+      3049323471,
+      3921009573,
+      961987163,
+      1508970993,
+      2453635748,
+      2870763221,
+      3624381080,
+      310598401,
+      607225278,
+      1426881987,
+      1925078388,
+      2162078206,
+      2614888103,
+      3248222580,
+      3835390401,
+      4022224774,
+      264347078,
+      604807628,
+      770255983,
+      1249150122,
+      1555081692,
+      1996064986,
+      2554220882,
+      2821834349,
+      2952996808,
+      3210313671,
+      3336571891,
+      3584528711,
+      113926993,
+      338241895,
+      666307205,
+      773529912,
+      1294757372,
+      1396182291,
+      1695183700,
+      1986661051,
+      2177026350,
+      2456956037,
+      2730485921,
+      2820302411,
+      3259730800,
+      3345764771,
+      3516065817,
+      3600352804,
+      4094571909,
+      275423344,
+      430227734,
+      506948616,
+      659060556,
+      883997877,
+      958139571,
+      1322822218,
+      1537002063,
+      1747873779,
+      1955562222,
+      2024104815,
+      2227730452,
+      2361852424,
+      2428436474,
+      2756734187,
+      3204031479,
+      3329325298
+    ]);
+    SHA256_W = /* @__PURE__ */ new Uint32Array(64);
+    SHA2_32B = class extends HashMD {
+      constructor(outputLen, IV) {
+        super(64, outputLen, 8, false);
+        // We cannot use array here since array allows indexing by variable
+        // which means optimizer/compiler cannot use registers.
+        // Numeric initializers matter: starting the fields as `undefined` changes
+        // V8's field representation and makes sha256 3x slower (measured).
+        __publicField(this, "A", 0);
+        __publicField(this, "B", 0);
+        __publicField(this, "C", 0);
+        __publicField(this, "D", 0);
+        __publicField(this, "E", 0);
+        __publicField(this, "F", 0);
+        __publicField(this, "G", 0);
+        __publicField(this, "H", 0);
+        this.A = IV[0] | 0;
+        this.B = IV[1] | 0;
+        this.C = IV[2] | 0;
+        this.D = IV[3] | 0;
+        this.E = IV[4] | 0;
+        this.F = IV[5] | 0;
+        this.G = IV[6] | 0;
+        this.H = IV[7] | 0;
+      }
+      get() {
+        const { A, B: B2, C, D, E, F: F2, G, H } = this;
+        return [A, B2, C, D, E, F2, G, H];
+      }
+      // prettier-ignore
+      set(A, B2, C, D, E, F2, G, H) {
+        this.A = A | 0;
+        this.B = B2 | 0;
+        this.C = C | 0;
+        this.D = D | 0;
+        this.E = E | 0;
+        this.F = F2 | 0;
+        this.G = G | 0;
+        this.H = H | 0;
+      }
+      _cloneInto(to) {
+        (to || (to = new this.constructor())).set(...this.get());
+        return this._cloneIntoMeta(to);
+      }
+      process(view, offset) {
+        for (let i = 0; i < 16; i++, offset += 4)
+          SHA256_W[i] = view.getUint32(offset, false);
+        for (let i = 16; i < 64; i++) {
+          const W15 = SHA256_W[i - 15];
+          const W2 = SHA256_W[i - 2];
+          const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ W15 >>> 3;
+          const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ W2 >>> 10;
+          SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
+        }
+        let { A, B: B2, C, D, E, F: F2, G, H } = this;
+        for (let i = 0; i < 64; i++) {
+          const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
+          const T1 = H + sigma1 + Chi(E, F2, G) + SHA256_K[i] + SHA256_W[i] | 0;
+          const sigma0 = rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22);
+          const T2 = sigma0 + Maj(A, B2, C) | 0;
+          H = G;
+          G = F2;
+          F2 = E;
+          E = D + T1 | 0;
+          D = C;
+          C = B2;
+          B2 = A;
+          A = T1 + T2 | 0;
+        }
+        A = A + this.A | 0;
+        B2 = B2 + this.B | 0;
+        C = C + this.C | 0;
+        D = D + this.D | 0;
+        E = E + this.E | 0;
+        F2 = F2 + this.F | 0;
+        G = G + this.G | 0;
+        H = H + this.H | 0;
+        this.set(A, B2, C, D, E, F2, G, H);
+      }
+      roundClean() {
+        clean(SHA256_W);
+      }
+      destroy() {
+        this.destroyed = true;
+        this.set(0, 0, 0, 0, 0, 0, 0, 0);
+        clean(this.buffer);
+      }
+    };
+    _SHA256 = class extends SHA2_32B {
+      constructor() {
+        super(32, SHA256_IV);
+      }
+    };
+    _SHA224 = class extends SHA2_32B {
+      constructor() {
+        super(28, SHA224_IV);
+      }
+    };
+    K512 = /* @__PURE__ */ (() => split([
+      "0x428a2f98d728ae22",
+      "0x7137449123ef65cd",
+      "0xb5c0fbcfec4d3b2f",
+      "0xe9b5dba58189dbbc",
+      "0x3956c25bf348b538",
+      "0x59f111f1b605d019",
+      "0x923f82a4af194f9b",
+      "0xab1c5ed5da6d8118",
+      "0xd807aa98a3030242",
+      "0x12835b0145706fbe",
+      "0x243185be4ee4b28c",
+      "0x550c7dc3d5ffb4e2",
+      "0x72be5d74f27b896f",
+      "0x80deb1fe3b1696b1",
+      "0x9bdc06a725c71235",
+      "0xc19bf174cf692694",
+      "0xe49b69c19ef14ad2",
+      "0xefbe4786384f25e3",
+      "0x0fc19dc68b8cd5b5",
+      "0x240ca1cc77ac9c65",
+      "0x2de92c6f592b0275",
+      "0x4a7484aa6ea6e483",
+      "0x5cb0a9dcbd41fbd4",
+      "0x76f988da831153b5",
+      "0x983e5152ee66dfab",
+      "0xa831c66d2db43210",
+      "0xb00327c898fb213f",
+      "0xbf597fc7beef0ee4",
+      "0xc6e00bf33da88fc2",
+      "0xd5a79147930aa725",
+      "0x06ca6351e003826f",
+      "0x142929670a0e6e70",
+      "0x27b70a8546d22ffc",
+      "0x2e1b21385c26c926",
+      "0x4d2c6dfc5ac42aed",
+      "0x53380d139d95b3df",
+      "0x650a73548baf63de",
+      "0x766a0abb3c77b2a8",
+      "0x81c2c92e47edaee6",
+      "0x92722c851482353b",
+      "0xa2bfe8a14cf10364",
+      "0xa81a664bbc423001",
+      "0xc24b8b70d0f89791",
+      "0xc76c51a30654be30",
+      "0xd192e819d6ef5218",
+      "0xd69906245565a910",
+      "0xf40e35855771202a",
+      "0x106aa07032bbd1b8",
+      "0x19a4c116b8d2d0c8",
+      "0x1e376c085141ab53",
+      "0x2748774cdf8eeb99",
+      "0x34b0bcb5e19b48a8",
+      "0x391c0cb3c5c95a63",
+      "0x4ed8aa4ae3418acb",
+      "0x5b9cca4f7763e373",
+      "0x682e6ff3d6b2b8a3",
+      "0x748f82ee5defb2fc",
+      "0x78a5636f43172f60",
+      "0x84c87814a1f0ab72",
+      "0x8cc702081a6439ec",
+      "0x90befffa23631e28",
+      "0xa4506cebde82bde9",
+      "0xbef9a3f7b2c67915",
+      "0xc67178f2e372532b",
+      "0xca273eceea26619c",
+      "0xd186b8c721c0c207",
+      "0xeada7dd6cde0eb1e",
+      "0xf57d4f7fee6ed178",
+      "0x06f067aa72176fba",
+      "0x0a637dc5a2c898a6",
+      "0x113f9804bef90dae",
+      "0x1b710b35131c471b",
+      "0x28db77f523047d84",
+      "0x32caab7b40c72493",
+      "0x3c9ebe0a15c9bebc",
+      "0x431d67c49c100d4c",
+      "0x4cc5d4becb3e42b6",
+      "0x597f299cfc657e2a",
+      "0x5fcb6fab3ad6faec",
+      "0x6c44198c4a475817"
+    ].map((n) => BigInt(n))))();
+    SHA512_Kh = /* @__PURE__ */ (() => K512[0])();
+    SHA512_Kl = /* @__PURE__ */ (() => K512[1])();
+    SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
+    SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
+    SHA2_64B = class extends HashMD {
+      constructor(outputLen, IV) {
+        super(128, outputLen, 16, false);
+        // We cannot use array here since array allows indexing by variable
+        // which means optimizer/compiler cannot use registers.
+        // h -- high 32 bits, l -- low 32 bits
+        // Numeric initializers matter: starting the fields as `undefined` changes
+        // V8's field representation and slows hashing down (measured on sha256).
+        __publicField(this, "Ah", 0);
+        __publicField(this, "Al", 0);
+        __publicField(this, "Bh", 0);
+        __publicField(this, "Bl", 0);
+        __publicField(this, "Ch", 0);
+        __publicField(this, "Cl", 0);
+        __publicField(this, "Dh", 0);
+        __publicField(this, "Dl", 0);
+        __publicField(this, "Eh", 0);
+        __publicField(this, "El", 0);
+        __publicField(this, "Fh", 0);
+        __publicField(this, "Fl", 0);
+        __publicField(this, "Gh", 0);
+        __publicField(this, "Gl", 0);
+        __publicField(this, "Hh", 0);
+        __publicField(this, "Hl", 0);
+        this.Ah = IV[0] | 0;
+        this.Al = IV[1] | 0;
+        this.Bh = IV[2] | 0;
+        this.Bl = IV[3] | 0;
+        this.Ch = IV[4] | 0;
+        this.Cl = IV[5] | 0;
+        this.Dh = IV[6] | 0;
+        this.Dl = IV[7] | 0;
+        this.Eh = IV[8] | 0;
+        this.El = IV[9] | 0;
+        this.Fh = IV[10] | 0;
+        this.Fl = IV[11] | 0;
+        this.Gh = IV[12] | 0;
+        this.Gl = IV[13] | 0;
+        this.Hh = IV[14] | 0;
+        this.Hl = IV[15] | 0;
+      }
+      // prettier-ignore
+      get() {
+        const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+        return [Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl];
+      }
+      // prettier-ignore
+      set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
+        this.Ah = Ah | 0;
+        this.Al = Al | 0;
+        this.Bh = Bh | 0;
+        this.Bl = Bl | 0;
+        this.Ch = Ch | 0;
+        this.Cl = Cl | 0;
+        this.Dh = Dh | 0;
+        this.Dl = Dl | 0;
+        this.Eh = Eh | 0;
+        this.El = El | 0;
+        this.Fh = Fh | 0;
+        this.Fl = Fl | 0;
+        this.Gh = Gh | 0;
+        this.Gl = Gl | 0;
+        this.Hh = Hh | 0;
+        this.Hl = Hl | 0;
+      }
+      _cloneInto(to) {
+        (to || (to = new this.constructor())).set(...this.get());
+        return this._cloneIntoMeta(to);
+      }
+      process(view, offset) {
+        for (let i = 0; i < 16; i++, offset += 4) {
+          SHA512_W_H[i] = view.getUint32(offset);
+          SHA512_W_L[i] = view.getUint32(offset += 4);
+        }
+        for (let i = 16; i < 80; i++) {
+          const W15h = SHA512_W_H[i - 15] | 0;
+          const W15l = SHA512_W_L[i - 15] | 0;
+          const s0h = rotrSH(W15h, W15l, 1) ^ rotrSH(W15h, W15l, 8) ^ shrSH(W15h, W15l, 7);
+          const s0l = rotrSL(W15h, W15l, 1) ^ rotrSL(W15h, W15l, 8) ^ shrSL(W15h, W15l, 7);
+          const W2h = SHA512_W_H[i - 2] | 0;
+          const W2l = SHA512_W_L[i - 2] | 0;
+          const s1h = rotrSH(W2h, W2l, 19) ^ rotrBH(W2h, W2l, 61) ^ shrSH(W2h, W2l, 6);
+          const s1l = rotrSL(W2h, W2l, 19) ^ rotrBL(W2h, W2l, 61) ^ shrSL(W2h, W2l, 6);
+          const SUMl = add4L(s0l, s1l, SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
+          const SUMh = add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
+          SHA512_W_H[i] = SUMh | 0;
+          SHA512_W_L[i] = SUMl | 0;
+        }
+        let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+        for (let i = 0; i < 80; i++) {
+          const sigma1h = rotrSH(Eh, El, 14) ^ rotrSH(Eh, El, 18) ^ rotrBH(Eh, El, 41);
+          const sigma1l = rotrSL(Eh, El, 14) ^ rotrSL(Eh, El, 18) ^ rotrBL(Eh, El, 41);
+          const CHIh = Eh & Fh ^ ~Eh & Gh;
+          const CHIl = El & Fl ^ ~El & Gl;
+          const T1ll = add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
+          const T1h = add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
+          const T1l = T1ll | 0;
+          const sigma0h = rotrSH(Ah, Al, 28) ^ rotrBH(Ah, Al, 34) ^ rotrBH(Ah, Al, 39);
+          const sigma0l = rotrSL(Ah, Al, 28) ^ rotrBL(Ah, Al, 34) ^ rotrBL(Ah, Al, 39);
+          const MAJh = Ah & Bh ^ Ah & Ch ^ Bh & Ch;
+          const MAJl = Al & Bl ^ Al & Cl ^ Bl & Cl;
+          Hh = Gh | 0;
+          Hl = Gl | 0;
+          Gh = Fh | 0;
+          Gl = Fl | 0;
+          Fh = Eh | 0;
+          Fl = El | 0;
+          ({ h: Eh, l: El } = add(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
+          Dh = Ch | 0;
+          Dl = Cl | 0;
+          Ch = Bh | 0;
+          Cl = Bl | 0;
+          Bh = Ah | 0;
+          Bl = Al | 0;
+          const All = add3L(T1l, sigma0l, MAJl);
+          Ah = add3H(All, T1h, sigma0h, MAJh);
+          Al = All | 0;
+        }
+        ({ h: Ah, l: Al } = add(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
+        ({ h: Bh, l: Bl } = add(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
+        ({ h: Ch, l: Cl } = add(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
+        ({ h: Dh, l: Dl } = add(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
+        ({ h: Eh, l: El } = add(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
+        ({ h: Fh, l: Fl } = add(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
+        ({ h: Gh, l: Gl } = add(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
+        ({ h: Hh, l: Hl } = add(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
+        this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
+      }
+      roundClean() {
+        clean(SHA512_W_H, SHA512_W_L);
+      }
+      destroy() {
+        this.destroyed = true;
+        clean(this.buffer);
+        this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      }
+    };
+    _SHA512 = class extends SHA2_64B {
+      constructor() {
+        super(64, SHA512_IV);
+      }
+    };
+    _SHA384 = class extends SHA2_64B {
+      constructor() {
+        super(48, SHA384_IV);
+      }
+    };
+    T224_IV = /* @__PURE__ */ Uint32Array.from([
+      2352822216,
+      424955298,
+      1944164710,
+      2312950998,
+      502970286,
+      855612546,
+      1738396948,
+      1479516111,
+      258812777,
+      2077511080,
+      2011393907,
+      79989058,
+      1067287976,
+      1780299464,
+      286451373,
+      2446758561
+    ]);
+    T256_IV = /* @__PURE__ */ Uint32Array.from([
+      573645204,
+      4230739756,
+      2673172387,
+      3360449730,
+      596883563,
+      1867755857,
+      2520282905,
+      1497426621,
+      2519219938,
+      2827943907,
+      3193839141,
+      1401305490,
+      721525244,
+      746961066,
+      246885852,
+      2177182882
+    ]);
+    _SHA512_224 = class extends SHA2_64B {
+      constructor() {
+        super(28, T224_IV);
+      }
+    };
+    _SHA512_256 = class extends SHA2_64B {
+      constructor() {
+        super(32, T256_IV);
+      }
+    };
+    sha256 = /* @__PURE__ */ createHasher(
+      () => new _SHA256(),
+      /* @__PURE__ */ oidNist(1)
+    );
+    sha224 = /* @__PURE__ */ createHasher(
+      () => new _SHA224(),
+      /* @__PURE__ */ oidNist(4)
+    );
+    sha512 = /* @__PURE__ */ createHasher(
+      () => new _SHA512(),
+      /* @__PURE__ */ oidNist(3)
+    );
+    sha384 = /* @__PURE__ */ createHasher(
+      () => new _SHA384(),
+      /* @__PURE__ */ oidNist(2)
+    );
+    sha512_256 = /* @__PURE__ */ createHasher(
+      () => new _SHA512_256(),
+      /* @__PURE__ */ oidNist(6)
+    );
+    sha512_224 = /* @__PURE__ */ createHasher(
+      () => new _SHA512_224(),
+      /* @__PURE__ */ oidNist(5)
+    );
+  }
+});
+
+// node_modules/@noble/hashes/hmac.js
+var _HMAC, hmac;
+var init_hmac = __esm({
+  "node_modules/@noble/hashes/hmac.js"() {
+    init_utils();
+    _HMAC = class {
+      constructor(hash, key) {
+        __publicField(this, "oHash");
+        __publicField(this, "iHash");
+        __publicField(this, "blockLen");
+        __publicField(this, "outputLen");
+        __publicField(this, "canXOF", false);
+        __publicField(this, "finished", false);
+        __publicField(this, "destroyed", false);
+        ahash(hash);
+        abytes(key, void 0, "key");
+        this.iHash = hash.create();
+        if (typeof this.iHash.update !== "function")
+          throw new Error("expected Hash instance");
+        this.blockLen = this.iHash.blockLen;
+        this.outputLen = this.iHash.outputLen;
+        const blockLen = this.blockLen;
+        const pad = new Uint8Array(blockLen);
+        pad.set(key.length > blockLen ? hash.create().update(key).digest() : key);
+        for (let i = 0; i < pad.length; i++)
+          pad[i] ^= 54;
+        this.iHash.update(pad);
+        this.oHash = hash.create();
+        for (let i = 0; i < pad.length; i++)
+          pad[i] ^= 54 ^ 92;
+        this.oHash.update(pad);
+        clean(pad);
+      }
+      update(buf) {
+        aexists(this);
+        this.iHash.update(buf);
+        return this;
+      }
+      digestInto(out) {
+        aexists(this);
+        aoutput(out, this);
+        this.finished = true;
+        const buf = out.subarray(0, this.outputLen);
+        this.iHash.digestInto(buf);
+        this.oHash.update(buf);
+        this.oHash.digestInto(buf);
+        this.destroy();
+      }
+      digest() {
+        const out = new Uint8Array(this.oHash.outputLen);
+        this.digestInto(out);
+        return out;
+      }
+      _cloneInto(to) {
+        to || (to = Object.create(Object.getPrototypeOf(this), {}));
+        const { oHash, iHash, finished, destroyed, blockLen, outputLen, canXOF } = this;
+        to = to;
+        to.finished = finished;
+        to.destroyed = destroyed;
+        to.blockLen = blockLen;
+        to.outputLen = outputLen;
+        to.canXOF = canXOF;
+        to.oHash = oHash._cloneInto(to.oHash);
+        to.iHash = iHash._cloneInto(to.iHash);
+        return to;
+      }
+      clone() {
+        return this._cloneInto();
+      }
+      destroy() {
+        this.destroyed = true;
+        this.oHash.destroy();
+        this.iHash.destroy();
+      }
+    };
+    hmac = /* @__PURE__ */ (() => {
+      const hmac_ = ((hash, key, message) => new _HMAC(hash, key).update(message).digest());
+      hmac_.create = (hash, key) => new _HMAC(hash, key);
+      return hmac_;
+    })();
+  }
+});
+
 // node_modules/@noble/hashes/hkdf.js
 var hkdf_exports = {};
 __export(hkdf_exports, {
@@ -5319,12 +4047,13 @@ var init_hkdf = __esm({
 var require_constants = __commonJS({
   "src/constants.js"(exports2, module2) {
     "use strict";
-    var SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
+    var SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024"];
     module2.exports = {
       NAME: "Qcord",
       // One cache name for settings and keys: Windows filenames ignore case.
       KEY_STORE: "qcord",
       SCHEMES,
+      ACTIVE_SCHEME: "ml-kem-512",
       KEM_SCHEMES: SCHEMES.filter((scheme) => scheme.startsWith("ml-kem")),
       ENCRYPTED_PREFIX: "qcord:v2:pqc:",
       BASE64_RE: /^[A-Za-z0-9+/]*={0,2}$/,
@@ -5345,7 +4074,7 @@ var require_messaging = __commonJS({
     var { sha256: sha2562 } = (init_sha2(), __toCommonJS(sha2_exports));
     var { hkdf: hkdf2 } = (init_hkdf(), __toCommonJS(hkdf_exports));
     var bytes = (value) => Uint8Array.from(value);
-    var { KEY_STORE: KEY_STORE2, SCHEMES, KEM_SCHEMES: KEM_SCHEMES2, ENCRYPTED_PREFIX, BASE64_RE, MAX_DECODED_FILE_SIZE: MAX_DECODED_FILE_SIZE2 } = require_constants();
+    var { KEY_STORE: KEY_STORE2, SCHEMES, ACTIVE_SCHEME: ACTIVE_SCHEME2, KEM_SCHEMES, ENCRYPTED_PREFIX, BASE64_RE, MAX_DECODED_FILE_SIZE: MAX_DECODED_FILE_SIZE2 } = require_constants();
     module2.exports = class MessageCrypto {
       async generateKeys(scheme) {
         if (!this.running) throw new Error("Enable Qcord first.");
@@ -5369,8 +4098,8 @@ var require_messaging = __commonJS({
             BdApi.Data.save(KEY_STORE2, "keyPairs", {
               ...BdApi.Data.load(KEY_STORE2, "keyPairs") || {},
               [scheme]: {
-                publicKey: keys.publicKey.export({ type: "spki", format: "pem" }),
-                privateKey: keys.privateKey.export({ type: "pkcs8", format: "pem" }),
+                publicKey: keys.publicKey.export({ type: "spki", format: "base64" }),
+                privateKey: keys.privateKey.export({ type: "pkcs8", format: "base64" }),
                 createdAt: (/* @__PURE__ */ new Date()).toISOString()
               }
             });
@@ -5401,17 +4130,17 @@ var require_messaging = __commonJS({
       }
       saveRecipients(channelId, rows, scheme) {
         if (!/^\d+$/.test(channelId || "")) throw new Error("Open a Discord channel first.");
-        if (!KEM_SCHEMES2.includes(scheme)) throw new Error("Choose an ML-KEM encryption scheme.");
+        if (scheme !== ACTIVE_SCHEME2) throw new Error("New recipients must use ML-KEM-512.");
         if (!Array.isArray(rows) || rows.length > 15) throw new Error("Add up to 15 recipients.");
         const seen = /* @__PURE__ */ new Set();
         const entries = rows.map(({ username, publicKey }) => {
           if (typeof username !== "string" || username.length > 100) throw new Error("Use a recipient name of up to 100 characters.");
           const key = PQC.createPublicKey(publicKey);
           if (key.asymmetricKeyType !== scheme) throw new Error("Every recipient key must use the selected ML-KEM scheme.");
-          const id2 = this.keyId(key);
-          if (seen.has(id2)) throw new Error("That public key is already in the recipient table.");
-          seen.add(id2);
-          return { username: username.trim(), publicKey: key.export({ type: "spki", format: "pem" }) };
+          const id = this.keyId(key);
+          if (seen.has(id)) throw new Error("That public key is already in the recipient table.");
+          seen.add(id);
+          return { username: username.trim(), publicKey: key.export({ type: "spki", format: "base64" }) };
         });
         const recipients = BdApi.Data.load(KEY_STORE2, "recipients") || {};
         const previous = recipients[channelId];
@@ -5439,7 +4168,7 @@ var require_messaging = __commonJS({
       }
       async encryptMessage(channelId, text) {
         if (!/^\d+$/.test(channelId || "")) throw new Error("Invalid channel.");
-        const scheme = this.scheme;
+        const scheme = ACTIVE_SCHEME2;
         const recipients = this.getRecipients(channelId, scheme);
         if (!Array.isArray(recipients) || !recipients.length) {
           throw new Error("Save recipient public keys for this channel and scheme in Qcord settings first.");
@@ -5457,12 +4186,12 @@ var require_messaging = __commonJS({
         const aad = Buffer.from(JSON.stringify({ scheme, channelId, recipientIds: [...publicKeys.keys()] }));
         const payloadKey = randomBytes3(32);
         const envelopes = [];
-        for (const [id2, publicKey] of publicKeys) {
+        for (const [id, publicKey] of publicKeys) {
           const { sharedKey, ciphertext } = await PQC.encapsulate(publicKey);
           envelopes.push({
-            id: id2,
+            id,
             kem: ciphertext.toString("base64"),
-            ...this.seal(payloadKey, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id2)]))
+            ...this.seal(payloadKey, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id)]))
           });
         }
         const output = ENCRYPTED_PREFIX + JSON.stringify({ scheme, channelId, recipients: envelopes, ...this.seal(input, payloadKey, aad) });
@@ -5476,17 +4205,17 @@ var require_messaging = __commonJS({
         if (Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE2) throw new Error("Encrypted file is too large.");
         const session = this.session;
         const file = JSON.parse(text.slice(ENCRYPTED_PREFIX.length));
-        if (!file || !KEM_SCHEMES2.includes(file.scheme) || !/^\d+$/.test(channelId || "") || file.channelId !== channelId || !Array.isArray(file.recipients) || !file.recipients.length || file.recipients.length > 16) throw new Error("Invalid encrypted file or wrong channel.");
+        if (!file || !KEM_SCHEMES.includes(file.scheme) || !/^\d+$/.test(channelId || "") || file.channelId !== channelId || !Array.isArray(file.recipients) || !file.recipients.length || file.recipients.length > 16) throw new Error("Invalid encrypted file or wrong channel.");
         const ids = file.recipients.map((recipient2) => recipient2?.id);
-        if (ids.some((id3) => typeof id3 !== "string" || !/^[a-f0-9]{64}$/.test(id3)) || new Set(ids).size !== ids.length) throw new Error("Invalid recipient list.");
+        if (ids.some((id2) => typeof id2 !== "string" || !/^[a-f0-9]{64}$/.test(id2)) || new Set(ids).size !== ids.length) throw new Error("Invalid recipient list.");
         if (!this.keyPairs.has(file.scheme) && !BdApi.Data.load(KEY_STORE2, "keyPairs")?.[file.scheme]) throw new Error("No saved private key for this file.");
         const keys = await this.generateKeys(file.scheme);
-        const id2 = this.keyId(keys.publicKey);
-        const recipient = file.recipients.find((entry) => entry.id === id2);
+        const id = this.keyId(keys.publicKey);
+        const recipient = file.recipients.find((entry) => entry.id === id);
         if (!recipient) throw new Error("This file is not addressed to your key.");
         const aad = Buffer.from(JSON.stringify({ scheme: file.scheme, channelId, recipientIds: ids }));
         const sharedKey = await PQC.decapsulate(keys.privateKey, this.decodeBytes(recipient.kem));
-        const payloadKey = this.openSealed(recipient, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id2)]));
+        const payloadKey = this.openSealed(recipient, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id)]));
         if (payloadKey.length !== 32) throw new Error("Invalid payload key.");
         const plaintext = this.openSealed(file, payloadKey, aad);
         const decoded = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
@@ -5498,15 +4227,9 @@ var require_messaging = __commonJS({
         const session = this.session;
         const input = Buffer.from(text, "utf8");
         if (input.length > MAX_DECODED_FILE_SIZE2) throw new Error("Test input exceeds 1 MiB.");
-        if (KEM_SCHEMES2.includes(scheme)) {
-          const encrypted = await PQC.encapsulate(keys.publicKey);
-          const sharedKey = await PQC.decapsulate(keys.privateKey, encrypted.ciphertext);
-          if (!equalBytes3(bytes(encrypted.sharedKey), bytes(sharedKey))) throw new Error("KEM round-trip failed.");
-        } else {
-          const signature = await PQC.sign(input, keys.privateKey);
-          const valid = await PQC.verify(input, keys.publicKey, signature);
-          if (!valid) throw new Error("Signature verification failed.");
-        }
+        const encrypted = await PQC.encapsulate(keys.publicKey);
+        const sharedKey = await PQC.decapsulate(keys.privateKey, encrypted.ciphertext);
+        if (!equalBytes3(bytes(encrypted.sharedKey), bytes(sharedKey))) throw new Error("KEM round-trip failed.");
         if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
         this.schemeStatus[scheme] = "Round-trip passed";
       }
@@ -5519,26 +4242,25 @@ var require_settings = __commonJS({
   "src/settings.js"(exports2, module2) {
     "use strict";
     var { PQC } = require_pqc();
-    var { KEY_STORE: KEY_STORE2, SCHEMES, KEM_SCHEMES: KEM_SCHEMES2 } = require_constants();
+    var { ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
     module2.exports = function getSettingsPanel2(plugin) {
       const { createElement: h, useState, useEffect } = BdApi.React;
       const channelId = BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId();
       return h(function Panel() {
         const [enabled, setEnabled] = useState(Boolean(plugin.enabled));
         const [decoding, setDecoding] = useState(plugin.decodeIncoming !== false);
-        const [scheme, setScheme] = useState(plugin.scheme);
+        const scheme = ACTIVE_SCHEME2;
         const [publicKey, setPublicKey] = useState("");
         const [recipients, setRecipients] = useState(() => plugin.getRecipients(channelId, plugin.scheme));
         const [username, setUsername] = useState("");
         const [recipientKey, setRecipientKey] = useState("");
-        const [testAlgorithm, setTestAlgorithm] = useState(plugin.scheme);
         const [busy, setBusy] = useState(true);
         const [status, setStatus] = useState("Loading your encryption key...");
         useEffect(() => {
           let active = true;
           plugin.generateKeys(plugin.scheme).then((keys) => {
             if (active) {
-              setPublicKey(keys.publicKey.export({ type: "spki", format: "pem" }));
+              setPublicKey(keys.publicKey.export({ type: "spki", format: "base64" }));
               setStatus("Encryption key ready and saved locally.");
             }
           }).catch((error) => {
@@ -5572,19 +4294,13 @@ var require_settings = __commonJS({
             setStatus("Clipboard unavailable. Paste into the public key field manually.");
           }
         };
-        const loadScheme = async (value) => {
+        const loadKey = async () => {
           setBusy(true);
           setPublicKey("");
           setStatus("Loading your encryption key...");
-          plugin.scheme = value;
-          BdApi.Data.save(KEY_STORE2, "scheme", value);
-          setScheme(value);
-          setRecipients(plugin.getRecipients(channelId, value));
-          setRecipientKey("");
-          setUsername("");
           try {
-            const keys = await plugin.generateKeys(value);
-            setPublicKey(keys.publicKey.export({ type: "spki", format: "pem" }));
+            const keys = await plugin.generateKeys(scheme);
+            setPublicKey(keys.publicKey.export({ type: "spki", format: "base64" }));
             setStatus("Encryption key ready and saved locally.");
           } catch (error) {
             setStatus(error.message);
@@ -5617,122 +4333,173 @@ var require_settings = __commonJS({
         };
         const testAlgorithmNow = async () => {
           setBusy(true);
-          setStatus("Checking " + testAlgorithm.toUpperCase() + "...");
+          setStatus("Checking ML-KEM-512...");
           try {
-            await plugin.testScheme(testAlgorithm, "Qcord encryption check");
-            setStatus(testAlgorithm.toUpperCase() + ": round-trip passed.");
+            await plugin.testScheme(scheme, "Qcord encryption check");
+            setStatus("ML-KEM-512: round-trip passed.");
           } catch (error) {
             setStatus(error.message);
           } finally {
             setBusy(false);
           }
         };
+        const cleanPublicKey = (value) => PQC.createPublicKey(value).export({ type: "spki", format: "base64" });
+        const toggle = (title, description, checked, onChange) => h(
+          "label",
+          { className: "qcord-toggle", "data-checked": checked },
+          h("input", { type: "checkbox", checked, disabled: !plugin.running, onChange }),
+          h("span", null, h("strong", null, title), h("small", null, description)),
+          h("span", { className: "qcord-toggle-state" }, checked ? "On" : "Off")
+        );
+        const lesson = (title, text) => h("div", { className: "qcord-lesson" }, h("h4", null, title), h("p", null, text));
         return h(
           "div",
           { className: "qcord-panel" },
           h(
+            "header",
+            { className: "qcord-heading" },
+            h("div", null, h("h2", null, "Your private conversation"), h("p", null, "One scheme. Your keys. Post-quantum messaging, explained.")),
+            h("span", { className: "qcord-badge" }, "ML-KEM-512")
+          ),
+          h(
             "section",
             { className: "qcord-section" },
             h("h3", null, "Messages"),
-            h("label", null, h("input", {
-              type: "checkbox",
-              checked: enabled,
-              disabled: !plugin.running,
-              onChange: (event) => {
-                plugin.setEnabled(event.target.checked);
-                setEnabled(plugin.enabled);
-              }
-            }), "Encrypt outgoing messages"),
-            h("label", null, h("input", {
-              type: "checkbox",
-              checked: decoding,
-              disabled: !plugin.running,
-              onChange: (event) => {
-                plugin.setDecoding(event.target.checked);
-                setDecoding(plugin.decodeIncoming);
-              }
-            }), "Decrypt incoming .qcord files"),
+            h(
+              "div",
+              { className: "qcord-switches" },
+              toggle(
+                "Encrypt outgoing",
+                "Protect new messages before sending.",
+                enabled,
+                (event) => {
+                  plugin.setEnabled(event.target.checked);
+                  setEnabled(plugin.enabled);
+                }
+              ),
+              toggle(
+                "Decrypt incoming",
+                "Open .qcord files addressed to your keys.",
+                decoding,
+                (event) => {
+                  plugin.setDecoding(event.target.checked);
+                  setDecoding(plugin.decodeIncoming);
+                }
+              )
+            ),
+            h("p", { className: "qcord-integrity" }, "Integrity verification is always on for encrypted files. Altered content fails authentication and is not displayed as decrypted text."),
             h("p", null, "Enter prepares an encrypted file. Press Send or Enter again to send it.")
           ),
           h(
-            "section",
-            { className: "qcord-section" },
-            h("h3", null, "My encryption key"),
-            h("label", { className: "qcord-field" }, "Scheme and saved key", h("select", {
-              value: scheme,
-              disabled: busy || !plugin.running,
-              onChange: (event) => loadScheme(event.target.value)
-            }, ...KEM_SCHEMES2.map((value) => h("option", { key: value, value }, value.toUpperCase())))),
-            h("p", null, "Choosing a scheme loads your saved key or creates one the first time. Your own key is always included in sent files."),
-            h("label", { className: "qcord-field" }, "My public key", h("textarea", { readOnly: true, rows: 3, value: publicKey, placeholder: "Loading public key..." })),
+            "div",
+            { className: "qcord-workspace" },
             h(
-              "div",
-              { className: "qcord-actions" },
-              button("Copy my public key", () => copy(publicKey), !publicKey, "qcord-primary"),
-              button("Reload saved key", () => loadScheme(scheme))
+              "section",
+              { className: "qcord-section" },
+              h("h3", null, "My encryption key"),
+              h("p", null, "Share this public key so others can send you encrypted messages. Your matching private key stays on this device."),
+              h("p", null, "Using ML-KEM-512. Previously used another scheme? Exchange ML-KEM-512 keys again. Older keys remain saved for reading past messages."),
+              h("label", { className: "qcord-field" }, "My public key", h("textarea", { readOnly: true, rows: 3, value: publicKey, placeholder: "Loading public key..." })),
+              h(
+                "div",
+                { className: "qcord-actions" },
+                button("Copy my public key", () => copy(publicKey), !publicKey, "qcord-primary"),
+                button("Reload saved key", loadKey)
+              ),
+              publicKey && h("p", { className: "qcord-fingerprint" }, "SHA-256 fingerprint: " + plugin.keyId(PQC.createPublicKey(publicKey)))
             ),
-            publicKey && h("p", { className: "qcord-fingerprint" }, "Fingerprint: " + plugin.keyId(PQC.createPublicKey(publicKey)))
+            h(
+              "section",
+              { className: "qcord-section" },
+              h("h3", null, "Recipients"),
+              h("p", null, channelId ? "Channel " + channelId + " / " + scheme.toUpperCase() : "Open a Discord channel to add recipients."),
+              h("p", null, "Usernames are labels, not verified Discord identities. Compare public-key fingerprints with each person before adding them."),
+              h("label", { className: "qcord-field" }, "Username", h("input", {
+                type: "text",
+                value: username,
+                maxLength: 100,
+                placeholder: "@username",
+                disabled: busy || !channelId,
+                onChange: (event) => setUsername(event.target.value)
+              })),
+              h("label", { className: "qcord-field" }, "Their public key", h("textarea", {
+                rows: 3,
+                value: recipientKey,
+                placeholder: "Paste their ML-KEM-512 public key",
+                disabled: busy || !channelId,
+                onChange: (event) => setRecipientKey(event.target.value)
+              })),
+              h(
+                "div",
+                { className: "qcord-actions" },
+                button("Paste public key", paste, !channelId),
+                button("Add recipient", addRecipient, !channelId || !username.trim() || !recipientKey.trim(), "qcord-primary")
+              ),
+              recipients.length ? h(
+                "ul",
+                { className: "qcord-recipients" },
+                ...recipients.map(
+                  (row, index) => h(
+                    "li",
+                    { key: row.publicKey, className: "qcord-recipient" },
+                    h("strong", null, row.username || "Saved recipient"),
+                    h(
+                      "details",
+                      null,
+                      h("summary", null, "View key and fingerprint"),
+                      h("p", { className: "qcord-fingerprint" }, plugin.keyId(PQC.createPublicKey(row.publicKey))),
+                      h("textarea", { readOnly: true, rows: 3, value: cleanPublicKey(row.publicKey), "aria-label": "Public key for " + (row.username || "saved recipient") })
+                    ),
+                    h("div", { className: "qcord-actions" }, button("Copy key", () => copy(cleanPublicKey(row.publicKey))), button("Remove", () => removeRecipient(index), false, "qcord-danger"))
+                  )
+                )
+              ) : h("p", null, "No recipients for this channel yet. Add an ML-KEM-512 public key above.")
+            )
           ),
           h(
             "section",
             { className: "qcord-section" },
-            h("h3", null, "Recipients"),
-            h("p", null, channelId ? "Channel " + channelId + " / " + scheme.toUpperCase() : "Open a Discord channel to add recipients."),
-            h("p", null, "Usernames are labels, not verified Discord identities. Compare public-key fingerprints with each person before adding them."),
-            h("label", { className: "qcord-field" }, "Username", h("input", {
-              type: "text",
-              value: username,
-              maxLength: 100,
-              placeholder: "@username",
-              disabled: busy || !channelId,
-              onChange: (event) => setUsername(event.target.value)
-            })),
-            h("label", { className: "qcord-field" }, "Their public key", h("textarea", {
-              rows: 3,
-              value: recipientKey,
-              placeholder: "-----BEGIN PUBLIC KEY-----",
-              disabled: busy || !channelId,
-              onChange: (event) => setRecipientKey(event.target.value)
-            })),
+            h("h3", null, "How your message is protected"),
+            h("p", null, "Post-quantum cryptography runs on ordinary computers and is designed to resist attacks from future quantum computers. It does not use quantum hardware or quantum key distribution."),
             h(
               "div",
-              { className: "qcord-actions" },
-              button("Paste public key", paste, !channelId),
-              button("Add recipient", addRecipient, !channelId || !username.trim() || !recipientKey.trim(), "qcord-primary")
+              { className: "qcord-lessons" },
+              lesson("1 / Public and private keys", "A public key can be shared. ML-KEM-512 uses it to establish a shared secret; only the matching private key can recover that secret from the encapsulation. Never share your private key."),
+              lesson("2 / Encrypt the message", "Qcord encrypts the text with a fresh AES-256-GCM key. Each recipient gets a protected copy of that key using ML-KEM-512 and HKDF-SHA256. Your own key is included so you can read sent messages."),
+              lesson("3 / Verify integrity", "AES-GCM checks an authentication tag before releasing plaintext. Changing protected content causes verification to fail. A plain hash alone would not stop an attacker from changing both a message and its hash."),
+              lesson("4 / Compare key fingerprints", "SHA-256 hashes each public key into a fingerprint. Compare the full fingerprint through a trusted route to confirm the key belongs to the intended person. A fingerprint is not encryption or proof of who sent a message.")
             ),
-            recipients.length ? h("div", { className: "qcord-table-scroll" }, h(
-              "table",
+            h(
+              "details",
               null,
-              h("thead", null, h("tr", null, h("th", { scope: "col" }, "Recipient"), h("th", { scope: "col" }, "Public key"), h("th", { scope: "col" }, "Actions"))),
-              h("tbody", null, ...recipients.map((row, index) => h(
-                "tr",
-                { key: row.publicKey },
-                h("td", null, row.username || "Saved recipient"),
-                h("td", null, h(
-                  "details",
-                  null,
-                  h("summary", null, "View key and fingerprint"),
-                  h("p", { className: "qcord-fingerprint" }, plugin.keyId(PQC.createPublicKey(row.publicKey))),
-                  h("textarea", { readOnly: true, rows: 3, value: row.publicKey, "aria-label": "Public key for " + (row.username || "saved recipient") })
-                )),
-                h("td", null, h("div", { className: "qcord-actions" }, button("Copy key", () => copy(row.publicKey)), button("Remove", () => removeRecipient(index), false, "qcord-danger")))
-              )))
-            )) : h("p", null, "No recipients for this channel and scheme yet.")
+              h("summary", null, "Check ML-KEM-512 locally"),
+              h("p", null, "Confirm that your saved public and private keys establish the same shared secret."),
+              h("div", { className: "qcord-actions" }, button("Run key check", testAlgorithmNow))
+            )
           ),
           h(
             "details",
             { className: "qcord-section" },
-            h("summary", null, "Algorithm check"),
-            h("label", { className: "qcord-field" }, "Algorithm", h("select", {
-              value: testAlgorithm,
-              disabled: busy,
-              onChange: (event) => setTestAlgorithm(event.target.value)
-            }, ...SCHEMES.map((value) => h("option", { key: value, value }, value.toUpperCase() + (KEM_SCHEMES2.includes(value) ? " (encryption)" : " (signature check only)"))))),
-            h("div", { className: "qcord-actions" }, button("Run check", testAlgorithmNow)),
-            h("p", null, "Signature checks do not sign chat messages.")
+            h("summary", null, "Coming next / Post-quantum roadmap"),
+            h("p", null, "Planned additions, with no release dates yet. ML-KEM-512 is the only option for new conversations today."),
+            h(
+              "ul",
+              { className: "qcord-roadmap" },
+              h("li", null, h("strong", null, "ML-KEM-768 and ML-KEM-1024"), " \u2014 standardized parameter sets with higher security categories and larger keys. Future sending options; older files remain readable."),
+              h("li", null, h("strong", null, "HQC"), " \u2014 a code-based KEM selected by NIST for standardization, using a different mathematical foundation from ML-KEM. Planned for evaluation."),
+              h("li", null, h("strong", null, "ML-DSA and SLH-DSA"), " \u2014 standardized digital signatures for future sender verification. These authenticate messages; they do not encrypt them.")
+            ),
+            h(
+              "p",
+              null,
+              "Learn more: ",
+              h("a", { href: "https://csrc.nist.gov/pubs/fips/203/final", target: "_blank", rel: "noreferrer" }, "NIST ML-KEM standard"),
+              " \xB7 ",
+              h("a", { href: "https://csrc.nist.gov/News/2025/hqc-announced-as-a-4th-round-selection", target: "_blank", rel: "noreferrer" }, "NIST HQC selection")
+            )
           ),
           h("div", { className: "qcord-status", role: "status", "aria-live": "polite" }, status),
-          h("p", null, "Private keys stay in your local qcord.config.json, stored unencrypted. Keep it private and backed up. Chat files do not verify the sender's identity.")
+          h("p", null, "Experimental, unaudited messaging. Private keys stay in your local qcord.config.json, stored unencrypted. Keep it private and backed up. Chat files do not verify the sender's identity.")
         );
       });
     };
@@ -5749,7 +4516,7 @@ var require_button = __commonJS({
 // src/styles.css
 var require_styles = __commonJS({
   "src/styles.css"(exports2, module2) {
-    module2.exports = '[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {\n    background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));\n    backdrop-filter: blur(10px);\n    box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);\n}\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {\n    color: #f1f6ff;\n    caret-color: #8bc8ff;\n}\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {\n    color: #b7c9df;\n    opacity: 1;\n}\n.qcord-button {\r\n\r\n    --qcord-icon-off: #c5c6ca;\r\n    --qcord-icon-on: #ffffff;\r\n    --qcord-accent: #2786de;\r\n    \r\n    display: inline-flex; \r\n    align-items: center; \r\n    justify-content: center;\r\n\r\n    align-self: center; \r\n    flex-shrink: 0; \r\n    margin: 0;\r\n    \r\n    width: 32px; \r\n    height: 32px; \r\n    margin-left: 2px;\r\n\r\n    padding: 4px 4px; \r\n    \r\n    box-sizing: border-box;\r\n    border: 0; \r\n    border-radius: 25%; \r\n    cursor: pointer;\r\n    \r\n    background: transparent; \r\n    color: var(--qcord-icon-off);\r\n}\r\n\r\n\r\n.qcord-button:focus-visible { outline: 2px solid var(--text-link); }\r\n.qcord-button:hover { color: var(--qcord-icon-on); }\n.qcord-button[data-decoding="true"] {\n    color: var(--qcord-icon-on);\r\n    background: linear-gradient(to top, var(--qcord-accent), transparent);\r\n}\r\n.qcord-button svg {\r\n    display: block; \r\n    flex-shrink: 0;\r\n    width: 22px; \r\n    height: 22px;\r\n    \r\n    transform: translateY(-2px) translateX(0.5px);\r\n\r\n    \r\n    fill: currentColor; \r\n    \r\n    pointer-events: none;\r\n    transition: transform 180ms ease;\r\n}\r\n.qcord-button:hover svg { \r\n    transform: translateY(-2px) translateX(0.5px) scale(1.075);\r\n\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n    .qcord-button svg { transition: none; }\r\n}\r\n\r\n.qcord-plain { white-space: pre-wrap; }\n.qcord-file-hidden { display: none !important; }\r\n.qcord-file-plain { color: #fff; font-size: 16px; line-height: 1.375; overflow-wrap: anywhere; }\r\n[role="dialog"]:has(.qcord-panel) { width: min(860px, 94vw); max-width: 94vw; }\n.qcord-panel { display: grid; gap: 16px; max-height: 72vh; overflow-y: auto; padding: 4px 8px 8px 0; color: #eef4ff; }\n.qcord-section { min-width: 0; padding: 16px; border: 1px solid #354b66; border-radius: 10px; background: #182332; }\n.qcord-section > * + * { margin-top: 12px; }\n.qcord-panel h3 { margin: 0; font-size: 17px; font-weight: 650; color: #eef4ff; }\n.qcord-panel label { display: flex; align-items: center; gap: 8px; }\n.qcord-panel .qcord-field { display: grid; gap: 6px; }\r\n.qcord-panel input[type="checkbox"] { accent-color: #2786de; }\r\n.qcord-panel select, .qcord-panel button, .qcord-panel textarea, .qcord-panel input[type="text"] {\n    padding: 10px 12px; border: 1px solid #527092;\n    border-radius: 6px; background: #101b29;\n    color: #eef4ff; font: inherit;\n}\n.qcord-panel select, .qcord-panel textarea, .qcord-panel input[type="text"] { width: 100%; box-sizing: border-box; }\n.qcord-panel select { color-scheme: dark; }\n.qcord-panel select, .qcord-panel option { background: #172638; color: #f1f6ff; }\n.qcord-panel textarea { font: 12px/1.5 monospace; resize: vertical; }\n.qcord-panel button { cursor: pointer; background: #293e58; font-weight: 600; }\n.qcord-panel button:hover:not(:disabled) { filter: brightness(1.2); }\n.qcord-panel .qcord-primary { background: #1767b5; border-color: #6eb4fa; }\n.qcord-panel .qcord-danger { background: #382330; border-color: #a7667e; color: #ffd8e4; }\n.qcord-panel button:disabled { opacity: .5; cursor: default; }\n.qcord-panel :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid #8bc8ff; outline-offset: 2px; }\n.qcord-panel p { color: #bccbdd; font-size: 13px; line-height: 1.5; }\n.qcord-panel ::placeholder { color: #99adc5; opacity: 1; }\n.qcord-actions { display: flex; flex-wrap: wrap; gap: 10px; }\n.qcord-fingerprint { overflow-wrap: anywhere; font-family: monospace; }\n.qcord-table-scroll { overflow-x: auto; }\n.qcord-panel table { width: 100%; table-layout: fixed; border-collapse: collapse; }\n.qcord-panel th, .qcord-panel td { padding: 12px 8px; border-bottom: 1px solid #354b66; text-align: left; vertical-align: top; overflow-wrap: anywhere; }\n.qcord-panel summary { cursor: pointer; color: #a7d4ff; }\n.qcord-status { position: sticky; bottom: 0; padding: 12px; background: #163556; border: 1px solid #5489bc; border-radius: 6px; }\n';
+    module2.exports = '[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {\n    background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));\n    backdrop-filter: blur(10px);\n    box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);\n}\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {\n    color: #f1f6ff;\n    caret-color: #8bc8ff;\n}\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {\n    color: #b7c9df;\n    opacity: 1;\n}\n.qcord-button {\r\n\r\n    --qcord-icon-off: #c5c6ca;\r\n    --qcord-icon-on: #ffffff;\r\n    --qcord-accent: #2786de;\r\n    \r\n    display: inline-flex; \r\n    align-items: center; \r\n    justify-content: center;\r\n\r\n    align-self: center; \r\n    flex-shrink: 0; \r\n    margin: 0;\r\n    \r\n    width: 32px; \r\n    height: 32px; \r\n    margin-left: 2px;\r\n\r\n    padding: 4px 4px; \r\n    \r\n    box-sizing: border-box;\r\n    border: 0; \r\n    border-radius: 25%; \r\n    cursor: pointer;\r\n    \r\n    background: transparent; \r\n    color: var(--qcord-icon-off);\r\n}\r\n\r\n\r\n.qcord-button:focus-visible { outline: 2px solid var(--text-link); }\r\n.qcord-button:hover { color: var(--qcord-icon-on); }\n.qcord-button[data-decoding="true"] {\n    color: var(--qcord-icon-on);\r\n    background: linear-gradient(to top, var(--qcord-accent), transparent);\r\n}\r\n.qcord-button svg {\r\n    display: block; \r\n    flex-shrink: 0;\r\n    width: 22px; \r\n    height: 22px;\r\n    \r\n    transform: translateY(-2px) translateX(0.5px);\r\n\r\n    \r\n    fill: currentColor; \r\n    \r\n    pointer-events: none;\r\n    transition: transform 180ms ease;\r\n}\r\n.qcord-button:hover svg { \r\n    transform: translateY(-2px) translateX(0.5px) scale(1.075);\r\n\r\n}\r\n\r\n@media (prefers-reduced-motion: reduce) {\r\n    .qcord-button svg { transition: none; }\r\n}\r\n\r\n.qcord-plain { white-space: pre-wrap; }\n.qcord-file-hidden { display: none !important; }\r\n.qcord-file-plain { color: #fff; font-size: 16px; line-height: 1.375; overflow-wrap: anywhere; }\r\n[role="dialog"]:has(.qcord-panel) { width: min(1120px, 94vw); max-width: 94vw; }\n.qcord-panel { container-type: inline-size; display: grid; gap: 24px; max-height: 76vh; overflow-y: auto; padding: 8px 12px 16px 0; color: #eef4ff; }\n.qcord-section { min-width: 0; padding: 24px; border: 1px solid #354b66; border-radius: 12px; background: #182332; }\n.qcord-section > * + * { margin-top: 18px; }\n.qcord-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }\n.qcord-heading h2 { font-size: 24px; font-weight: 700; margin: 0 0 8px; }\n.qcord-badge { padding: 8px 12px; border: 1px solid #5489bc; border-radius: 20px; color: #b9ddff; background: #163556; font-size: 13px; font-weight: 700; }\n.qcord-workspace { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 24px; align-items: start; }\n.qcord-switches, .qcord-lessons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }\n.qcord-panel .qcord-toggle { padding: 18px; gap: 14px; border: 1px solid #527092; border-radius: 10px; background: #101b29; cursor: pointer; }\n.qcord-toggle[data-checked="true"] { border-color: #75b9ff; background: #173954; }\n.qcord-toggle input { width: 22px; height: 22px; flex-shrink: 0; }\n.qcord-toggle strong, .qcord-toggle small { display: block; }\n.qcord-toggle small { margin-top: 6px; color: #bccbdd; font-size: 13px; line-height: 1.5; }\n.qcord-toggle-state { margin-left: auto; font-size: 12px; font-weight: 700; }\n.qcord-panel .qcord-integrity { padding: 12px 16px; border-left: 3px solid #74cbb1; background: #112d2c; color: #c9ece2; }\n.qcord-lesson { padding: 18px; background: #101b29; border-radius: 8px; }\n.qcord-lesson h4 { margin: 0 0 10px; font-size: 15px; font-weight: 650; }\n.qcord-panel .qcord-lesson p { margin: 0; }\n.qcord-roadmap { padding-left: 20px; color: #bccbdd; font-size: 14px; line-height: 1.6; }\n.qcord-roadmap li + li { margin-top: 12px; }\n.qcord-panel a { color: #a7d4ff; text-decoration: underline; }\n@container (max-width: 760px) {\n    .qcord-workspace, .qcord-switches, .qcord-lessons { grid-template-columns: minmax(0, 1fr); }\n    .qcord-section { padding: 18px; }\n}\n.qcord-panel h3 { margin: 0; font-size: 17px; font-weight: 650; color: #eef4ff; }\n.qcord-panel label { display: flex; align-items: center; gap: 8px; }\n.qcord-panel .qcord-field { display: grid; gap: 6px; }\r\n.qcord-panel input[type="checkbox"] { accent-color: #2786de; }\r\n.qcord-panel select, .qcord-panel button, .qcord-panel textarea, .qcord-panel input[type="text"] {\n    padding: 10px 12px; border: 1px solid #527092;\n    border-radius: 6px; background: #101b29;\n    color: #eef4ff; font: inherit;\n}\n.qcord-panel select, .qcord-panel textarea, .qcord-panel input[type="text"] { width: 100%; box-sizing: border-box; }\n.qcord-panel select { color-scheme: dark; }\n.qcord-panel select, .qcord-panel option { background: #172638; color: #f1f6ff; }\n.qcord-panel textarea { font: 12px/1.5 monospace; resize: vertical; }\n.qcord-panel button { cursor: pointer; background: #293e58; font-weight: 600; }\n.qcord-panel button:hover:not(:disabled) { filter: brightness(1.2); }\n.qcord-panel .qcord-primary { background: #1767b5; border-color: #6eb4fa; }\n.qcord-panel .qcord-danger { background: #382330; border-color: #a7667e; color: #ffd8e4; }\n.qcord-panel button:disabled { opacity: .5; cursor: default; }\n.qcord-panel :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid #8bc8ff; outline-offset: 2px; }\n.qcord-panel p { color: #bccbdd; font-size: 13px; line-height: 1.5; }\n.qcord-panel ::placeholder { color: #99adc5; opacity: 1; }\n.qcord-actions { display: flex; flex-wrap: wrap; gap: 10px; }\n.qcord-fingerprint { overflow-wrap: anywhere; font-family: monospace; }\n.qcord-recipients { display: grid; gap: 16px; padding: 0; list-style: none; }\n.qcord-recipient { padding: 16px; border: 1px solid #354b66; border-radius: 8px; overflow-wrap: anywhere; }\n.qcord-recipient > * + * { margin-top: 14px; }\n.qcord-panel summary { cursor: pointer; color: #a7d4ff; }\n.qcord-status { position: sticky; bottom: 0; padding: 12px; background: #163556; border: 1px solid #5489bc; border-radius: 6px; }\n';
   }
 });
 
@@ -5758,7 +4525,7 @@ var MessageCrypto = require_messaging();
 var getSettingsPanel = require_settings();
 var BUTTON_SVG = require_button();
 var PLUGIN_CSS = require_styles();
-var { NAME, KEY_STORE, KEM_SCHEMES, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require_constants();
+var { NAME, KEY_STORE, ACTIVE_SCHEME, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require_constants();
 module.exports = class Qcord extends MessageCrypto {
   start() {
     this.enabled = BdApi.Data.load(KEY_STORE, "enabled") === true;
@@ -5774,8 +4541,7 @@ module.exports = class Qcord extends MessageCrypto {
     this.keyPairs = /* @__PURE__ */ new Map();
     this.keyTasks = /* @__PURE__ */ new Map();
     this.schemeStatus = {};
-    const savedScheme = BdApi.Data.load(KEY_STORE, "scheme");
-    this.scheme = KEM_SCHEMES.includes(savedScheme) ? savedScheme : "ml-kem-768";
+    this.scheme = ACTIVE_SCHEME;
     const actions = BdApi.Webpack.getByKeys("sendMessage", "editMessage");
     if (!actions || typeof actions.sendMessage !== "function") {
       BdApi.UI.showToast("Qcord could not find Discord's send function. Encryption is unavailable.", { type: "error" });

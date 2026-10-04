@@ -5,7 +5,7 @@ const {gcm} = require("@noble/ciphers/aes.js");
 const {sha256} = require("@noble/hashes/sha2.js");
 const {hkdf} = require("@noble/hashes/hkdf.js");
 const bytes = value => Uint8Array.from(value);
-const { KEY_STORE, SCHEMES, KEM_SCHEMES, ENCRYPTED_PREFIX, BASE64_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
+const { KEY_STORE, SCHEMES, ACTIVE_SCHEME, KEM_SCHEMES, ENCRYPTED_PREFIX, BASE64_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
 
 module.exports = class MessageCrypto {
     async generateKeys(scheme) {
@@ -33,8 +33,8 @@ module.exports = class MessageCrypto {
                 BdApi.Data.save(KEY_STORE, "keyPairs", {
                     ...(BdApi.Data.load(KEY_STORE, "keyPairs") || {}),
                     [scheme]: {
-                        publicKey: keys.publicKey.export({type: "spki", format: "pem"}),
-                        privateKey: keys.privateKey.export({type: "pkcs8", format: "pem"}),
+                        publicKey: keys.publicKey.export({type: "spki", format: "base64"}),
+                        privateKey: keys.privateKey.export({type: "pkcs8", format: "base64"}),
                         createdAt: new Date().toISOString()
                     }
                 });
@@ -67,7 +67,7 @@ module.exports = class MessageCrypto {
 
     saveRecipients(channelId, rows, scheme) {
         if (!/^\d+$/.test(channelId || "")) throw new Error("Open a Discord channel first.");
-        if (!KEM_SCHEMES.includes(scheme)) throw new Error("Choose an ML-KEM encryption scheme.");
+        if (scheme !== ACTIVE_SCHEME) throw new Error("New recipients must use ML-KEM-512.");
         if (!Array.isArray(rows) || rows.length > 15) throw new Error("Add up to 15 recipients.");
         const seen = new Set();
         const entries = rows.map(({username, publicKey}) => {
@@ -77,7 +77,7 @@ module.exports = class MessageCrypto {
             const id = this.keyId(key);
             if (seen.has(id)) throw new Error("That public key is already in the recipient table.");
             seen.add(id);
-            return {username: username.trim(), publicKey: key.export({type: "spki", format: "pem"})};
+            return {username: username.trim(), publicKey: key.export({type: "spki", format: "base64"})};
         });
         const recipients = BdApi.Data.load(KEY_STORE, "recipients") || {};
         const previous = recipients[channelId];
@@ -110,7 +110,7 @@ module.exports = class MessageCrypto {
 
     async encryptMessage(channelId, text) {
         if (!/^\d+$/.test(channelId || "")) throw new Error("Invalid channel.");
-        const scheme = this.scheme;
+        const scheme = ACTIVE_SCHEME;
         const recipients = this.getRecipients(channelId, scheme);
         if (!Array.isArray(recipients) || !recipients.length) {
             throw new Error("Save recipient public keys for this channel and scheme in Qcord settings first.");
@@ -170,16 +170,9 @@ module.exports = class MessageCrypto {
         const session = this.session;
         const input = Buffer.from(text, "utf8");
         if (input.length > MAX_DECODED_FILE_SIZE) throw new Error("Test input exceeds 1 MiB.");
-        if (KEM_SCHEMES.includes(scheme)) {
-            const encrypted = await PQC.encapsulate(keys.publicKey);
-            const sharedKey = await PQC.decapsulate(keys.privateKey, encrypted.ciphertext);
-            if (!equalBytes(bytes(encrypted.sharedKey), bytes(sharedKey))) throw new Error("KEM round-trip failed.");
-        }
-        else {
-            const signature = await PQC.sign(input, keys.privateKey);
-            const valid = await PQC.verify(input, keys.publicKey, signature);
-            if (!valid) throw new Error("Signature verification failed.");
-        }
+        const encrypted = await PQC.encapsulate(keys.publicKey);
+        const sharedKey = await PQC.decapsulate(keys.privateKey, encrypted.ciphertext);
+        if (!equalBytes(bytes(encrypted.sharedKey), bytes(sharedKey))) throw new Error("KEM round-trip failed.");
         if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
         this.schemeStatus[scheme] = "Round-trip passed";
     }

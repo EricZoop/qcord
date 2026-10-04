@@ -4,7 +4,7 @@ const MessageCrypto = require("./messaging");
 const getSettingsPanel = require("./settings");
 const BUTTON_SVG = require("./button.svg");
 const PLUGIN_CSS = require("./styles.css");
-const { NAME, KEY_STORE, KEM_SCHEMES, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
+const { NAME, KEY_STORE, ACTIVE_SCHEME, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
 
 module.exports = class Qcord extends MessageCrypto {
     start() {
@@ -21,8 +21,7 @@ module.exports = class Qcord extends MessageCrypto {
         this.keyPairs = new Map();
         this.keyTasks = new Map();
         this.schemeStatus = {};
-        const savedScheme = BdApi.Data.load(KEY_STORE, "scheme");
-        this.scheme = KEM_SCHEMES.includes(savedScheme) ? savedScheme : "ml-kem-768";
+        this.scheme = ACTIVE_SCHEME;
 
         // Discord internals are not a stable API. Do not present a working switch
         // unless we can actually intercept ordinary chat submissions.

@@ -1,12 +1,14 @@
 "use strict";
 
-const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024", "ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "slh-dsa-sha2-128f"];
+// Older KEMs are retained only to read previously encrypted messages.
+const SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024"];
 
 module.exports = {
     NAME: "Qcord",
     // One cache name for settings and keys: Windows filenames ignore case.
     KEY_STORE: "qcord",
     SCHEMES,
+    ACTIVE_SCHEME: "ml-kem-512",
     KEM_SCHEMES: SCHEMES.filter(scheme => scheme.startsWith("ml-kem")),
     ENCRYPTED_PREFIX: "qcord:v2:pqc:",
     BASE64_RE: /^[A-Za-z0-9+/]*={0,2}$/,

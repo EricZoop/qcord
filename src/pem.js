@@ -32,8 +32,9 @@ function unpack(bytes) {
 function readPem(text, type) {
     if (typeof text !== "string" || text.length > 65536) throw new Error("Invalid PEM key.");
     const match = text.trim().match(/^-----BEGIN (PUBLIC|PRIVATE) KEY-----\s+([A-Za-z0-9+/=\s]+)-----END \1 KEY-----$/);
-    if (!match || match[1] !== type) throw new Error("Invalid PEM key type.");
-    const encoded = match[2].replace(/\s/g, "");
+    if (match && match[1] !== type) throw new Error("Invalid key type.");
+    const encoded = (match ? match[2] : text).replace(/\s/g, "");
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error("Paste a complete Base64 public key or PEM key.");
     const bytes = Buffer.from(encoded, "base64");
     if (!bytes.length || bytes.toString("base64") !== encoded) throw new Error("Invalid PEM Base64.");
     return bytes;
