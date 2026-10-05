@@ -36,7 +36,7 @@
 
     box-sizing: border-box;
     border: 0;
-    border-radius: 0;
+    border-radius: var(--radius-sm, 8px);
     cursor: pointer;
 
     background: transparent;
@@ -106,8 +106,7 @@
     max-height: 90vh;
     border-radius: 0;
 }
-.bd-modal-root:has(.qcord-panel) :is(button, .bd-modal-header, .bd-modal-content, .bd-modal-footer),
-.bd-modal:has(.qcord-panel) .bd-modal-inner { border-radius: 0; }
+.bd-modal:has(.qcord-panel) .bd-modal-inner { border-radius: var(--radius-md, 12px); }
 .bd-modal-root:has(.qcord-panel) .bd-modal-content { overflow-y: auto; }
 .bd-modal:has(.qcord-panel) .bd-modal-body { max-height: 75vh; overflow-y: auto; }
 .qcord-panel {
@@ -138,14 +137,17 @@
 .qcord-panel h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
 .qcord-panel p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-muted, #b5bac1); }
 .qcord-panel .qcord-section > p { margin-top: 16px; }
-.qcord-panel .qcord-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 0; cursor: pointer; font-weight: 600; }
-.qcord-toggle input { width: 22px; height: 22px; accent-color: #2786de; margin: 0; }
+.qcord-panel .qcord-toggle { display: flex; align-items: center; gap: 12px; padding: 12px; cursor: pointer; }
+.qcord-toggle input { appearance: none; display: grid; place-content: center; width: 22px; height: 22px; flex-shrink: 0; margin: 0; border: 1px solid #92959d; border-radius: 4px; background: #232428; cursor: pointer; }
+.qcord-toggle input:checked::before { content: ""; width: 6px; height: 11px; border: solid #f2f3f5; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.qcord-toggle:has(input:disabled) { opacity: .5; cursor: default; }
+@media (forced-colors: active) { .qcord-toggle input { appearance: auto; } .qcord-toggle input::before { display: none; } }
 .qcord-panel .qcord-field { display: grid; gap: 8px; font-size: 13px; }
-.qcord-panel textarea, .qcord-panel button {
+.qcord-panel textarea, .qcord-panel button, .qcord-panel .qcord-toggle {
     box-sizing: border-box;
     border: 1px solid var(--background-modifier-accent, #505259);
     border-radius: 0;
-    background: var(--background-secondary, #2b2d31);
+    background: #2b2d31;
     color: var(--text-normal, #e0e1e5);
     padding: 10px 12px;
     font: inherit;
@@ -161,7 +163,7 @@
 }
 .qcord-panel textarea::-webkit-scrollbar { display: none; }
 .qcord-panel button { cursor: pointer; font-size: 13px; }
-.qcord-panel button:hover:not(:disabled) { background: var(--background-modifier-hover, #41434a); }
+.qcord-panel button:hover:not(:disabled), .qcord-panel .qcord-toggle:hover:not(:has(input:disabled)) { background: var(--background-modifier-hover, #41434a); }
 .qcord-panel button:disabled, .qcord-panel textarea:disabled { opacity: .5; cursor: default; }
 .qcord-panel :is(button, input, textarea, summary, a):focus-visible { outline: 2px solid #8bc8ff; outline-offset: 2px; }
 .qcord-fingerprint, .qcord-identifiers { overflow-wrap: anywhere; font-family: monospace; }
@@ -171,8 +173,8 @@
 .qcord-panel summary { display: flex; align-items: center; gap: 10px; list-style: none; }
 .qcord-panel summary::-webkit-details-marker { display: none; }
 .qcord-panel summary::marker { content: ""; }
-.qcord-panel summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); flex-shrink: 0; }
-.qcord-panel details[open] > summary::before { transform: rotate(45deg); }
+.qcord-panel summary::after { content: ""; margin-left: auto; margin-right: 3px; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); flex-shrink: 0; }
+.qcord-panel details[open] > summary::after { transform: rotate(45deg); }
 .qcord-panel .qcord-danger { background: #a12832; border-color: #d84a55; color: #fff; }
 .qcord-panel .qcord-danger:hover:not(:disabled) { background: #bc303c; }
 .qcord-panel a { color: var(--text-link, #8bc8ff); text-decoration: underline; font-size: 13px; }
@@ -180,3 +182,7 @@
 @container (max-width: 700px) {
     .qcord-workspace, .qcord-lessons, .qcord-switches { grid-template-columns: minmax(0, 1fr); }
 }
+
+.qcord-copy-label { display: inline-flex; align-items: center; gap: 8px; }
+.qcord-copy-label svg { width: 18px; height: 18px; flex-shrink: 0; }
+.qcord-created-at { font-size: 12px; font-weight: 400; color: var(--text-muted, #b5bac1); }

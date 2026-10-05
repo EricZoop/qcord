@@ -19,8 +19,8 @@ module.exports = class MessageCrypto {
             if (typeof stored !== "object" || Array.isArray(stored)) throw new Error("Invalid saved key configuration.");
             let keys;
             if (stored[scheme]) {
-                const {publicKey, privateKey} = stored[scheme];
-                keys = {scheme, publicKey: PQC.createPublicKey(publicKey), privateKey: PQC.createPrivateKey(privateKey)};
+                const {publicKey, privateKey, createdAt} = stored[scheme];
+                keys = {scheme, createdAt, publicKey: PQC.createPublicKey(publicKey), privateKey: PQC.createPrivateKey(privateKey)};
                 if (keys.publicKey.asymmetricKeyType !== scheme || keys.privateKey.asymmetricKeyType !== scheme ||
                     !PQC.createPublicKey(keys.privateKey).equals(keys.publicKey)) {
                     throw new Error("Saved keys do not match. Restore your key configuration from backup.");
@@ -28,13 +28,14 @@ module.exports = class MessageCrypto {
             }
             else {
                 keys = {scheme, ...await PQC.generateKeyPair(scheme)};
+                keys.createdAt = new Date().toISOString();
                 if (!this.running || this.session !== session) throw new Error("Qcord stopped during key generation.");
                 // Save the single supported key pair.
                 BdApi.Data.save(KEY_STORE, "keyPairs", {
                     [scheme]: {
                         publicKey: keys.publicKey.export({type: "spki", format: "base64"}),
                         privateKey: keys.privateKey.export({type: "pkcs8", format: "base64"}),
-                        createdAt: new Date().toISOString()
+                        createdAt: keys.createdAt
                     }
                 });
             }

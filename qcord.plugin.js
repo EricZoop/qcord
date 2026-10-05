@@ -4067,19 +4067,20 @@ var require_messaging = __commonJS({
           if (typeof stored !== "object" || Array.isArray(stored)) throw new Error("Invalid saved key configuration.");
           let keys;
           if (stored[scheme]) {
-            const { publicKey, privateKey } = stored[scheme];
-            keys = { scheme, publicKey: PQC.createPublicKey(publicKey), privateKey: PQC.createPrivateKey(privateKey) };
+            const { publicKey, privateKey, createdAt } = stored[scheme];
+            keys = { scheme, createdAt, publicKey: PQC.createPublicKey(publicKey), privateKey: PQC.createPrivateKey(privateKey) };
             if (keys.publicKey.asymmetricKeyType !== scheme || keys.privateKey.asymmetricKeyType !== scheme || !PQC.createPublicKey(keys.privateKey).equals(keys.publicKey)) {
               throw new Error("Saved keys do not match. Restore your key configuration from backup.");
             }
           } else {
             keys = { scheme, ...await PQC.generateKeyPair(scheme) };
+            keys.createdAt = (/* @__PURE__ */ new Date()).toISOString();
             if (!this.running || this.session !== session) throw new Error("Qcord stopped during key generation.");
             BdApi.Data.save(KEY_STORE2, "keyPairs", {
               [scheme]: {
                 publicKey: keys.publicKey.export({ type: "spki", format: "base64" }),
                 privateKey: keys.privateKey.export({ type: "pkcs8", format: "base64" }),
-                createdAt: (/* @__PURE__ */ new Date()).toISOString()
+                createdAt: keys.createdAt
               }
             });
           }
@@ -4251,6 +4252,7 @@ var require_settings = __commonJS({
         const [enabled, setEnabled] = useState(Boolean(plugin.enabled));
         const [decoding, setDecoding] = useState(plugin.decodeIncoming !== false);
         const [publicKey, setPublicKey] = useState("");
+        const [createdAt, setCreatedAt] = useState(null);
         const [saved, setSaved] = useState(() => plugin.getRecipients(channelId, ACTIVE_SCHEME2));
         const [recipientKey, setRecipientKey] = useState("");
         const [busy, setBusy] = useState(true);
@@ -4260,7 +4262,10 @@ var require_settings = __commonJS({
         useEffect(() => {
           let active = true;
           plugin.generateKeys(ACTIVE_SCHEME2).then((keys) => {
-            if (active) setPublicKey(exportPublic(keys.publicKey));
+            if (active) {
+              setPublicKey(exportPublic(keys.publicKey));
+              setCreatedAt(keys.createdAt);
+            }
           }).catch((error) => {
             if (active) setStatus(error.message);
           }).finally(() => {
@@ -4284,13 +4289,13 @@ var require_settings = __commonJS({
             setStatus("Select and copy the key manually; clipboard access is unavailable.");
           }
         };
-        const paste = async () => {
-          try {
-            setRecipientKey(await navigator.clipboard.readText());
-          } catch {
-            setStatus("Paste into the key field manually; clipboard access is unavailable.");
-          }
-        };
+        const copyIcon = () => h(
+          "svg",
+          { width: 24, height: 24, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true, focusable: false },
+          h("rect", { width: 14, height: 14, x: 8, y: 8, rx: 2, ry: 2 }),
+          h("path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" })
+        );
+        const copyButton = (label, text) => button(h("span", { className: "qcord-copy-label" }, copyIcon(), label), () => copy(text));
         const saveKey = () => {
           try {
             plugin.saveRecipients(channelId, [{ userId: partner?.userId, publicKey: recipientKey }], ACTIVE_SCHEME2);
@@ -4325,7 +4330,9 @@ var require_settings = __commonJS({
         const createKey = async () => {
           setBusy(true);
           try {
-            setPublicKey(exportPublic((await plugin.generateKeys(ACTIVE_SCHEME2)).publicKey));
+            const keys = await plugin.generateKeys(ACTIVE_SCHEME2);
+            setPublicKey(exportPublic(keys.publicKey));
+            setCreatedAt(keys.createdAt);
             setStatus("New key pair saved. Exchange your new public key with your partner.");
           } catch (error) {
             setStatus(error.message);
@@ -4349,6 +4356,7 @@ var require_settings = __commonJS({
                 setStatus(error.message);
               } finally {
                 setPublicKey("");
+                setCreatedAt(null);
                 setSaved([]);
                 setRecipientKey("");
                 setEnabled(false);
@@ -4388,9 +4396,18 @@ var require_settings = __commonJS({
             h(
               "section",
               { className: "qcord-section" },
-              h("h3", null, "My public key"),
+              h("h3", null, "My public key", publicKey && h(
+                "span",
+                { className: "qcord-created-at" },
+                createdAt && Number.isFinite(Date.parse(createdAt)) ? " (created " + new Date(createdAt).toLocaleString() + ")" : " (creation date unavailable)"
+              )),
               h("textarea", { readOnly: true, rows: 4, value: publicKey, placeholder: "Loading key...", "aria-label": "My public key" }),
-              h("div", { className: "qcord-actions" }, publicKey ? button("Copy public key", () => copy(publicKey)) : button("Create key pair", createKey)),
+              h(
+                "div",
+                { className: "qcord-actions" },
+                publicKey ? copyButton("Copy public key", publicKey) : button("Create key pair", createKey),
+                button("Check my key pair", testKey, !publicKey)
+              ),
               publicKey && h("p", { className: "qcord-fingerprint" }, "SHA-256: " + plugin.keyId(PQC.createPublicKey(publicKey)))
             ),
             h(
@@ -4418,7 +4435,6 @@ var require_settings = __commonJS({
               h(
                 "div",
                 { className: "qcord-actions" },
-                button("Paste key", paste, !partner),
                 button(current ? "Replace key" : "Save key", saveKey, !partner || !recipientKey.trim())
               ),
               current && h(
@@ -4428,7 +4444,7 @@ var require_settings = __commonJS({
                 h(
                   "div",
                   { className: "qcord-actions" },
-                  button("Copy saved key", () => copy(exportPublic(PQC.createPublicKey(current.publicKey)))),
+                  copyButton("Copy saved key", exportPublic(PQC.createPublicKey(current.publicKey))),
                   button("Remove key", removeKey)
                 )
               ),
@@ -4449,8 +4465,7 @@ var require_settings = __commonJS({
               lesson("One key per contact", "You keep one local key pair and collect a public key from every contact you message: N contacts means N contact keys to manage. Each file includes access for your partner and yourself. There is no shared group key or TreeKEM yet.")
             ),
             h("p", null, "Private keys are stored unencrypted in qcord.config.json. This experimental format has no sender signatures or forward secrecy."),
-            h("p", null, "Check your key pair locally, even without a DM partner. This checks cryptography on this device, not Discord delivery."),
-            h("div", { className: "qcord-actions" }, button("Check my key pair", testKey, !publicKey))
+            h("p", null, "Check your key pair locally, even without a DM partner. This checks cryptography on this device, not Discord delivery.")
           ),
           h(
             "details",
@@ -4476,7 +4491,7 @@ var require_button = __commonJS({
 // src/styles.css
 var require_styles = __commonJS({
   "src/styles.css"(exports2, module2) {
-    module2.exports = '[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {\n    background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));\n    backdrop-filter: blur(10px);\n    box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {\n    color: #f1f6ff;\n    caret-color: #8bc8ff;\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {\n    color: #b7c9df;\n    opacity: 1;\n}\n\n.qcord-button {\n\n    --qcord-icon-off: #c5c6ca;\n    --qcord-icon-on: #ffffff;\n    --qcord-accent: #2786de;\n\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n\n    align-self: center;\n    flex-shrink: 0;\n    margin: 0;\n\n    width: 32px;\n    height: 32px;\n    margin-left: 2px;\n\n    padding: 4px 4px;\n\n    box-sizing: border-box;\n    border: 0;\n    border-radius: 0;\n    cursor: pointer;\n\n    background: transparent;\n    color: var(--qcord-icon-off);\n}\n\n\n.qcord-button:focus-visible {\n    outline: 2px solid var(--text-link);\n}\n\n.qcord-button:hover {\n    color: var(--qcord-icon-on);\n}\n\n.qcord-button[data-decoding="true"] {\n    color: var(--qcord-icon-on);\n    background: linear-gradient(to top, var(--qcord-accent), transparent);\n}\n\n.qcord-button svg {\n    display: block;\n    flex-shrink: 0;\n    width: 22px;\n    height: 22px;\n\n    transform: translateY(-2px) translateX(0.5px);\n\n\n    fill: currentColor;\n\n    pointer-events: none;\n    transition: transform 180ms ease;\n}\n\n.qcord-button:hover svg {\n    transform: translateY(-2px) translateX(0.5px) scale(1.075);\n\n}\n\n@media (prefers-reduced-motion: reduce) {\n    .qcord-button svg {\n        transition: none;\n    }\n}\n\n.qcord-plain {\n    white-space: pre-wrap;\n}\n\n.qcord-file-hidden {\n    display: none !important;\n}\n\n.qcord-file-plain {\n    color: #fff;\n    font-size: 16px;\n    line-height: 1.375;\n    overflow-wrap: anywhere;\n}\n\n/* showConfirmationModal drops className; scope the actual roots by their content. */\n.bd-modal-root:has(.qcord-panel), .bd-modal:has(.qcord-panel) {\n    width: min(1120px, 94vw);\n    min-width: 0;\n    max-width: 94vw;\n    max-height: 90vh;\n    border-radius: 0;\n}\n.bd-modal-root:has(.qcord-panel) :is(button, .bd-modal-header, .bd-modal-content, .bd-modal-footer),\n.bd-modal:has(.qcord-panel) .bd-modal-inner { border-radius: 0; }\n.bd-modal-root:has(.qcord-panel) .bd-modal-content { overflow-y: auto; }\n.bd-modal:has(.qcord-panel) .bd-modal-body { max-height: 75vh; overflow-y: auto; }\n.qcord-panel {\n    container-type: inline-size;\n    display: grid;\n    gap: 20px;\n    min-width: 0;\n    padding: 4px 0 16px;\n    color: var(--text-normal, #e0e1e5);\n}\n/* BetterDiscord owns the modal scroll region; the panel does not add another. */\n.qcord-heading, .qcord-actions {\n    display: flex;\n    flex-wrap: wrap;\n    align-items: center;\n    gap: 12px;\n}\n.qcord-heading { justify-content: space-between; }\n.qcord-heading > span { font: 13px monospace; }\n.qcord-workspace, .qcord-lessons, .qcord-switches {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n    gap: 24px;\n}\n.qcord-section { min-width: 0; border-top: 1px solid var(--background-modifier-accent, #505259); padding-top: 18px; }\n.qcord-section > * + * { margin-top: 16px; }\n.qcord-panel h3 { margin: 0; font-size: 16px; font-weight: 600; }\n.qcord-panel h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }\n.qcord-panel p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-muted, #b5bac1); }\n.qcord-panel .qcord-section > p { margin-top: 16px; }\n.qcord-panel .qcord-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 0; cursor: pointer; font-weight: 600; }\n.qcord-toggle input { width: 22px; height: 22px; accent-color: #2786de; margin: 0; }\n.qcord-panel .qcord-field { display: grid; gap: 8px; font-size: 13px; }\n.qcord-panel textarea, .qcord-panel button {\n    box-sizing: border-box;\n    border: 1px solid var(--background-modifier-accent, #505259);\n    border-radius: 0;\n    background: var(--background-secondary, #2b2d31);\n    color: var(--text-normal, #e0e1e5);\n    padding: 10px 12px;\n    font: inherit;\n}\n.qcord-panel textarea {\n    display: block;\n    width: 100%;\n    min-width: 0;\n    font: 12px/1.5 monospace;\n    resize: vertical;\n    overflow: auto;\n    scrollbar-width: none;\n}\n.qcord-panel textarea::-webkit-scrollbar { display: none; }\n.qcord-panel button { cursor: pointer; font-size: 13px; }\n.qcord-panel button:hover:not(:disabled) { background: var(--background-modifier-hover, #41434a); }\n.qcord-panel button:disabled, .qcord-panel textarea:disabled { opacity: .5; cursor: default; }\n.qcord-panel :is(button, input, textarea, summary, a):focus-visible { outline: 2px solid #8bc8ff; outline-offset: 2px; }\n.qcord-fingerprint, .qcord-identifiers { overflow-wrap: anywhere; font-family: monospace; }\n.qcord-identifiers p + p { margin-top: 6px; }\n.qcord-saved-key > * + * { margin-top: 12px; }\n.qcord-panel summary { cursor: pointer; font-size: 14px; font-weight: 600; }\n.qcord-panel summary { display: flex; align-items: center; gap: 10px; list-style: none; }\n.qcord-panel summary::-webkit-details-marker { display: none; }\n.qcord-panel summary::marker { content: ""; }\n.qcord-panel summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); flex-shrink: 0; }\n.qcord-panel details[open] > summary::before { transform: rotate(45deg); }\n.qcord-panel .qcord-danger { background: #a12832; border-color: #d84a55; color: #fff; }\n.qcord-panel .qcord-danger:hover:not(:disabled) { background: #bc303c; }\n.qcord-panel a { color: var(--text-link, #8bc8ff); text-decoration: underline; font-size: 13px; }\n.qcord-status { padding: 10px 0; border-top: 1px solid var(--background-modifier-accent, #505259); }\n@container (max-width: 700px) {\n    .qcord-workspace, .qcord-lessons, .qcord-switches { grid-template-columns: minmax(0, 1fr); }\n}\n';
+    module2.exports = '[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {\n    background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));\n    backdrop-filter: blur(10px);\n    box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {\n    color: #f1f6ff;\n    caret-color: #8bc8ff;\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {\n    color: #b7c9df;\n    opacity: 1;\n}\n\n.qcord-button {\n\n    --qcord-icon-off: #c5c6ca;\n    --qcord-icon-on: #ffffff;\n    --qcord-accent: #2786de;\n\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n\n    align-self: center;\n    flex-shrink: 0;\n    margin: 0;\n\n    width: 32px;\n    height: 32px;\n    margin-left: 2px;\n\n    padding: 4px 4px;\n\n    box-sizing: border-box;\n    border: 0;\n    border-radius: var(--radius-sm, 8px);\n    cursor: pointer;\n\n    background: transparent;\n    color: var(--qcord-icon-off);\n}\n\n\n.qcord-button:focus-visible {\n    outline: 2px solid var(--text-link);\n}\n\n.qcord-button:hover {\n    color: var(--qcord-icon-on);\n}\n\n.qcord-button[data-decoding="true"] {\n    color: var(--qcord-icon-on);\n    background: linear-gradient(to top, var(--qcord-accent), transparent);\n}\n\n.qcord-button svg {\n    display: block;\n    flex-shrink: 0;\n    width: 22px;\n    height: 22px;\n\n    transform: translateY(-2px) translateX(0.5px);\n\n\n    fill: currentColor;\n\n    pointer-events: none;\n    transition: transform 180ms ease;\n}\n\n.qcord-button:hover svg {\n    transform: translateY(-2px) translateX(0.5px) scale(1.075);\n\n}\n\n@media (prefers-reduced-motion: reduce) {\n    .qcord-button svg {\n        transition: none;\n    }\n}\n\n.qcord-plain {\n    white-space: pre-wrap;\n}\n\n.qcord-file-hidden {\n    display: none !important;\n}\n\n.qcord-file-plain {\n    color: #fff;\n    font-size: 16px;\n    line-height: 1.375;\n    overflow-wrap: anywhere;\n}\n\n/* showConfirmationModal drops className; scope the actual roots by their content. */\n.bd-modal-root:has(.qcord-panel), .bd-modal:has(.qcord-panel) {\n    width: min(1120px, 94vw);\n    min-width: 0;\n    max-width: 94vw;\n    max-height: 90vh;\n    border-radius: 0;\n}\n.bd-modal:has(.qcord-panel) .bd-modal-inner { border-radius: var(--radius-md, 12px); }\n.bd-modal-root:has(.qcord-panel) .bd-modal-content { overflow-y: auto; }\n.bd-modal:has(.qcord-panel) .bd-modal-body { max-height: 75vh; overflow-y: auto; }\n.qcord-panel {\n    container-type: inline-size;\n    display: grid;\n    gap: 20px;\n    min-width: 0;\n    padding: 4px 0 16px;\n    color: var(--text-normal, #e0e1e5);\n}\n/* BetterDiscord owns the modal scroll region; the panel does not add another. */\n.qcord-heading, .qcord-actions {\n    display: flex;\n    flex-wrap: wrap;\n    align-items: center;\n    gap: 12px;\n}\n.qcord-heading { justify-content: space-between; }\n.qcord-heading > span { font: 13px monospace; }\n.qcord-workspace, .qcord-lessons, .qcord-switches {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n    gap: 24px;\n}\n.qcord-section { min-width: 0; border-top: 1px solid var(--background-modifier-accent, #505259); padding-top: 18px; }\n.qcord-section > * + * { margin-top: 16px; }\n.qcord-panel h3 { margin: 0; font-size: 16px; font-weight: 600; }\n.qcord-panel h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }\n.qcord-panel p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-muted, #b5bac1); }\n.qcord-panel .qcord-section > p { margin-top: 16px; }\n.qcord-panel .qcord-toggle { display: flex; align-items: center; gap: 12px; padding: 12px; cursor: pointer; }\n.qcord-toggle input { appearance: none; display: grid; place-content: center; width: 22px; height: 22px; flex-shrink: 0; margin: 0; border: 1px solid #92959d; border-radius: 4px; background: #232428; cursor: pointer; }\n.qcord-toggle input:checked::before { content: ""; width: 6px; height: 11px; border: solid #f2f3f5; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }\n.qcord-toggle:has(input:disabled) { opacity: .5; cursor: default; }\n@media (forced-colors: active) { .qcord-toggle input { appearance: auto; } .qcord-toggle input::before { display: none; } }\n.qcord-panel .qcord-field { display: grid; gap: 8px; font-size: 13px; }\n.qcord-panel textarea, .qcord-panel button, .qcord-panel .qcord-toggle {\n    box-sizing: border-box;\n    border: 1px solid var(--background-modifier-accent, #505259);\n    border-radius: 0;\n    background: #2b2d31;\n    color: var(--text-normal, #e0e1e5);\n    padding: 10px 12px;\n    font: inherit;\n}\n.qcord-panel textarea {\n    display: block;\n    width: 100%;\n    min-width: 0;\n    font: 12px/1.5 monospace;\n    resize: vertical;\n    overflow: auto;\n    scrollbar-width: none;\n}\n.qcord-panel textarea::-webkit-scrollbar { display: none; }\n.qcord-panel button { cursor: pointer; font-size: 13px; }\n.qcord-panel button:hover:not(:disabled), .qcord-panel .qcord-toggle:hover:not(:has(input:disabled)) { background: var(--background-modifier-hover, #41434a); }\n.qcord-panel button:disabled, .qcord-panel textarea:disabled { opacity: .5; cursor: default; }\n.qcord-panel :is(button, input, textarea, summary, a):focus-visible { outline: 2px solid #8bc8ff; outline-offset: 2px; }\n.qcord-fingerprint, .qcord-identifiers { overflow-wrap: anywhere; font-family: monospace; }\n.qcord-identifiers p + p { margin-top: 6px; }\n.qcord-saved-key > * + * { margin-top: 12px; }\n.qcord-panel summary { cursor: pointer; font-size: 14px; font-weight: 600; }\n.qcord-panel summary { display: flex; align-items: center; gap: 10px; list-style: none; }\n.qcord-panel summary::-webkit-details-marker { display: none; }\n.qcord-panel summary::marker { content: ""; }\n.qcord-panel summary::after { content: ""; margin-left: auto; margin-right: 3px; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); flex-shrink: 0; }\n.qcord-panel details[open] > summary::after { transform: rotate(45deg); }\n.qcord-panel .qcord-danger { background: #a12832; border-color: #d84a55; color: #fff; }\n.qcord-panel .qcord-danger:hover:not(:disabled) { background: #bc303c; }\n.qcord-panel a { color: var(--text-link, #8bc8ff); text-decoration: underline; font-size: 13px; }\n.qcord-status { padding: 10px 0; border-top: 1px solid var(--background-modifier-accent, #505259); }\n@container (max-width: 700px) {\n    .qcord-workspace, .qcord-lessons, .qcord-switches { grid-template-columns: minmax(0, 1fr); }\n}\n\n.qcord-copy-label { display: inline-flex; align-items: center; gap: 8px; }\n.qcord-copy-label svg { width: 18px; height: 18px; flex-shrink: 0; }\n.qcord-created-at { font-size: 12px; font-weight: 400; color: var(--text-muted, #b5bac1); }\n';
   }
 });
 
