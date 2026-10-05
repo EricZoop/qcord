@@ -1,14 +1,12 @@
 "use strict";
 
-const {ml_kem512, ml_kem768, ml_kem1024} = require("@noble/post-quantum/ml-kem.js");
+const {ml_kem512} = require("@noble/post-quantum/ml-kem.js");
 const {equalBytes} = require("@noble/post-quantum/utils.js");
-const {pack, unpack, readPem, writePem} = require("./pem");
+const {pack, unpack, readKeyData} = require("./der");
 
-// NIST algorithm identifiers used by SPKI / PKCS#8, including existing Node keys.
+// NIST identifier for ML-KEM-512 SPKI / PKCS#8 keys.
 const algorithms = {
-    "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"},
-    "ml-kem-768": {impl: ml_kem768, oid: "608648016503040402"},
-    "ml-kem-1024": {impl: ml_kem1024, oid: "608648016503040403"}
+    "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"}
 };
 
 function algorithm(scheme) {
@@ -43,19 +41,19 @@ class Key {
 
     export({type, format}) {
         const privateKey = this.type === "private";
-        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "pem", "base64"].includes(format)) throw new Error("Unsupported key export format.");
+        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "base64"].includes(format)) throw new Error("Unsupported key export format.");
         const identifier = pack(0x30, pack(0x06, Buffer.from(algorithm(this.asymmetricKeyType).oid, "hex")));
         // RFC 9935 expanded-key CHOICE.
         const body = pack(0x04, this.bytes);
         const der = privateKey
             ? pack(0x30, pack(0x02, Buffer.from([0])), identifier, pack(0x04, body))
             : pack(0x30, identifier, pack(0x03, Buffer.from([0]), this.bytes));
-        return format === "der" ? der : format === "base64" ? der.toString("base64") : writePem(der, privateKey ? "PRIVATE" : "PUBLIC");
+        return format === "der" ? der : der.toString("base64");
     }
 }
 
-function importKey(pem, type) {
-    const top = unpack(readPem(pem, type === "private" ? "PRIVATE" : "PUBLIC"));
+function importKey(text, type) {
+    const top = unpack(readKeyData(text));
     if (top.length !== 1 || top[0].tag !== 0x30) throw new Error("Invalid key sequence.");
     const fields = unpack(top[0].value);
     if (fields.length !== (type === "private" ? 3 : 2)) throw new Error("Unsupported key structure.");
@@ -68,7 +66,7 @@ function importKey(pem, type) {
     const oid = unpack(identifier.value);
     if (oid.length !== 1 || oid[0].tag !== 0x06) throw new Error("Invalid key algorithm.");
     const scheme = Object.keys(algorithms).find(name => algorithms[name].oid === oid[0].value.toString("hex"));
-    const {impl} = algorithm(scheme);
+    algorithm(scheme);
     if (type === "public") {
         if (data.tag !== 0x03 || data.value[0] !== 0) throw new Error("Invalid public-key bit string.");
         return new Key(scheme, type, data.value.subarray(1));
@@ -78,13 +76,6 @@ function importKey(pem, type) {
     if (choice.length !== 1) throw new Error("Invalid private-key encoding.");
     const {tag, value} = choice[0];
     if (tag === 0x04) return new Key(scheme, type, value);
-    if (tag === 0x80) return new Key(scheme, type, impl.keygen(Uint8Array.from(value)).secretKey);
-    if (tag === 0x30) {
-        const parts = unpack(value);
-        if (parts.length !== 2 || parts.some(part => part.tag !== 0x04)) throw new Error("Invalid seed/expanded key pair.");
-        if (!equalBytes(impl.keygen(Uint8Array.from(parts[0].value)).secretKey, Uint8Array.from(parts[1].value))) throw new Error("Private-key seed does not match expanded key.");
-        return new Key(scheme, type, parts[1].value);
-    }
     throw new Error("Unsupported private-key encoding.");
 }
 
@@ -103,7 +94,7 @@ const PQC = {
     createPublicKey: key => key instanceof Key
         ? new Key(key.asymmetricKeyType, "public", requireKey(key, "private").getPublicKey(key.bytes))
         : importKey(key, "public"),
-    createPrivateKey: pem => importKey(pem, "private"),
+    createPrivateKey: text => importKey(text, "private"),
     encapsulate: key => run(() => {
         const impl = requireKey(key, "public");
         const {cipherText, sharedSecret} = impl.encapsulate(key.bytes, randomBytes(impl.lengths.msgRand));

@@ -109,14 +109,14 @@ module.exports = class Qcord extends MessageCrypto {
     }
 
     setEnabled(enabled) {
-        if (!this.running) return;
+        if (!this.running || this.resetting) return;
         BdApi.Data.save(KEY_STORE, "enabled", Boolean(enabled));
         this.enabled = Boolean(enabled);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
     }
 
     setDecoding(enabled) {
-        if (!this.running) return;
+        if (!this.running || this.resetting) return;
         BdApi.Data.save(KEY_STORE, "decodeIncoming", Boolean(enabled));
         this.decodeIncoming = Boolean(enabled);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
@@ -167,7 +167,7 @@ module.exports = class Qcord extends MessageCrypto {
     }
 
     mountButtons() {
-        if (!this.running) return;
+        if (!this.running || this.resetting) return;
         // Place Qcord first in the right-hand controls, before Discord's buttons.
         // Class fragments avoid depending on Discord's changing CSS hashes.
         for (const editor of document.querySelectorAll('[role="textbox"][contenteditable="true"]')) {
@@ -187,7 +187,7 @@ module.exports = class Qcord extends MessageCrypto {
                     event.preventDefault();
                     event.stopPropagation();
                     BdApi.UI.showConfirmationModal(NAME, this.getSettingsPanel(), {
-                        className: "qcord-modal", confirmText: "Close", cancelText: null
+                        size: "bd-modal-large", confirmText: "Close", cancelText: null
                     });
                 });
             }
@@ -200,7 +200,7 @@ module.exports = class Qcord extends MessageCrypto {
     // Idempotent: safe to run on every DOM mutation. The original React-owned
     // nodes are hidden, never edited; Discord's Markdown renderer owns our nodes.
     scanMessages() {
-        if (!this.running) return;
+        if (!this.running || this.resetting) return;
         if (!this.decodeIncoming) { this.clearDecoded(); return; }
         for (const element of this.renderedMessages.keys()) {
             if (!element.isConnected) this.removeDecoded(element);
@@ -267,6 +267,28 @@ module.exports = class Qcord extends MessageCrypto {
 
     getSettingsPanel() { return getSettingsPanel(this); }
 
+    async clearConfiguration() {
+        // Invalidate pending crypto before clearing persistent and in-memory keys.
+        this.resetting = true;
+        this.session = {};
+        this.enabled = false;
+        this.decodeIncoming = false;
+        this.keys = null;
+        this.keyPairs.clear();
+        this.keyTasks.clear();
+        this.schemeStatus = {};
+        this.clearDecoded();
+        this.fileDecodes = new WeakMap();
+        for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
+        const fs = require("fs");
+        const path = require("path");
+        const configPath = path.join(BdApi.Plugins.folder, KEY_STORE + ".config.json");
+        fs.writeFileSync(configPath, "{}\n", "utf8");
+        // A one-time recache keeps BetterDiscord from restoring deleted data on save.
+        if (!await BdApi.Data.recache(KEY_STORE)) throw new Error("Config cleared on disk. Reload Qcord before continuing.");
+        this.resetting = false;
+    }
+
     // BetterDiscord's lifecycle supplies DOM mutations and navigation events.
     observer() { this.scheduleMount(); }
     onSwitch() { this.scheduleMount(); }
@@ -282,6 +304,7 @@ module.exports = class Qcord extends MessageCrypto {
 
     stop() {
         this.running = false;
+        this.resetting = false;
         this.keys = null;
         this.keyPairs.clear();
         this.keyTasks.clear();

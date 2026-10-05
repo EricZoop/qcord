@@ -1539,9 +1539,9 @@ var init_ml_kem = __esm({
   }
 });
 
-// src/pem.js
-var require_pem = __commonJS({
-  "src/pem.js"(exports2, module2) {
+// src/der.js
+var require_der = __commonJS({
+  "src/der.js"(exports2, module2) {
     "use strict";
     function pack(tag, ...values) {
       const body = Buffer.concat(values);
@@ -1568,23 +1568,15 @@ var require_pem = __commonJS({
       }
       return fields;
     }
-    function readPem(text, type) {
-      if (typeof text !== "string" || text.length > 65536) throw new Error("Invalid PEM key.");
-      const match = text.trim().match(/^-----BEGIN (PUBLIC|PRIVATE) KEY-----\s+([A-Za-z0-9+/=\s]+)-----END \1 KEY-----$/);
-      if (match && match[1] !== type) throw new Error("Invalid key type.");
-      const encoded = (match ? match[2] : text).replace(/\s/g, "");
-      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error("Paste a complete Base64 public key or PEM key.");
+    function readKeyData(text) {
+      if (typeof text !== "string" || text.length > 65536) throw new Error("Invalid key text.");
+      const encoded = text.replace(/\s/g, "");
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error("Paste a complete public key.");
       const bytes = Buffer.from(encoded, "base64");
-      if (!bytes.length || bytes.toString("base64") !== encoded) throw new Error("Invalid PEM Base64.");
+      if (!bytes.length || bytes.toString("base64") !== encoded) throw new Error("Invalid key encoding.");
       return bytes;
     }
-    function writePem(bytes, type) {
-      return `-----BEGIN ${type} KEY-----
-${bytes.toString("base64").match(/.{1,64}/g).join("\n")}
------END ${type} KEY-----
-`;
-    }
-    module2.exports = { pack, unpack, readPem, writePem };
+    module2.exports = { pack, unpack, readKeyData };
   }
 });
 
@@ -1592,13 +1584,11 @@ ${bytes.toString("base64").match(/.{1,64}/g).join("\n")}
 var require_pqc = __commonJS({
   "src/pqc.js"(exports2, module2) {
     "use strict";
-    var { ml_kem512: ml_kem5122, ml_kem768: ml_kem7682, ml_kem1024: ml_kem10242 } = (init_ml_kem(), __toCommonJS(ml_kem_exports));
+    var { ml_kem512: ml_kem5122 } = (init_ml_kem(), __toCommonJS(ml_kem_exports));
     var { equalBytes: equalBytes3 } = (init_utils3(), __toCommonJS(utils_exports));
-    var { pack, unpack, readPem, writePem } = require_pem();
+    var { pack, unpack, readKeyData } = require_der();
     var algorithms = {
-      "ml-kem-512": { impl: ml_kem5122, oid: "608648016503040401" },
-      "ml-kem-768": { impl: ml_kem7682, oid: "608648016503040402" },
-      "ml-kem-1024": { impl: ml_kem10242, oid: "608648016503040403" }
+      "ml-kem-512": { impl: ml_kem5122, oid: "608648016503040401" }
     };
     function algorithm(scheme) {
       if (!Object.hasOwn(algorithms, scheme)) throw new Error("Unsupported PQC algorithm.");
@@ -1625,15 +1615,15 @@ var require_pqc = __commonJS({
       }
       export({ type, format }) {
         const privateKey = this.type === "private";
-        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "pem", "base64"].includes(format)) throw new Error("Unsupported key export format.");
+        if (type !== (privateKey ? "pkcs8" : "spki") || !["der", "base64"].includes(format)) throw new Error("Unsupported key export format.");
         const identifier = pack(48, pack(6, Buffer.from(algorithm(this.asymmetricKeyType).oid, "hex")));
         const body = pack(4, this.bytes);
         const der = privateKey ? pack(48, pack(2, Buffer.from([0])), identifier, pack(4, body)) : pack(48, identifier, pack(3, Buffer.from([0]), this.bytes));
-        return format === "der" ? der : format === "base64" ? der.toString("base64") : writePem(der, privateKey ? "PRIVATE" : "PUBLIC");
+        return format === "der" ? der : der.toString("base64");
       }
     };
-    function importKey(pem, type) {
-      const top = unpack(readPem(pem, type === "private" ? "PRIVATE" : "PUBLIC"));
+    function importKey(text, type) {
+      const top = unpack(readKeyData(text));
       if (top.length !== 1 || top[0].tag !== 48) throw new Error("Invalid key sequence.");
       const fields = unpack(top[0].value);
       if (fields.length !== (type === "private" ? 3 : 2)) throw new Error("Unsupported key structure.");
@@ -1646,7 +1636,7 @@ var require_pqc = __commonJS({
       const oid = unpack(identifier.value);
       if (oid.length !== 1 || oid[0].tag !== 6) throw new Error("Invalid key algorithm.");
       const scheme = Object.keys(algorithms).find((name) => algorithms[name].oid === oid[0].value.toString("hex"));
-      const { impl } = algorithm(scheme);
+      algorithm(scheme);
       if (type === "public") {
         if (data.tag !== 3 || data.value[0] !== 0) throw new Error("Invalid public-key bit string.");
         return new Key(scheme, type, data.value.subarray(1));
@@ -1656,13 +1646,6 @@ var require_pqc = __commonJS({
       if (choice.length !== 1) throw new Error("Invalid private-key encoding.");
       const { tag, value } = choice[0];
       if (tag === 4) return new Key(scheme, type, value);
-      if (tag === 128) return new Key(scheme, type, impl.keygen(Uint8Array.from(value)).secretKey);
-      if (tag === 48) {
-        const parts = unpack(value);
-        if (parts.length !== 2 || parts.some((part) => part.tag !== 4)) throw new Error("Invalid seed/expanded key pair.");
-        if (!equalBytes3(impl.keygen(Uint8Array.from(parts[0].value)).secretKey, Uint8Array.from(parts[1].value))) throw new Error("Private-key seed does not match expanded key.");
-        return new Key(scheme, type, parts[1].value);
-      }
       throw new Error("Unsupported private-key encoding.");
     }
     function requireKey(key, type) {
@@ -1677,7 +1660,7 @@ var require_pqc = __commonJS({
         return { publicKey: new Key(scheme, "public", publicKey), privateKey: new Key(scheme, "private", secretKey) };
       }),
       createPublicKey: (key) => key instanceof Key ? new Key(key.asymmetricKeyType, "public", requireKey(key, "private").getPublicKey(key.bytes)) : importKey(key, "public"),
-      createPrivateKey: (pem) => importKey(pem, "private"),
+      createPrivateKey: (text) => importKey(text, "private"),
       encapsulate: (key) => run(() => {
         const impl = requireKey(key, "public");
         const { cipherText, sharedSecret } = impl.encapsulate(key.bytes, randomBytes3(impl.lengths.msgRand));
@@ -4047,15 +4030,12 @@ var init_hkdf = __esm({
 var require_constants = __commonJS({
   "src/constants.js"(exports2, module2) {
     "use strict";
-    var SCHEMES = ["ml-kem-512", "ml-kem-768", "ml-kem-1024"];
     module2.exports = {
       NAME: "Qcord",
       // One cache name for settings and keys: Windows filenames ignore case.
       KEY_STORE: "qcord",
-      SCHEMES,
       ACTIVE_SCHEME: "ml-kem-512",
-      KEM_SCHEMES: SCHEMES.filter((scheme) => scheme.startsWith("ml-kem")),
-      ENCRYPTED_PREFIX: "qcord:v2:pqc:",
+      ENCRYPTED_PREFIX: "qcord:v1:pqc:",
       BASE64_RE: /^[A-Za-z0-9+/]*={0,2}$/,
       BUTTON_SELECTOR: ".qcord-button",
       DECODED_SELECTOR: ".qcord-plain",
@@ -4074,11 +4054,11 @@ var require_messaging = __commonJS({
     var { sha256: sha2562 } = (init_sha2(), __toCommonJS(sha2_exports));
     var { hkdf: hkdf2 } = (init_hkdf(), __toCommonJS(hkdf_exports));
     var bytes = (value) => Uint8Array.from(value);
-    var { KEY_STORE: KEY_STORE2, SCHEMES, ACTIVE_SCHEME: ACTIVE_SCHEME2, KEM_SCHEMES, ENCRYPTED_PREFIX, BASE64_RE, MAX_DECODED_FILE_SIZE: MAX_DECODED_FILE_SIZE2 } = require_constants();
+    var { KEY_STORE: KEY_STORE2, ACTIVE_SCHEME: ACTIVE_SCHEME2, ENCRYPTED_PREFIX, BASE64_RE, MAX_DECODED_FILE_SIZE: MAX_DECODED_FILE_SIZE2 } = require_constants();
     module2.exports = class MessageCrypto {
       async generateKeys(scheme) {
-        if (!this.running) throw new Error("Enable Qcord first.");
-        if (!SCHEMES.includes(scheme)) throw new Error("Unknown key algorithm.");
+        if (!this.running || this.resetting) throw new Error("Enable Qcord first.");
+        if (scheme !== ACTIVE_SCHEME2) throw new Error("Unknown key algorithm.");
         if (this.keyPairs.has(scheme)) return this.keyPairs.get(scheme);
         if (this.keyTasks.has(scheme)) return this.keyTasks.get(scheme);
         const session = this.session;
@@ -4096,7 +4076,6 @@ var require_messaging = __commonJS({
             keys = { scheme, ...await PQC.generateKeyPair(scheme) };
             if (!this.running || this.session !== session) throw new Error("Qcord stopped during key generation.");
             BdApi.Data.save(KEY_STORE2, "keyPairs", {
-              ...BdApi.Data.load(KEY_STORE2, "keyPairs") || {},
               [scheme]: {
                 publicKey: keys.publicKey.export({ type: "spki", format: "base64" }),
                 privateKey: keys.privateKey.export({ type: "pkcs8", format: "base64" }),
@@ -4125,7 +4104,6 @@ var require_messaging = __commonJS({
       }
       getRecipients(channelId, scheme) {
         const saved = BdApi.Data.load(KEY_STORE2, "recipients")?.[channelId];
-        if (saved?.scheme === scheme) return saved.publicKeys.map((publicKey) => ({ username: "", publicKey }));
         return saved?.[scheme] || [];
       }
       getDirectPartner(channelId) {
@@ -4139,6 +4117,7 @@ var require_messaging = __commonJS({
         return { userId, channelId };
       }
       saveRecipients(channelId, rows, scheme) {
+        if (this.resetting) throw new Error("Configuration reset in progress.");
         if (!/^\d+$/.test(channelId || "")) throw new Error("Open a Discord channel first.");
         if (scheme !== ACTIVE_SCHEME2) throw new Error("New recipients must use ML-KEM-512.");
         const partner = this.getDirectPartner(channelId);
@@ -4150,9 +4129,7 @@ var require_messaging = __commonJS({
           return { userId, publicKey: key.export({ type: "spki", format: "base64" }) };
         });
         const recipients = BdApi.Data.load(KEY_STORE2, "recipients") || {};
-        const previous = recipients[channelId];
-        const channel = previous?.scheme ? { [previous.scheme]: this.getRecipients(channelId, previous.scheme) } : previous || {};
-        BdApi.Data.save(KEY_STORE2, "recipients", { ...recipients, [channelId]: { ...channel, [scheme]: entries } });
+        BdApi.Data.save(KEY_STORE2, "recipients", { ...recipients, [channelId]: { [scheme]: entries } });
       }
       decodeBytes(value, size) {
         if (typeof value !== "string" || value.length > MAX_DECODED_FILE_SIZE2 || !BASE64_RE.test(value)) throw new Error("Invalid encrypted file field.");
@@ -4171,7 +4148,7 @@ var require_messaging = __commonJS({
         return Buffer.from(gcm2(bytes(key), iv, bytes(aad)).decrypt(bytes(ciphertext)));
       }
       wrappingKey(sharedSecret) {
-        return hkdf2(sha2562, bytes(sharedSecret), new Uint8Array(), new TextEncoder().encode("Qcord v2 key wrap"), 32);
+        return hkdf2(sha2562, bytes(sharedSecret), new Uint8Array(), new TextEncoder().encode("Qcord v1 key wrap"), 32);
       }
       async encryptMessage(channelId, text) {
         if (!/^\d+$/.test(channelId || "")) throw new Error("Invalid channel.");
@@ -4179,7 +4156,7 @@ var require_messaging = __commonJS({
         const partner = this.getDirectPartner(channelId);
         const recipients = this.getRecipients(channelId, scheme);
         if (!Array.isArray(recipients) || recipients.length !== 1 || recipients[0].userId !== partner.userId) {
-          throw new Error("Save your DM partner's ML-KEM-512 key in Qcord first. Older username entries must be replaced.");
+          throw new Error("Save your DM partner's ML-KEM-512 key in Qcord first.");
         }
         const input = Buffer.from(text, "utf8");
         if (input.length > MAX_DECODED_FILE_SIZE2) throw new Error("Message is too large for a Qcord file.");
@@ -4212,7 +4189,7 @@ var require_messaging = __commonJS({
         if (Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE2) throw new Error("Encrypted file is too large.");
         const session = this.session;
         const file = JSON.parse(text.slice(ENCRYPTED_PREFIX.length));
-        if (!file || !KEM_SCHEMES.includes(file.scheme) || !/^\d+$/.test(channelId || "") || file.channelId !== channelId || !Array.isArray(file.recipients) || !file.recipients.length || file.recipients.length > 16) throw new Error("Invalid encrypted file or wrong channel.");
+        if (!file || file.scheme !== ACTIVE_SCHEME2 || !/^\d+$/.test(channelId || "") || file.channelId !== channelId || !Array.isArray(file.recipients) || !file.recipients.length || file.recipients.length > 2) throw new Error("Invalid encrypted file or wrong channel.");
         const ids = file.recipients.map((recipient2) => recipient2?.id);
         if (ids.some((id2) => typeof id2 !== "string" || !/^[a-f0-9]{64}$/.test(id2)) || new Set(ids).size !== ids.length) throw new Error("Invalid recipient list.");
         if (!this.keyPairs.has(file.scheme) && !BdApi.Data.load(KEY_STORE2, "keyPairs")?.[file.scheme]) throw new Error("No saved private key for this file.");
@@ -4237,8 +4214,20 @@ var require_messaging = __commonJS({
         const encrypted = await PQC.encapsulate(keys.publicKey);
         const sharedKey = await PQC.decapsulate(keys.privateKey, encrypted.ciphertext);
         if (!equalBytes3(bytes(encrypted.sharedKey), bytes(sharedKey))) throw new Error("KEM round-trip failed.");
+        const aad = Buffer.from("Qcord v1 self-test");
+        const sealed = this.seal(input, this.wrappingKey(encrypted.sharedKey), aad);
+        if (!this.openSealed(sealed, this.wrappingKey(sharedKey), aad).equals(input)) throw new Error("Message round-trip failed.");
+        const tag = Buffer.from(sealed.tag, "base64");
+        tag[0] ^= 1;
+        let rejected = false;
+        try {
+          this.openSealed({ ...sealed, tag: tag.toString("base64") }, this.wrappingKey(sharedKey), aad);
+        } catch {
+          rejected = true;
+        }
+        if (!rejected) throw new Error("Tamper detection failed.");
         if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
-        this.schemeStatus[scheme] = "Round-trip passed";
+        this.schemeStatus[scheme] = "Key exchange, message round-trip and tamper rejection passed";
       }
     };
   }
@@ -4281,9 +4270,10 @@ var require_settings = __commonJS({
             active = false;
           };
         }, []);
-        const button = (label, onClick, disabled = false) => h("button", {
+        const button = (label, onClick, disabled = false, className = "") => h("button", {
           type: "button",
-          disabled: disabled || busy || !plugin.running,
+          className,
+          disabled: disabled || busy || !plugin.running || plugin.resetting,
           onClick
         }, label);
         const copy = async (text) => {
@@ -4322,19 +4312,56 @@ var require_settings = __commonJS({
         };
         const testKey = async () => {
           setBusy(true);
+          setStatus("Checking key exchange, encryption and tamper rejection...");
           try {
             await plugin.testScheme(ACTIVE_SCHEME2, "Qcord key check");
-            setStatus("ML-KEM-512 key check passed.");
+            setStatus("Passed: key exchange, message encryption/decryption, and tamper rejection. This local test does not need a DM partner.");
           } catch (error) {
             setStatus(error.message);
           } finally {
             setBusy(false);
           }
         };
+        const createKey = async () => {
+          setBusy(true);
+          try {
+            setPublicKey(exportPublic((await plugin.generateKeys(ACTIVE_SCHEME2)).publicKey));
+            setStatus("New key pair saved. Exchange your new public key with your partner.");
+          } catch (error) {
+            setStatus(error.message);
+          } finally {
+            setBusy(false);
+          }
+        };
+        const resetConfig = () => BdApi.UI.showConfirmationModal(
+          "Clear Qcord configuration?",
+          "This deletes your private keys, partner keys and settings. Without a backup, messages encrypted to deleted keys cannot be recovered.",
+          {
+            danger: true,
+            confirmText: "Clear configuration",
+            cancelText: "Cancel",
+            onConfirm: async () => {
+              setBusy(true);
+              try {
+                await plugin.clearConfiguration();
+                setStatus("Configuration cleared. Create a new key pair to start again.");
+              } catch (error) {
+                setStatus(error.message);
+              } finally {
+                setPublicKey("");
+                setSaved([]);
+                setRecipientKey("");
+                setEnabled(false);
+                setDecoding(false);
+                setBusy(false);
+              }
+            }
+          }
+        );
         const toggle = (label, checked, onChange) => h(
           "label",
           { className: "qcord-toggle" },
-          h("input", { type: "checkbox", checked, disabled: !plugin.running, onChange }),
+          h("input", { type: "checkbox", checked, disabled: !plugin.running || plugin.resetting, onChange }),
           label
         );
         const lesson = (title, text) => h("div", null, h("h4", null, title), h("p", null, text));
@@ -4363,7 +4390,7 @@ var require_settings = __commonJS({
               { className: "qcord-section" },
               h("h3", null, "My public key"),
               h("textarea", { readOnly: true, rows: 4, value: publicKey, placeholder: "Loading key...", "aria-label": "My public key" }),
-              h("div", { className: "qcord-actions" }, button("Copy public key", () => copy(publicKey), !publicKey)),
+              h("div", { className: "qcord-actions" }, publicKey ? button("Copy public key", () => copy(publicKey)) : button("Create key pair", createKey)),
               publicKey && h("p", { className: "qcord-fingerprint" }, "SHA-256: " + plugin.keyId(PQC.createPublicKey(publicKey)))
             ),
             h(
@@ -4376,7 +4403,6 @@ var require_settings = __commonJS({
                 h("p", null, "User ID: ", h("code", null, partner.userId)),
                 h("p", null, "Channel ID: ", h("code", null, channelId))
               ) : h("p", null, "Open a one-to-one DM to exchange keys. Group DMs and server channels are not supported for new encrypted messages."),
-              partner && saved.length > 0 && !current && h("p", null, "Replace the older recipient entries with this person's key to bind it to their user ID."),
               h(
                 "label",
                 { className: "qcord-field" },
@@ -4423,7 +4449,8 @@ var require_settings = __commonJS({
               lesson("One key per contact", "You keep one local key pair and collect a public key from every contact you message: N contacts means N contact keys to manage. Each file includes access for your partner and yourself. There is no shared group key or TreeKEM yet.")
             ),
             h("p", null, "Private keys are stored unencrypted in qcord.config.json. This experimental format has no sender signatures or forward secrecy."),
-            h("div", { className: "qcord-actions" }, button("Check my key pair", testKey))
+            h("p", null, "Check your key pair locally, even without a DM partner. This checks cryptography on this device, not Discord delivery."),
+            h("div", { className: "qcord-actions" }, button("Check my key pair", testKey, !publicKey))
           ),
           h(
             "details",
@@ -4431,7 +4458,8 @@ var require_settings = __commonJS({
             h("summary", null, "Future algorithms"),
             h("p", null, "ML-KEM-768/1024: larger standardized parameter sets. HQC: a code-based KEM selected for standardization, planned for evaluation. ML-DSA/SLH-DSA: signatures for sender verification. No release dates yet."),
             h("a", { href: "https://csrc.nist.gov/News/2025/hqc-announced-as-a-4th-round-selection", target: "_blank", rel: "noreferrer" }, "NIST: HQC selection")
-          )
+          ),
+          h("div", { className: "qcord-actions" }, button("Clear qcord.config.json", resetConfig, false, "qcord-danger"))
         );
       });
     };
@@ -4448,7 +4476,7 @@ var require_button = __commonJS({
 // src/styles.css
 var require_styles = __commonJS({
   "src/styles.css"(exports2, module2) {
-    module2.exports = '[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {\n    background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));\n    backdrop-filter: blur(10px);\n    box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {\n    color: #f1f6ff;\n    caret-color: #8bc8ff;\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {\n    color: #b7c9df;\n    opacity: 1;\n}\n\n.qcord-button {\n\n    --qcord-icon-off: #c5c6ca;\n    --qcord-icon-on: #ffffff;\n    --qcord-accent: #2786de;\n\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n\n    align-self: center;\n    flex-shrink: 0;\n    margin: 0;\n\n    width: 32px;\n    height: 32px;\n    margin-left: 2px;\n\n    padding: 4px 4px;\n\n    box-sizing: border-box;\n    border: 0;\n    border-radius: 0;\n    cursor: pointer;\n\n    background: transparent;\n    color: var(--qcord-icon-off);\n}\n\n\n.qcord-button:focus-visible {\n    outline: 2px solid var(--text-link);\n}\n\n.qcord-button:hover {\n    color: var(--qcord-icon-on);\n}\n\n.qcord-button[data-decoding="true"] {\n    color: var(--qcord-icon-on);\n    background: linear-gradient(to top, var(--qcord-accent), transparent);\n}\n\n.qcord-button svg {\n    display: block;\n    flex-shrink: 0;\n    width: 22px;\n    height: 22px;\n\n    transform: translateY(-2px) translateX(0.5px);\n\n\n    fill: currentColor;\n\n    pointer-events: none;\n    transition: transform 180ms ease;\n}\n\n.qcord-button:hover svg {\n    transform: translateY(-2px) translateX(0.5px) scale(1.075);\n\n}\n\n@media (prefers-reduced-motion: reduce) {\n    .qcord-button svg {\n        transition: none;\n    }\n}\n\n.qcord-plain {\n    white-space: pre-wrap;\n}\n\n.qcord-file-hidden {\n    display: none !important;\n}\n\n.qcord-file-plain {\n    color: #fff;\n    font-size: 16px;\n    line-height: 1.375;\n    overflow-wrap: anywhere;\n}\n\n/* Target the modal root supplied to BetterDiscord, not a role on an ancestor. */\n.qcord-modal.qcord-modal {\n    width: min(1120px, 94vw);\n    min-width: 0;\n    max-width: 94vw;\n    max-height: 90vh;\n    border-radius: 0;\n}\n.qcord-modal :is(button, .bd-modal-header, .bd-modal-content, .bd-modal-footer) { border-radius: 0; }\n.qcord-modal .bd-modal-content { overflow-y: auto; }\n.qcord-panel {\n    container-type: inline-size;\n    display: grid;\n    gap: 20px;\n    min-width: 0;\n    padding: 4px 0 16px;\n    color: var(--text-normal, #e0e1e5);\n}\n/* BetterDiscord owns the modal scroll region; the panel does not add another. */\n.qcord-heading, .qcord-actions {\n    display: flex;\n    flex-wrap: wrap;\n    align-items: center;\n    gap: 12px;\n}\n.qcord-heading { justify-content: space-between; }\n.qcord-heading > span { font: 13px monospace; }\n.qcord-workspace, .qcord-lessons, .qcord-switches {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n    gap: 24px;\n}\n.qcord-section { min-width: 0; border-top: 1px solid var(--background-modifier-accent, #505259); padding-top: 18px; }\n.qcord-section > * + * { margin-top: 16px; }\n.qcord-panel h3 { margin: 0; font-size: 16px; font-weight: 600; }\n.qcord-panel h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }\n.qcord-panel p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-muted, #b5bac1); }\n.qcord-panel .qcord-section > p { margin-top: 16px; }\n.qcord-panel .qcord-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 0; cursor: pointer; font-weight: 600; }\n.qcord-toggle input { width: 22px; height: 22px; accent-color: #2786de; margin: 0; }\n.qcord-panel .qcord-field { display: grid; gap: 8px; font-size: 13px; }\n.qcord-panel textarea, .qcord-panel button {\n    box-sizing: border-box;\n    border: 1px solid var(--background-modifier-accent, #505259);\n    border-radius: 0;\n    background: var(--background-secondary, #2b2d31);\n    color: var(--text-normal, #e0e1e5);\n    padding: 10px 12px;\n    font: inherit;\n}\n.qcord-panel textarea {\n    display: block;\n    width: 100%;\n    min-width: 0;\n    font: 12px/1.5 monospace;\n    resize: vertical;\n    overflow: auto;\n    scrollbar-width: none;\n}\n.qcord-panel textarea::-webkit-scrollbar { display: none; }\n.qcord-panel button { cursor: pointer; font-size: 13px; }\n.qcord-panel button:hover:not(:disabled) { background: var(--background-modifier-hover, #41434a); }\n.qcord-panel button:disabled, .qcord-panel textarea:disabled { opacity: .5; cursor: default; }\n.qcord-panel :is(button, input, textarea, summary, a):focus-visible { outline: 2px solid #8bc8ff; outline-offset: 2px; }\n.qcord-fingerprint, .qcord-identifiers { overflow-wrap: anywhere; font-family: monospace; }\n.qcord-identifiers p + p { margin-top: 6px; }\n.qcord-saved-key > * + * { margin-top: 12px; }\n.qcord-panel summary { cursor: pointer; font-size: 14px; font-weight: 600; }\n.qcord-panel a { color: var(--text-link, #8bc8ff); text-decoration: underline; font-size: 13px; }\n.qcord-status { padding: 10px 0; border-top: 1px solid var(--background-modifier-accent, #505259); }\n@container (max-width: 700px) {\n    .qcord-workspace, .qcord-lessons, .qcord-switches { grid-template-columns: minmax(0, 1fr); }\n}\n';
+    module2.exports = '[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [class*="scrollableContainer"] {\n    background: linear-gradient(to top, rgba(23, 54, 83, .92), rgba(19, 29, 44, .88));\n    backdrop-filter: blur(10px);\n    box-shadow: inset 0 0 0 1px rgba(75, 160, 240, .5);\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) [role="textbox"] {\n    color: #f1f6ff;\n    caret-color: #8bc8ff;\n}\n\n[class*="channelTextArea"]:has(.qcord-button[data-encoding="true"]) :is([class*="placeholder"], [data-slate-placeholder]) {\n    color: #b7c9df;\n    opacity: 1;\n}\n\n.qcord-button {\n\n    --qcord-icon-off: #c5c6ca;\n    --qcord-icon-on: #ffffff;\n    --qcord-accent: #2786de;\n\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n\n    align-self: center;\n    flex-shrink: 0;\n    margin: 0;\n\n    width: 32px;\n    height: 32px;\n    margin-left: 2px;\n\n    padding: 4px 4px;\n\n    box-sizing: border-box;\n    border: 0;\n    border-radius: 0;\n    cursor: pointer;\n\n    background: transparent;\n    color: var(--qcord-icon-off);\n}\n\n\n.qcord-button:focus-visible {\n    outline: 2px solid var(--text-link);\n}\n\n.qcord-button:hover {\n    color: var(--qcord-icon-on);\n}\n\n.qcord-button[data-decoding="true"] {\n    color: var(--qcord-icon-on);\n    background: linear-gradient(to top, var(--qcord-accent), transparent);\n}\n\n.qcord-button svg {\n    display: block;\n    flex-shrink: 0;\n    width: 22px;\n    height: 22px;\n\n    transform: translateY(-2px) translateX(0.5px);\n\n\n    fill: currentColor;\n\n    pointer-events: none;\n    transition: transform 180ms ease;\n}\n\n.qcord-button:hover svg {\n    transform: translateY(-2px) translateX(0.5px) scale(1.075);\n\n}\n\n@media (prefers-reduced-motion: reduce) {\n    .qcord-button svg {\n        transition: none;\n    }\n}\n\n.qcord-plain {\n    white-space: pre-wrap;\n}\n\n.qcord-file-hidden {\n    display: none !important;\n}\n\n.qcord-file-plain {\n    color: #fff;\n    font-size: 16px;\n    line-height: 1.375;\n    overflow-wrap: anywhere;\n}\n\n/* showConfirmationModal drops className; scope the actual roots by their content. */\n.bd-modal-root:has(.qcord-panel), .bd-modal:has(.qcord-panel) {\n    width: min(1120px, 94vw);\n    min-width: 0;\n    max-width: 94vw;\n    max-height: 90vh;\n    border-radius: 0;\n}\n.bd-modal-root:has(.qcord-panel) :is(button, .bd-modal-header, .bd-modal-content, .bd-modal-footer),\n.bd-modal:has(.qcord-panel) .bd-modal-inner { border-radius: 0; }\n.bd-modal-root:has(.qcord-panel) .bd-modal-content { overflow-y: auto; }\n.bd-modal:has(.qcord-panel) .bd-modal-body { max-height: 75vh; overflow-y: auto; }\n.qcord-panel {\n    container-type: inline-size;\n    display: grid;\n    gap: 20px;\n    min-width: 0;\n    padding: 4px 0 16px;\n    color: var(--text-normal, #e0e1e5);\n}\n/* BetterDiscord owns the modal scroll region; the panel does not add another. */\n.qcord-heading, .qcord-actions {\n    display: flex;\n    flex-wrap: wrap;\n    align-items: center;\n    gap: 12px;\n}\n.qcord-heading { justify-content: space-between; }\n.qcord-heading > span { font: 13px monospace; }\n.qcord-workspace, .qcord-lessons, .qcord-switches {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n    gap: 24px;\n}\n.qcord-section { min-width: 0; border-top: 1px solid var(--background-modifier-accent, #505259); padding-top: 18px; }\n.qcord-section > * + * { margin-top: 16px; }\n.qcord-panel h3 { margin: 0; font-size: 16px; font-weight: 600; }\n.qcord-panel h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }\n.qcord-panel p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-muted, #b5bac1); }\n.qcord-panel .qcord-section > p { margin-top: 16px; }\n.qcord-panel .qcord-toggle { display: flex; align-items: center; gap: 12px; padding: 12px 0; cursor: pointer; font-weight: 600; }\n.qcord-toggle input { width: 22px; height: 22px; accent-color: #2786de; margin: 0; }\n.qcord-panel .qcord-field { display: grid; gap: 8px; font-size: 13px; }\n.qcord-panel textarea, .qcord-panel button {\n    box-sizing: border-box;\n    border: 1px solid var(--background-modifier-accent, #505259);\n    border-radius: 0;\n    background: var(--background-secondary, #2b2d31);\n    color: var(--text-normal, #e0e1e5);\n    padding: 10px 12px;\n    font: inherit;\n}\n.qcord-panel textarea {\n    display: block;\n    width: 100%;\n    min-width: 0;\n    font: 12px/1.5 monospace;\n    resize: vertical;\n    overflow: auto;\n    scrollbar-width: none;\n}\n.qcord-panel textarea::-webkit-scrollbar { display: none; }\n.qcord-panel button { cursor: pointer; font-size: 13px; }\n.qcord-panel button:hover:not(:disabled) { background: var(--background-modifier-hover, #41434a); }\n.qcord-panel button:disabled, .qcord-panel textarea:disabled { opacity: .5; cursor: default; }\n.qcord-panel :is(button, input, textarea, summary, a):focus-visible { outline: 2px solid #8bc8ff; outline-offset: 2px; }\n.qcord-fingerprint, .qcord-identifiers { overflow-wrap: anywhere; font-family: monospace; }\n.qcord-identifiers p + p { margin-top: 6px; }\n.qcord-saved-key > * + * { margin-top: 12px; }\n.qcord-panel summary { cursor: pointer; font-size: 14px; font-weight: 600; }\n.qcord-panel summary { display: flex; align-items: center; gap: 10px; list-style: none; }\n.qcord-panel summary::-webkit-details-marker { display: none; }\n.qcord-panel summary::marker { content: ""; }\n.qcord-panel summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); flex-shrink: 0; }\n.qcord-panel details[open] > summary::before { transform: rotate(45deg); }\n.qcord-panel .qcord-danger { background: #a12832; border-color: #d84a55; color: #fff; }\n.qcord-panel .qcord-danger:hover:not(:disabled) { background: #bc303c; }\n.qcord-panel a { color: var(--text-link, #8bc8ff); text-decoration: underline; font-size: 13px; }\n.qcord-status { padding: 10px 0; border-top: 1px solid var(--background-modifier-accent, #505259); }\n@container (max-width: 700px) {\n    .qcord-workspace, .qcord-lessons, .qcord-switches { grid-template-columns: minmax(0, 1fr); }\n}\n';
   }
 });
 
@@ -4544,13 +4572,13 @@ module.exports = class Qcord extends MessageCrypto {
     }
   }
   setEnabled(enabled) {
-    if (!this.running) return;
+    if (!this.running || this.resetting) return;
     BdApi.Data.save(KEY_STORE, "enabled", Boolean(enabled));
     this.enabled = Boolean(enabled);
     for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
   }
   setDecoding(enabled) {
-    if (!this.running) return;
+    if (!this.running || this.resetting) return;
     BdApi.Data.save(KEY_STORE, "decodeIncoming", Boolean(enabled));
     this.decodeIncoming = Boolean(enabled);
     for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
@@ -4594,7 +4622,7 @@ module.exports = class Qcord extends MessageCrypto {
     button.setAttribute("aria-label", button.title);
   }
   mountButtons() {
-    if (!this.running) return;
+    if (!this.running || this.resetting) return;
     for (const editor of document.querySelectorAll('[role="textbox"][contenteditable="true"]')) {
       const composer = editor.closest('[class*="channelTextArea"]');
       if (!composer) continue;
@@ -4612,7 +4640,7 @@ module.exports = class Qcord extends MessageCrypto {
           event.preventDefault();
           event.stopPropagation();
           BdApi.UI.showConfirmationModal(NAME, this.getSettingsPanel(), {
-            className: "qcord-modal",
+            size: "bd-modal-large",
             confirmText: "Close",
             cancelText: null
           });
@@ -4626,7 +4654,7 @@ module.exports = class Qcord extends MessageCrypto {
   // Idempotent: safe to run on every DOM mutation. The original React-owned
   // nodes are hidden, never edited; Discord's Markdown renderer owns our nodes.
   scanMessages() {
-    if (!this.running) return;
+    if (!this.running || this.resetting) return;
     if (!this.decodeIncoming) {
       this.clearDecoded();
       return;
@@ -4691,6 +4719,25 @@ module.exports = class Qcord extends MessageCrypto {
   getSettingsPanel() {
     return getSettingsPanel(this);
   }
+  async clearConfiguration() {
+    this.resetting = true;
+    this.session = {};
+    this.enabled = false;
+    this.decodeIncoming = false;
+    this.keys = null;
+    this.keyPairs.clear();
+    this.keyTasks.clear();
+    this.schemeStatus = {};
+    this.clearDecoded();
+    this.fileDecodes = /* @__PURE__ */ new WeakMap();
+    for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
+    const fs = require("fs");
+    const path = require("path");
+    const configPath = path.join(BdApi.Plugins.folder, KEY_STORE + ".config.json");
+    fs.writeFileSync(configPath, "{}\n", "utf8");
+    if (!await BdApi.Data.recache(KEY_STORE)) throw new Error("Config cleared on disk. Reload Qcord before continuing.");
+    this.resetting = false;
+  }
   // BetterDiscord's lifecycle supplies DOM mutations and navigation events.
   observer() {
     this.scheduleMount();
@@ -4708,6 +4755,7 @@ module.exports = class Qcord extends MessageCrypto {
   }
   stop() {
     this.running = false;
+    this.resetting = false;
     this.keys = null;
     this.keyPairs.clear();
     this.keyTasks.clear();

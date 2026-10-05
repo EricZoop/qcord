@@ -98,16 +98,18 @@
     overflow-wrap: anywhere;
 }
 
-/* Target the modal root supplied to BetterDiscord, not a role on an ancestor. */
-.qcord-modal.qcord-modal {
+/* showConfirmationModal drops className; scope the actual roots by their content. */
+.bd-modal-root:has(.qcord-panel), .bd-modal:has(.qcord-panel) {
     width: min(1120px, 94vw);
     min-width: 0;
     max-width: 94vw;
     max-height: 90vh;
     border-radius: 0;
 }
-.qcord-modal :is(button, .bd-modal-header, .bd-modal-content, .bd-modal-footer) { border-radius: 0; }
-.qcord-modal .bd-modal-content { overflow-y: auto; }
+.bd-modal-root:has(.qcord-panel) :is(button, .bd-modal-header, .bd-modal-content, .bd-modal-footer),
+.bd-modal:has(.qcord-panel) .bd-modal-inner { border-radius: 0; }
+.bd-modal-root:has(.qcord-panel) .bd-modal-content { overflow-y: auto; }
+.bd-modal:has(.qcord-panel) .bd-modal-body { max-height: 75vh; overflow-y: auto; }
 .qcord-panel {
     container-type: inline-size;
     display: grid;
@@ -166,6 +168,13 @@
 .qcord-identifiers p + p { margin-top: 6px; }
 .qcord-saved-key > * + * { margin-top: 12px; }
 .qcord-panel summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.qcord-panel summary { display: flex; align-items: center; gap: 10px; list-style: none; }
+.qcord-panel summary::-webkit-details-marker { display: none; }
+.qcord-panel summary::marker { content: ""; }
+.qcord-panel summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); flex-shrink: 0; }
+.qcord-panel details[open] > summary::before { transform: rotate(45deg); }
+.qcord-panel .qcord-danger { background: #a12832; border-color: #d84a55; color: #fff; }
+.qcord-panel .qcord-danger:hover:not(:disabled) { background: #bc303c; }
 .qcord-panel a { color: var(--text-link, #8bc8ff); text-decoration: underline; font-size: 13px; }
 .qcord-status { padding: 10px 0; border-top: 1px solid var(--background-modifier-accent, #505259); }
 @container (max-width: 700px) {

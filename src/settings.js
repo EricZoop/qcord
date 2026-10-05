@@ -26,8 +26,8 @@ module.exports = function getSettingsPanel(plugin) {
                 .finally(() => { if (active) setBusy(false); });
             return () => { active = false; };
         }, []);
-        const button = (label, onClick, disabled = false) => h("button", {
-            type: "button", disabled: disabled || busy || !plugin.running, onClick
+        const button = (label, onClick, disabled = false, className = "") => h("button", {
+            type: "button", className, disabled: disabled || busy || !plugin.running || plugin.resetting, onClick
         }, label);
         const copy = async text => {
             try { await navigator.clipboard.writeText(text); setStatus("Public key copied."); }
@@ -52,12 +52,34 @@ module.exports = function getSettingsPanel(plugin) {
         };
         const testKey = async () => {
             setBusy(true);
-            try { await plugin.testScheme(ACTIVE_SCHEME, "Qcord key check"); setStatus("ML-KEM-512 key check passed."); }
+            setStatus("Checking key exchange, encryption and tamper rejection...");
+            try { await plugin.testScheme(ACTIVE_SCHEME, "Qcord key check"); setStatus("Passed: key exchange, message encryption/decryption, and tamper rejection. This local test does not need a DM partner."); }
             catch (error) { setStatus(error.message); }
             finally { setBusy(false); }
         };
+        const createKey = async () => {
+            setBusy(true);
+            try { setPublicKey(exportPublic((await plugin.generateKeys(ACTIVE_SCHEME)).publicKey)); setStatus("New key pair saved. Exchange your new public key with your partner."); }
+            catch (error) { setStatus(error.message); }
+            finally { setBusy(false); }
+        };
+        const resetConfig = () => BdApi.UI.showConfirmationModal("Clear Qcord configuration?",
+            "This deletes your private keys, partner keys and settings. Without a backup, messages encrypted to deleted keys cannot be recovered.", {
+                danger: true, confirmText: "Clear configuration", cancelText: "Cancel",
+                onConfirm: async () => {
+                    setBusy(true);
+                    try {
+                        await plugin.clearConfiguration();
+                        setStatus("Configuration cleared. Create a new key pair to start again.");
+                    } catch (error) { setStatus(error.message); }
+                    finally {
+                        setPublicKey(""); setSaved([]); setRecipientKey("");
+                        setEnabled(false); setDecoding(false); setBusy(false);
+                    }
+                }
+            });
         const toggle = (label, checked, onChange) => h("label", {className: "qcord-toggle"},
-            h("input", {type: "checkbox", checked, disabled: !plugin.running, onChange}), label);
+            h("input", {type: "checkbox", checked, disabled: !plugin.running || plugin.resetting, onChange}), label);
         const lesson = (title, text) => h("div", null, h("h4", null, title), h("p", null, text));
         return h("div", {className: "qcord-panel"},
             h("div", {className: "qcord-heading"}, h("h3", null, "Direct messaging"), h("span", null, "ML-KEM-512")),
@@ -69,7 +91,7 @@ module.exports = function getSettingsPanel(plugin) {
                 h("section", {className: "qcord-section"},
                     h("h3", null, "My public key"),
                     h("textarea", {readOnly: true, rows: 4, value: publicKey, placeholder: "Loading key...", "aria-label": "My public key"}),
-                    h("div", {className: "qcord-actions"}, button("Copy public key", () => copy(publicKey), !publicKey)),
+                    h("div", {className: "qcord-actions"}, publicKey ? button("Copy public key", () => copy(publicKey)) : button("Create key pair", createKey)),
                     publicKey && h("p", {className: "qcord-fingerprint"}, "SHA-256: " + plugin.keyId(PQC.createPublicKey(publicKey)))),
                 h("section", {className: "qcord-section"},
                     h("h3", null, "DM partner"),
@@ -77,7 +99,6 @@ module.exports = function getSettingsPanel(plugin) {
                         h("p", null, "User ID: ", h("code", null, partner.userId)),
                         h("p", null, "Channel ID: ", h("code", null, channelId)))
                         : h("p", null, "Open a one-to-one DM to exchange keys. Group DMs and server channels are not supported for new encrypted messages."),
-                    partner && saved.length > 0 && !current && h("p", null, "Replace the older recipient entries with this person's key to bind it to their user ID."),
                     h("label", {className: "qcord-field"}, current ? "Replacement public key" : "Their public key",
                         h("textarea", {rows: 4, value: recipientKey, placeholder: "Paste their ML-KEM-512 public key", disabled: busy || !partner || !plugin.running,
                             onChange: event => setRecipientKey(event.target.value)})),
@@ -97,10 +118,12 @@ module.exports = function getSettingsPanel(plugin) {
                     lesson("Encryption and integrity", "A fresh AES-256-GCM key encrypts each message. Its authentication tag rejects altered protected content. HKDF-SHA256 derives key-wrapping keys; SHA-256 fingerprints help verify public keys. A plain message hash alone cannot stop someone replacing both the content and its hash."),
                     lesson("One key per contact", "You keep one local key pair and collect a public key from every contact you message: N contacts means N contact keys to manage. Each file includes access for your partner and yourself. There is no shared group key or TreeKEM yet.")),
                 h("p", null, "Private keys are stored unencrypted in qcord.config.json. This experimental format has no sender signatures or forward secrecy."),
-                h("div", {className: "qcord-actions"}, button("Check my key pair", testKey))),
+                h("p", null, "Check your key pair locally, even without a DM partner. This checks cryptography on this device, not Discord delivery."),
+                h("div", {className: "qcord-actions"}, button("Check my key pair", testKey, !publicKey))),
             h("details", {className: "qcord-section"}, h("summary", null, "Future algorithms"),
                 h("p", null, "ML-KEM-768/1024: larger standardized parameter sets. HQC: a code-based KEM selected for standardization, planned for evaluation. ML-DSA/SLH-DSA: signatures for sender verification. No release dates yet."),
-                h("a", {href: "https://csrc.nist.gov/News/2025/hqc-announced-as-a-4th-round-selection", target: "_blank", rel: "noreferrer"}, "NIST: HQC selection"))
+                h("a", {href: "https://csrc.nist.gov/News/2025/hqc-announced-as-a-4th-round-selection", target: "_blank", rel: "noreferrer"}, "NIST: HQC selection")),
+            h("div", {className: "qcord-actions"}, button("Clear qcord.config.json", resetConfig, false, "qcord-danger"))
         );
     });
 };
