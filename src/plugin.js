@@ -1,6 +1,7 @@
 "use strict";
 
 const MessageCrypto = require("./messaging");
+const config = require("./config");
 const getSettingsPanel = require("./settings");
 const BUTTON_SVG = require("./button.svg");
 const PLUGIN_CSS = require("./styles.css");
@@ -8,8 +9,9 @@ const { NAME, KEY_STORE, ACTIVE_SCHEME, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_
 
 module.exports = class Qcord extends MessageCrypto {
     start() {
-        this.enabled = BdApi.Data.load(KEY_STORE, "enabled") === true;
-        this.decodeIncoming = BdApi.Data.load(KEY_STORE, "decodeIncoming") !== false;
+        config.migrateConfiguration();
+        this.enabled = config.load("encrypt_outgoing_messages") === true;
+        this.decodeIncoming = config.load("decrypt_incoming_messages") !== false;
         this.running = false;
         this.frame = null;
         this.session = {};
@@ -94,7 +96,7 @@ module.exports = class Qcord extends MessageCrypto {
             const parts = [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()]
                 .map(value => String(value).padStart(2, "0"));
             const filename = `${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.qcord`;
-            const file = new File([content], filename, {type: "application/octet-stream"});
+            const file = new File([content], filename, {type: "application/json"});
             // Stage the encoded envelope for review; never send the plaintext draft.
             await attachments.addFiles({
                 channelId, draftType: 0, showLargeMessageDialog: false,
@@ -110,14 +112,14 @@ module.exports = class Qcord extends MessageCrypto {
 
     setEnabled(enabled) {
         if (!this.running || this.resetting) return;
-        BdApi.Data.save(KEY_STORE, "enabled", Boolean(enabled));
+        config.save("encrypt_outgoing_messages", Boolean(enabled));
         this.enabled = Boolean(enabled);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
     }
 
     setDecoding(enabled) {
         if (!this.running || this.resetting) return;
-        BdApi.Data.save(KEY_STORE, "decodeIncoming", Boolean(enabled));
+        config.save("decrypt_incoming_messages", Boolean(enabled));
         this.decodeIncoming = Boolean(enabled);
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
         this.scanMessages();
