@@ -1,107 +1,104 @@
-# Qcord
+# Qcord · learning edition
 
-Experimental post-quantum encrypted messaging for BetterDiscord.
+A BetterDiscord plugin for composing encrypted `.qcord` attachments and exploring ML-KEM. Install the single generated **qcord.plugin.js** file. It bundles its cryptography and needs no runtime downloads.
 
-Copy `qcord.plugin.js` and place into BetterDiscord's Plugins folder and enable it. 
+## Start a conversation
 
-A **Qcord ready** toast confirms startup. Click the shield beside the default text composer options to open settings:
+1. Copy `qcord.plugin.js` into BetterDiscord's Plugins folder and enable Qcord.
+2. Open a one-to-one DM and click the Qcord shield. Choose an **ML-KEM parameter set**. Its **NIST security level** appears beside the selector.
+3. Open **Contacts & keys → My public key** and share your encapsulation key. Your contact does the same for the same parameter set.
+4. In the **Contacts** tab, choose **Add open DM**, paste the contact's public key, and save it. Compare the displayed fingerprint over a separate trusted route, such as a call. Choose **Use this recipient**.
+5. Turn on **Quantum conversations** for automatic outgoing encryption and incoming decryption. Type in Discord and press Enter to stage a file; review it and press Send again.
 
-- **Encrypt outgoing messages** - creates ML-KEM + AES-256-GCM encrypted files for your saved partner key in a one-to-one DM.
-- **Decrypt incoming messages** - displays files addressed to your saved private key, with Discord Markdown formatting.
-- **My encryption key** - load your saved ML-KEM-512 key and copy your public key as plain Base64, without BEGIN/END wrappers.
-- **DM partners** - manage multiple contacts in a scrollable list with avatars, @usernames and user IDs. Open each contact's DM to add their public key; select any saved contact to copy, replace or remove their key. Each one-to-one DM has one partner key.
-- **Keys, IDs and message integrity** - learn about public/private keys, post-quantum cryptography, authenticated encryption, and SHA-256 fingerprints. An optional local check verifies your ML-KEM-512 key pair.
-- **Future algorithms** - a collapsed roadmap separates future encryption options from digital signatures.
+With automatic mode off, ordinary Discord sending works normally and incoming attachments stay as files. Manual composition works with the switch either on or off. Existing unencrypted attachments are not encrypted by Qcord.
 
-Open the panel for the first time to generate and save your ML-KEM-512 public/private key pair. Later openings reuse those keys. Settings, key pairs, and recipient public keys are stored through BetterDiscord in its Plugins folder's `qcord.config.json`. Keys use Base64-encoded DER without text wrappers. Private keys are stored unencrypted: keep this file private and backed up. Local config files and examples are excluded from Git; the development checks in `scripts/test.cjs` contain no saved private keys.
+## The composer
 
-To set up a conversation:
+The composer opens in a native dialog up to **1480 × 920 CSS pixels**, bounded by the window. The parameter selector, NIST level, selected contact, and contact manager occupy a fixed toolbar. Five clickable tabs and Back/Next navigation replace the long expanding form. Equations use 24px type on desktop; polynomial graphics use lime green.
 
-1. Both parties copy their ML-KEM-512 public key from the panel.
-2. Exchange public keys in Discord DMs: public keys are safe to share. Compare the displayed SHA-256 fingerprints over an independent route, such as a call or in person, to verify ownership. A compromised account could substitute a different key; this is an identity check, not a requirement to keep public keys secret. Never share a private key or the config file.
-3. Open your one-to-one DM. Paste their complete public key, then click **Save partner**. Paste the complete key text copied by Qcord. Qcord reads the account and conversation IDs from Discord; no @username or manual ID entry is required. Repeat in another contact's DM to add another partner. Your own key is included automatically so you can read sent files. Selecting a contact in settings edits their saved key; sending always uses the partner in the actual DM.
-4. Enable outgoing encryption. Enter stages every nonempty message as `YYYY-MM-DD_hh-mm-ss.qcord`, using local time. Review it and press Send or Enter again with the composer empty. Missing recipient keys, unsupported crypto APIs, and encryption/staging errors preserve the draft and block sending.
+The two-column desktop layout keeps the current lesson and its visualization together. Nested tabs switch the visible explanation or graph. Small windows permit scrolling within the lesson so content remains accessible; long file previews and contact lists have their own scroll areas.
 
-A **user ID** identifies an account independently of its changeable @username. A **channel ID** identifies the conversation, including a DM. IDs are routing and local key-association data, not proof of key ownership. The encrypted envelope binds its channel ID and public-key fingerprints as authenticated data; its recipient IDs are key fingerprints, not Discord user IDs. Compare fingerprints with your partner.
+| Stage | Views and actions | Lecture 6 slides |
+| --- | --- | --- |
+| Write | Enter text, choose a recipient, or make a file automatically | 32–35, 56, 97 |
+| Encode | UTF-8 bytes and least-significant-first bits, polynomial mapping, BOM explanation | 10, 57–59, 65–68, 86, 97 |
+| Keys | Public matrix, public vector, optional local secret vectors, key format | 34, 56, 64, 72–75, 82, 96 |
+| Encapsulate | Encoded random m, noise, u, v, and an editable compression exercise | 53–60, 84–90, 97 |
+| Attach | Recovered text, decapsulation visualization, and the exact file | 35, 91–93, 97–98 |
 
-Each person keeps one local key pair and collects a public key for each contact: N contacts means N contact keys to manage. There is no group key agreement or TreeKEM. New encrypted sending rejects server channels, group DMs, multiple partner keys, and keys saved for a different user ID.
+Back/Next preserve the current preview. Editing text, changing recipient, replacing a key, or changing parameter sets invalidates it. **Sample fresh randomness** creates new encapsulation values. The final button stages the exact reviewed file, without re-encrypting it. Open the selected DM and clear any plaintext from the Discord composer before attaching; the walkthrough retains its own message copy.
 
-Only Discord-hosted `.qcord` files with a valid envelope are processed, up to 1 MiB including all encryption and Base64 overhead. Invalid or unreadable files keep their attachment card. Links and code blocks are rendered locally, but decoded links do not generate server-side previews.
+The separate **Contacts & keys** dialog includes searchable contact cards with avatars, usernames, and badges for saved parameter sets. It has tabs for contacts, your public key, and private-key backup/restoration. Removing a contact key removes only the selected parameter set's binding.
 
-New encrypted files are ordinary JSON with tab indentation, new lines and `qcord_version: 2`. Both parties need this updated plugin to read new packets. Existing `qcord:v1:pqc:` attachments remain readable. Existing config fields migrate automatically to descriptive snake_case names, preserving key material and contact bindings.
+## Parameter sets
 
-ML-KEM-512 follows the algorithm standardized in [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final); Qcord is not a FIPS-validated cryptographic module. ML-KEM establishes a secret; AES encrypts the text:
+The UI calls these NIST security levels; FIPS 203 calls them security categories. Levels are not literal key lengths or claimed bits of security.
 
-1. **ML-KEM** produces a **32-byte shared secret** and a **768-byte KEM ciphertext** for each recipient. The matching private key recovers the secret. The secret stays local.
-2. **HKDF-SHA256** derives a **32-byte AES wrapping key** from that secret. It stays local too.
-3. **AES-256-GCM** encrypts the message with a fresh random **32-byte message key**. Each recipient gets a separately encrypted copy of that message key, protected by their wrapping key. Each AES operation has a public **12-byte nonce** and a **16-byte authentication tag**.
-4. **SHA-256** hashes the public key's DER/SPKI encoding into a **32-byte fingerprint**, displayed as 64 hexadecimal characters. A fingerprint identifies key bytes; it does not sign a message.
+| Parameter set | NIST security level | k | η₁ / η₂ | dᵤ / dᵥ | Public ek | Private dk | KEM ciphertext c |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ML-KEM-512 | 1 | 2 | 3 / 2 | 10 / 4 | 800 B | 1632 B | 768 B |
+| ML-KEM-768 | 3 | 3 | 2 / 2 | 10 / 4 | 1184 B | 2400 B | 1088 B |
+| ML-KEM-1024 | 5 | 4 | 2 / 2 | 11 / 5 | 1568 B | 3168 B | 1568 B |
 
-**There is no 32-byte signature in Qcord.** GCM tags detect changes to protected ciphertext and metadata, but do not establish the sender's identity: anyone with the public keys can construct a fresh valid packet. The file's version, algorithms, channel and ordered recipient fingerprints are authenticated data. Copying a file to a different channel, or modifying protected fields, fails verification. Whitespace and JSON property order may change without breaking decryption. This experimental, unaudited format has no sender identity signatures or forward secrecy.
+All sets use `n = 256`, `q = 3329`, and a 32-byte shared secret K. Sizes above are raw bytes; copied keys add DER framing and Base64 encoding. These parameters follow [FIPS 203, Tables 2 and 3](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf).
 
-The packet's fields describe the encrypted bytes; `_base64` means binary data encoded as text, not another encryption layer:
+Changing the set preserves every existing identity and contact key. A missing local key pair is generated once for the chosen set. The selection controls automatic sending; incoming files select their own parameter set from authenticated metadata. Both participants need a compatible saved public/private key for that set. The default remains ML-KEM-768.
 
-| Field | Meaning |
-| --- | --- |
-| `qcord_version` | Packet schema version, currently `2` |
-| `kem_algorithm`, `encryption_algorithm`, `key_derivation_algorithm` | `ml-kem-512`, `aes-256-gcm`, `hkdf-sha256` |
-| `channel_id` | Discord DM channel; visible but authenticated |
-| `recipient_key_fingerprints_sha256` | Ordered public-key fingerprints; these are not Discord user IDs |
-| `recipients[].public_key_fingerprint_sha256` | Identifies which private key can open this recipient's envelope |
-| `recipients[].kem_ciphertext_base64` | ML-KEM ciphertext used to recover that recipient's shared secret |
-| `recipients[].wrapped_message_key` | AES-GCM encrypted copy of the message key |
-| `encrypted_message` | AES-GCM encrypted message text |
-| `nonce_base64` | Public 12-byte nonce within each AES-GCM object |
-| `ciphertext_base64` | Encrypted message bytes or encrypted message-key bytes, depending on the containing object |
-| `authentication_tag_base64` | 16-byte GCM tag within each AES-GCM object |
+## UTF-8 and the BOM
 
-The packet contains neither plaintext nor private keys, shared secrets or unwrapped AES keys. Public routing metadata remains visible to Discord.
+A leading **U+FEFF Byte Order Mark** encodes as **EF BB BF** in UTF-8. Qcord marks those bytes in the preview and preserves the character when decrypting. The decoder explicitly avoids the default behavior that removes a leading BOM; removal previously caused the local text-equality check to fail after successful decryption. See the [WHATWG Encoding Standard](https://encoding.spec.whatwg.org/#dom-textdecoderoptions-ignorebom).
 
-The local `qcord.config.json` uses these fields (BetterDiscord controls its JSON formatting):
+Plugin source and generated `.qcord` JSON use UTF-8 **without an added BOM**. The file parser accepts an optional BOM on the JSON wrapper without stripping one from the encrypted message. Unpaired Unicode surrogates are rejected with an explicit message rather than silently changing text during encoding.
 
-| Field | Meaning |
-| --- | --- |
-| `config_version` | Local config schema version, currently `2` |
-| `encrypt_outgoing_messages`, `decrypt_incoming_messages` | Boolean switches |
-| `key_pairs["ml-kem-512"].public_key_spki_base64` | Public key in a DER/SPKI container, encoded as Base64 |
-| `key_pairs["ml-kem-512"].private_key_pkcs8_base64` | **Secret, unencrypted** private key in a DER/PKCS#8 container, encoded as Base64 |
-| `key_pairs["ml-kem-512"].created_at` | Key creation time in ISO 8601 format |
-| `dm_partners[].channel_id`, `dm_partners[].user_id` | Discord conversation and account IDs |
-| `dm_partners[].key_algorithm`, `dm_partners[].public_key_spki_base64` | Contact's algorithm and public key |
-| `dm_partners[].saved_at` | Last key save time; migrated contacts may omit it because the old config did not record it |
+## How the lesson maps to ML-KEM
 
-Raw ML-KEM-512 public and private keys are 800 and 1632 bytes respectively; the DER containers add framing bytes before Base64 encoding. Never share this config file.
+The course reference is the local `corpus/PQC_Lecture_6_ML-KEM_v3.pdf`. Panels name the relevant slide numbers. **The corpus is local-only and excluded from Git**; it is not needed to run the plugin. Lecture references are labels, not bundled copies of the slides.
 
-The shield opens a large modal sized up to 1120px by targeting the BetterDiscord root containing the panel. The panel uses rounded charcoal buttons, aligned copy icons and matching checkmark controls. The modal scrolls; long partner lists have a bounded scroll area. Textarea scrollbars are hidden while the text stays scrollable and selectable. Key sections stack on narrow screens. Educational details are collapsed with chevrons on the right. Your key creation date appears in parentheses beside its heading. Partner avatars and names come from Discord's cached user profiles; missing or unreadable photos show an initial instead.
+**Typed text is not ML-KEM's random m.** The text-to-polynomial display is a mapping exercise. Actual encapsulation draws uniformly random 32-byte m, derives `(K, r) = G(m ∥ H(ek))`, and uses K-PKE to encode and encrypt m. The full chat text is encrypted separately with AES-256-GCM. Exercise values never supply cryptographic randomness.
 
-The plugin bundles [@noble/post-quantum](https://github.com/paulmillr/noble-post-quantum) 0.7.1 for ML-KEM-512 only. AES-GCM, HKDF and SHA-256 are also bundled through [noble-ciphers](https://github.com/paulmillr/noble-ciphers) and [noble-hashes](https://github.com/paulmillr/noble-hashes). Secure randomness comes from the browser API. No Node crypto functions are required. No runtime download or administrator/root access is required. Sending uses the v2 JSON packet; reading supports v2 and the previous v1 envelope with the existing key encoding.
+The lecture uses older pseudocode numbering and some pre-final details. The panel states the differences: final FIPS 203 expands `(ρ, σ) = G(d ∥ byte(k))` and samples `Â[i,j] = SampleNTT(ρ ∥ byte(j) ∥ byte(i))`. The lecture's vector **r⃗** is distinct from the scalar 32-byte seed **r**. A hat denotes an NTT representation; `∘` denotes polynomial multiplication in that representation. Final-standard bytes drive the implementation.
 
-Post-quantum cryptography uses ordinary computers and aims to resist future quantum attacks; it is different from quantum key distribution. [ML-KEM is already standardized](https://csrc.nist.gov/pubs/fips/203/final). Planned additions have no release dates: ML-KEM-768/1024 sending options, evaluation of [HQC (selected by NIST for standardization)](https://csrc.nist.gov/News/2025/hqc-announced-as-a-4th-round-selection), and ML-DSA/SLH-DSA signatures for sender verification. Signatures authenticate messages rather than encrypt them.
+`src/learning.js` reconstructs the mathematics for display. Actual key generation, encapsulation, and decapsulation use the bundled library's public API. A trace is displayed only if its independently reconstructed ciphertext matches the library byte for byte. Private vectors shown in the lesson are local; never share their screenshots. Closing the panel clears reachable numeric buffers, though JavaScript cannot guarantee erasure of strings or garbage-collector copies.
 
-The composer has a translucent navy-to-blue background while encryption is enabled. The shield button lights up while decryption is enabled.
+[FIPS 203](https://csrc.nist.gov/pubs/fips/203/final) defines key encapsulation. [FIPS 204](https://csrc.nist.gov/pubs/fips/204/final) and [FIPS 205](https://csrc.nist.gov/pubs/fips/205/final) define ML-DSA and SLH-DSA signatures. Signatures, certificates, and PKI are deferred lessons.
 
-**Check my key pair** works without another person: it checks ML-KEM key agreement, encrypts/decrypts a local test message, and verifies that a modified authentication tag is rejected. It does not test Discord delivery.
+## File and key behavior
 
-The red **Clear qcord.config.json** button asks for confirmation, then empties the file and BetterDiscord cache, disables encryption/decryption, and clears local key and plaintext caches. No new keys are generated until you click **Create key pair** or reopen the panel. Deleted private keys cannot decrypt previous messages unless restored from backup. The button does not remove already staged Discord attachments.
+Each version-3 file contains a fresh AES-256-GCM encrypted message and one ML-KEM envelope per distinct participant key. Qcord derives wrapping keys with HKDF-SHA256 and the context `Qcord v3 key wrap`, then wraps a fresh 32-byte AES message key. AES-GCM uses fresh 12-byte nonces and 16-byte tags. HKDF and AES-GCM are Qcord's application layer, outside the lecture's ML-KEM algorithm walkthrough.
 
-To develop or rebuild, use Node 20.19+ and run:
+The version, algorithms, channel ID, and ordered key fingerprints form authenticated data. A file is bound to its original DM. The sender is included so their saved dk can open their sent files. The file contains no plaintext, private dk, random m, K, or unwrapped AES keys. Public metadata and traffic timing remain visible. Incoming parsing is limited to 1 MiB and supported Discord CDN attachment URLs; BetterDiscord's fetch API buffers downloads before the size check.
+
+**This is an experimental, unaudited learning tool, not a FIPS-validated module.** AES-GCM detects modification but does not authenticate the sender. There are no sender signatures, forward secrecy, replay protection, group key agreement, or certificate management.
+
+Keys and contacts persist under `learning_*` fields in BetterDiscord's `qcord.config.json`. Existing learning-edition ML-KEM-768 keys and version-3 files remain usable. Older version-1/version-2 protocols and their contact bindings are not loaded. Older private-key data on disk is left intact.
+
+Your **dk is stored unencrypted**. Use **Contacts & keys → Private key** for a private backup or restoration. Restoration asks for confirmation and replaces only the selected set's identity; back up that dk first. A lost private key cannot be recovered from its public key.
+
+## Development
+
+Use Node 22.16+ (declared minimum: 20.19). Build source modules into the standalone plugin:
 
 ```sh
 npm ci --ignore-scripts
-npm test
 npm run build
+npm test
 ```
 
-Edit `src/`, then rebuild. [esbuild](https://esbuild.github.io/api/#bundle) combines the source and pinned dependencies into the standalone `qcord.plugin.js`. Copy only that generated file into BetterDiscord's Plugins folder; `node_modules` is needed only for building. Project npm settings and dependency URLs use the public npm registry. The generated file includes dependency licenses, also recorded in `THIRD_PARTY_NOTICES.md`.
+Browser checks use a local fixture with disposable keys, not a Discord account:
+
+```sh
+npx playwright install chromium
+npm run test:ui
+```
+
+Alternatively set `QCORD_BROWSER` to an installed Chromium/Chrome/Edge executable. Screenshots go to ignored `.tools/ui/`. Crypto tests cover all three sets, BOM preservation, independent ring multiplication, trace equality, two-party decryption, tampering, wrong keys, cancellation, and key retention. Browser checks cover the real native dialogs, aligned controls, avatars, searchable contacts, tab navigation, all parameter sets, exact-file staging, the send hook against mocked Discord actions, desktop overflow, and narrow windows.
+
+These tests do not verify live BetterDiscord integration. Discord's private APIs can change. Qcord reports failure and does not activate if it cannot install its send hook. Once active, attachment-staging failures block submission and preserve the draft.
 
 | Source | Responsibility |
 | --- | --- |
-| `src/plugin.js` | Discord lifecycle, composer hooks and attachment rendering |
-| `src/messaging.js` | Saved keys, recipients and encrypted file format |
-| `src/config.js` | Descriptive config fields and migration preserving existing keys |
-| `src/pqc.js` | Bundled PQC operations and key import/export |
-| `src/der.js` | DER framing and key text decoding |
-| `src/settings.js` | Settings panel |
-| `src/styles.css`, `src/button.svg` | Appearance |
-| `src/constants.js`, `src/metadata.json` | Shared values and plugin metadata |
-| `scripts/build.mjs` | Build and third-party notices |
+| `src/plugin.js` | Discord lifecycle, dialogs, send interception, staging, local rendering |
+| `src/messaging.js`, `src/pqc.js`, `src/der.js` | Keys, cryptography, strict imports and packet format |
+| `src/parameters.js`, `src/learning.js` | Parameter definitions and verified educational traces |
+| `src/settings.js`, `src/contacts.js`, `src/ui.js`, `src/styles.css` | Composer, contact dialog, visual components and layout |
+| `scripts/build.mjs`, `scripts/test.cjs`, `scripts/test-ui.mjs` | Build and checks |

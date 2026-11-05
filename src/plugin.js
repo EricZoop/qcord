@@ -5,13 +5,17 @@ const config = require("./config");
 const getSettingsPanel = require("./settings");
 const BUTTON_SVG = require("./button.svg");
 const PLUGIN_CSS = require("./styles.css");
-const { NAME, KEY_STORE, ACTIVE_SCHEME, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
+const {parameters} = require("./parameters");
+const { NAME, ACTIVE_SCHEME, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require("./constants");
 
 module.exports = class Qcord extends MessageCrypto {
     start() {
-        config.migrateConfiguration();
-        this.enabled = config.load("encrypt_outgoing_messages") === true;
-        this.decodeIncoming = config.load("decrypt_incoming_messages") !== false;
+        config.initialize();
+        this.enabled = config.load("quantum_conversations") === true;
+        this.pendingSends = new Map();
+        this.panels = new Set();
+        this.dialogs = new Set();
+        this.conversationEpoch = {};
         this.running = false;
         this.frame = null;
         this.session = {};
@@ -22,8 +26,8 @@ module.exports = class Qcord extends MessageCrypto {
         this.keys = null;
         this.keyPairs = new Map();
         this.keyTasks = new Map();
-        this.schemeStatus = {};
-        this.scheme = ACTIVE_SCHEME;
+        this.scheme = config.load("parameter_set") || ACTIVE_SCHEME;
+        parameters(this.scheme);
 
         // Discord internals are not a stable API. Do not present a working switch
         // unless we can actually intercept ordinary chat submissions.
@@ -64,7 +68,7 @@ module.exports = class Qcord extends MessageCrypto {
         }
         this.mountButtons();
         this.scanMessages();
-        BdApi.UI.showToast("Qcord ready - open the shield for settings.", {type: "success"});
+        BdApi.UI.showToast("Qcord ready - open the shield to compose or learn.", {type: "success"});
     }
 
     blockSend(reason) {
@@ -75,15 +79,17 @@ module.exports = class Qcord extends MessageCrypto {
     }
 
     async prepareMessageFile(channelId, text) {
-        const session = this.session;
+        if (this.pendingSends.has(channelId)) return this.blockSend("Qcord is already preparing this attachment.");
+        const session = this.session, epoch = this.conversationEpoch;
+        this.pendingSends.set(channelId, true);
         try {
             const content = await this.encryptMessage(channelId, text);
-            if (!this.running || !this.enabled || this.session !== session) throw new Error("Qcord encryption was stopped.");
+            if (!this.running || !this.enabled || this.session !== session || this.conversationEpoch !== epoch) throw new Error("Qcord encryption was stopped.");
             return await this.stageMessageFile(channelId, content);
         }
         catch (error) {
             return this.blockSend(`Qcord did not send your message: ${error.message}`);
-        }
+        } finally { this.pendingSends.delete(channelId); }
     }
 
     async stageMessageFile(channelId, content) {
@@ -112,17 +118,43 @@ module.exports = class Qcord extends MessageCrypto {
 
     setEnabled(enabled) {
         if (!this.running || this.resetting) return;
-        config.save("encrypt_outgoing_messages", Boolean(enabled));
+        config.save("quantum_conversations", Boolean(enabled));
         this.enabled = Boolean(enabled);
-        for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
-    }
-
-    setDecoding(enabled) {
-        if (!this.running || this.resetting) return;
-        config.save("decrypt_incoming_messages", Boolean(enabled));
-        this.decodeIncoming = Boolean(enabled);
+        this.conversationEpoch = {};
+        this.clearDecoded();
+        this.fileDecodes = new WeakMap();
         for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
         this.scanMessages();
+    }
+
+    setScheme(scheme) {
+        parameters(scheme);
+        if (!this.running) throw new Error("Enable Qcord first.");
+        config.save("parameter_set", scheme);
+        this.scheme = scheme;
+        this.conversationEpoch = {};
+    }
+
+    currentChannel() { return BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId(); }
+
+    composerText(channelId = this.currentChannel()) {
+        const saved = BdApi.Webpack.getStore?.("DraftStore")?.getDraft?.(channelId, 0);
+        const editor = channelId === this.currentChannel() ? document.querySelector('[class*="channelTextArea"] [role="textbox"][contenteditable="true"]') : null;
+        return (typeof saved === "string" && saved) || editor?.innerText?.replace(/\n$/, "") || "";
+    }
+
+    async stageLearningDraft(draft) {
+        if (!this.running) throw new Error("Enable Qcord first.");
+        if (this.currentChannel() !== draft.channelId) throw new Error("Open the selected recipient's DM before attaching.");
+        const partner = this.getDirectPartner(draft.channelId);
+        const rows = this.getRecipients(draft.channelId, draft.scheme || ACTIVE_SCHEME);
+        const {PQC} = require("./pqc");
+        if (rows.length !== 1 || rows[0].user_id !== partner.userId || this.keyId(PQC.createPublicKey(rows[0].public_key_spki_base64)) !== draft.partnerId)
+            throw new Error("The recipient key changed. Go back and prepare a new preview.");
+        if (this.composerText(draft.channelId).trim()) throw new Error("Clear the Discord composer before attaching. Your message is kept in this walkthrough.");
+        const result = await this.stageMessageFile(draft.channelId, draft.wire);
+        if (!result.shouldClear) throw new Error("Attachment staging failed. Your preview is still here.");
+        return result;
     }
 
     clearDecoded() {
@@ -159,12 +191,8 @@ module.exports = class Qcord extends MessageCrypto {
     }
 
     updateButton(button) {
-        const encoding = String(this.enabled);
-        const decoding = String(this.decodeIncoming);
-        if (button.getAttribute("data-encoding") === encoding && button.getAttribute("data-decoding") === decoding) return;
-        button.setAttribute("data-encoding", encoding);
-        button.setAttribute("data-decoding", decoding);
-        button.title = `Qcord settings - Encryption ${this.enabled ? "on" : "off"}, decryption ${this.decodeIncoming ? "on" : "off"}`;
+        button.setAttribute("data-enabled", String(this.enabled));
+        button.title = `Qcord - Quantum conversations ${this.enabled ? "on" : "off"} - Open walkthrough`;
         button.setAttribute("aria-label", button.title);
     }
 
@@ -188,9 +216,7 @@ module.exports = class Qcord extends MessageCrypto {
                 button.addEventListener("click", event => {
                     event.preventDefault();
                     event.stopPropagation();
-                    BdApi.UI.showConfirmationModal(NAME, this.getSettingsPanel(), {
-                        size: "bd-modal-large", confirmText: "Close", cancelText: null
-                    });
+                    this.openComposer();
                 });
             }
             this.updateButton(button);
@@ -203,7 +229,7 @@ module.exports = class Qcord extends MessageCrypto {
     // nodes are hidden, never edited; Discord's Markdown renderer owns our nodes.
     scanMessages() {
         if (!this.running || this.resetting) return;
-        if (!this.decodeIncoming) { this.clearDecoded(); return; }
+        if (!this.enabled) { this.clearDecoded(); return; }
         for (const element of this.renderedMessages.keys()) {
             if (!element.isConnected) this.removeDecoded(element);
         }
@@ -213,7 +239,7 @@ module.exports = class Qcord extends MessageCrypto {
     }
 
     async decodeFile(link) {
-        if (!this.running || !this.decodeIncoming) return;
+        if (!this.running || !this.enabled) return;
         let url;
         try { url = new URL(link.href); }
         catch { return; }
@@ -241,7 +267,7 @@ module.exports = class Qcord extends MessageCrypto {
                 // Use BetterDiscord's native fetch; signed CDN URLs need no auth token.
                 const response = await BdApi.Net.fetch(url.href, {timeout: 10000, redirect: "error", maxRedirects: 0});
                 if (!response.ok) return;
-                // ponytail: 1 MiB display ceiling; streaming download limits need a streaming Net API.
+                // Bound parsing; BdApi.Net currently buffers the response before this check.
                 if (Number(response.headers.get("content-length")) > MAX_DECODED_FILE_SIZE) return;
                 const text = await response.text();
                 if (text.length > MAX_DECODED_FILE_SIZE || this.session !== session) return;
@@ -255,7 +281,7 @@ module.exports = class Qcord extends MessageCrypto {
             }
             finally { state.pending = false; }
         }
-        if (state.pending || state.decoded === null || !this.running || !this.decodeIncoming ||
+        if (state.pending || state.decoded === null || !this.running || !this.enabled ||
             !card.isConnected || link.href !== state.url || this.fileDecodes.get(card) !== state) return;
         if (!state.span?.isConnected) {
             state.span = document.createElement("div");
@@ -269,26 +295,22 @@ module.exports = class Qcord extends MessageCrypto {
 
     getSettingsPanel() { return getSettingsPanel(this); }
 
-    async clearConfiguration() {
-        // Invalidate pending crypto before clearing persistent and in-memory keys.
-        this.resetting = true;
-        this.session = {};
-        this.enabled = false;
-        this.decodeIncoming = false;
-        this.keys = null;
-        this.keyPairs.clear();
-        this.keyTasks.clear();
-        this.schemeStatus = {};
-        this.clearDecoded();
-        this.fileDecodes = new WeakMap();
-        for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
-        const fs = require("fs");
-        const path = require("path");
-        const configPath = path.join(BdApi.Plugins.folder, KEY_STORE + ".config.json");
-        fs.writeFileSync(configPath, "{}\n", "utf8");
-        // A one-time recache keeps BetterDiscord from restoring deleted data on save.
-        if (!await BdApi.Data.recache(KEY_STORE)) throw new Error("Config cleared on disk. Reload Qcord before continuing.");
-        this.resetting = false;
+    openComposer() {
+        if (this.composerDialog?.open) { this.composerDialog.focus(); return; }
+        const dialog = document.createElement("dialog");
+        dialog.className = "qcord-dialog";
+        dialog.setAttribute("aria-label", "Qcord message composer");
+        document.body.append(dialog);
+        const root = BdApi.ReactDOM.createRoot(dialog);
+        const close = () => dialog.close();
+        this.dialogs.add(close);
+        this.composerDialog = dialog;
+        dialog.addEventListener("close", () => {
+            root.unmount(); dialog.remove(); this.dialogs.delete(close);
+            if (this.composerDialog === dialog) this.composerDialog = null;
+        }, {once: true});
+        root.render(getSettingsPanel(this, {onClose: close}));
+        dialog.showModal();
     }
 
     // BetterDiscord's lifecycle supplies DOM mutations and navigation events.
@@ -307,6 +329,9 @@ module.exports = class Qcord extends MessageCrypto {
     stop() {
         this.running = false;
         this.resetting = false;
+        for (const close of this.dialogs || []) close();
+        for (const close of this.panels || []) close();
+        this.panels?.clear();
         this.keys = null;
         this.keyPairs.clear();
         this.keyTasks.clear();

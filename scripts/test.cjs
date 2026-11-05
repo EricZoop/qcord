@@ -1,223 +1,177 @@
 "use strict";
-
 const {test} = require("node:test");
 const assert = require("node:assert/strict");
-const {gcm} = require("@noble/ciphers/aes.js");
-const {hkdf} = require("@noble/hashes/hkdf.js");
-const {sha256} = require("@noble/hashes/sha2.js");
-const {PQC, randomBytes} = require("../src/pqc");
+const {PQC} = require("../src/pqc");
+const L = require("../src/learning");
 const MessageCrypto = require("../src/messaging");
+const Qcord = require("../qcord.plugin.js");
 const config = require("../src/config");
-const panel = require("../src/settings");
-const {ACTIVE_SCHEME, ENCRYPTED_PREFIX, MAX_DECODED_FILE_SIZE} = require("../src/constants");
-
-let store = {};
-const channels = new Map([
-    ["100", {type: 1, recipients: ["2"]}],
-    ["200", {type: 1, recipients: ["3"]}],
-    ["300", {type: 3, recipients: ["2", "3"]}],
-    ["400", {type: 0, recipients: []}]
-]);
+const {ACTIVE_SCHEME, MAX_DECODED_FILE_SIZE} = require("../src/constants");
+let store={}, channel="100", draftText="", staged=[], toasts=[];
+const channels = new Map([["100",{type:1,recipients:["2"]}],["200",{type:1,recipients:["3"]}],["300",{type:3,recipients:["2","3"]}]]);
+const publicText = key => key.export({type:"spki",format:"base64"});
+const privateText = key => key.export({type:"pkcs8",format:"base64"});
+global.document = {querySelector:()=>null,querySelectorAll:()=>[]};
 global.BdApi = {
-    Data: {
-        load: (name, key) => structuredClone(store[key]),
-        save: (name, key, value) => { store[key] = structuredClone(value); },
-        delete: (name, key) => { delete store[key]; }
-    },
-    Webpack: {getStore: name => ({
-        ChannelStore: {getChannel: id => channels.get(id)},
-        SelectedChannelStore: {getChannelId: () => "100"},
-        UserStore: {getUser: id => ({id, username: "user" + id, globalName: "Contact " + id, avatar: "a_abcdef"})}
-    })[name]}
+    Data:{load:(n,k)=>structuredClone(store[k]),save:(n,k,v)=>{store[k]=structuredClone(v);}},
+    Webpack:{getStore:name=>({ChannelStore:{getChannel:id=>channels.get(id)},SelectedChannelStore:{getChannelId:()=>channel},DraftStore:{getDraft:()=>draftText},UserStore:{getUser:id=>({username:"user"+id})}})[name],
+        getByKeys: key=>key==="addFiles"?{addFiles:async data=>staged.push(data)}:null},
+    UI:{showToast:(text)=>toasts.push(text)}
 };
-
-function client(data = {}) {
-    store = data;
-    config.migrateConfiguration();
-    return Object.assign(new MessageCrypto(), {running: true, enabled: true, decodeIncoming: true,
-        session: {}, keyPairs: new Map(), keyTasks: new Map(), schemeStatus: {}});
+function client(Type=MessageCrypto) {
+    store={};config.initialize();
+    return Object.assign(new Type(),{running:true,enabled:true,session:{},conversationEpoch:{},keyPairs:new Map(),keyTasks:new Map(),schemeStatus:{},pendingSends:new Map(),renderedMessages:new Map(),fileDecodes:new WeakMap()});
 }
-const publicText = key => key.export({type: "spki", format: "base64"});
-const privateText = key => key.export({type: "pkcs8", format: "base64"});
-const keyConfig = keys => ({config_version: 2, key_pairs: {[ACTIVE_SCHEME]: {
-    public_key_spki_base64: publicText(keys.publicKey), private_key_pkcs8_base64: privateText(keys.privateKey), created_at: "2026-01-01T00:00:00.000Z"
-}}, dm_partners: []});
+async function pair(Type=MessageCrypto){const sender=client(Type),mine=await sender.generateKeys(ACTIVE_SCHEME),contact=await PQC.generateKeyPair(ACTIVE_SCHEME);sender.saveRecipients("100",[{user_id:"2",public_key_spki_base64:publicText(contact.publicKey)}],ACTIVE_SCHEME);return {sender,mine,contact};}
+const flip=v=>{const b=Buffer.from(v,"base64");b[0]^=1;return b.toString("base64");};
 
-// Independently reproduce the released v1 wire format, including its old AAD and HKDF context.
-async function legacyPacket(keys, channelId, text, id) {
-    const aad = Buffer.from(JSON.stringify({scheme: ACTIVE_SCHEME, channelId, recipientIds: [id]}));
-    const payloadKey = randomBytes(32);
-    const {sharedKey, ciphertext} = await PQC.encapsulate(keys.publicKey);
-    const wrapKey = hkdf(sha256, sharedKey, new Uint8Array(), Buffer.from("Qcord v1 key wrap"), 32);
-    const seal = (input, key, associated) => {
-        const nonce = randomBytes(12);
-        const encrypted = Buffer.from(gcm(key, nonce, associated).encrypt(input));
-        return {iv: Buffer.from(nonce).toString("base64"), data: encrypted.subarray(0, -16).toString("base64"), tag: encrypted.subarray(-16).toString("base64")};
-    };
-    return ENCRYPTED_PREFIX + JSON.stringify({scheme: ACTIVE_SCHEME, channelId,
-        recipients: [{id, kem: ciphertext.toString("base64"), ...seal(payloadKey, wrapKey, Buffer.concat([aad, Buffer.from(id)]))}],
-        ...seal(Buffer.from(text), payloadKey, aad)});
-}
-
-test("config migration keeps exact private/public keys and every DM binding", async () => {
-    const keys = await PQC.generateKeyPair(ACTIVE_SCHEME);
-    const data = {enabled: true, decodeIncoming: false, keyPairs: {[ACTIVE_SCHEME]: {
-        publicKey: publicText(keys.publicKey), privateKey: privateText(keys.privateKey), createdAt: "2026-01-01T00:00:00.000Z"
-    }}, recipients: {"100": {[ACTIVE_SCHEME]: [{userId: "2", publicKey: publicText(keys.publicKey)}]},
-        "200": {[ACTIVE_SCHEME]: [{userId: "3", publicKey: publicText(keys.publicKey)}]}}};
-    const plugin = client(data);
-    assert.equal(data.key_pairs[ACTIVE_SCHEME].private_key_pkcs8_base64, privateText(keys.privateKey));
-    assert.equal(data.key_pairs[ACTIVE_SCHEME].public_key_spki_base64, publicText(keys.publicKey));
-    assert.equal(data.encrypt_outgoing_messages, true);
-    assert.equal(data.decrypt_incoming_messages, false);
-    assert.deepEqual(data.dm_partners.map(row => [row.channel_id, row.user_id]), [["100", "2"], ["200", "3"]]);
-    assert.equal(data.keyPairs, undefined);
-    assert.equal(data.recipients, undefined);
-    const snapshot = structuredClone(data);
-    config.migrateConfiguration();
-    assert.deepEqual(data, snapshot);
-    assert.equal(privateText((await plugin.generateKeys(ACTIVE_SCHEME)).privateKey), privateText(keys.privateKey));
-    assert.equal(await plugin.decryptMessage(await legacyPacket(keys, "100", "Previous message", plugin.keyId(keys.publicKey)), "100"), "Previous message");
+test("ML-KEM-768 key sizes, exported dk restoration, fresh randomness, and implicit rejection",async()=>{
+    const keys=await PQC.generateKeyPair(ACTIVE_SCHEME);
+    assert.equal(keys.publicKey.bytes.length,1184);assert.equal(keys.privateKey.bytes.length,2400);
+    const dk=PQC.createPrivateKey(privateText(keys.privateKey)),ek=PQC.createPublicKey(publicText(keys.publicKey));
+    assert.ok(PQC.createPublicKey(dk).equals(ek));
+    const a=await PQC.encapsulate(ek),b=await PQC.encapsulate(ek);
+    assert.equal(a.ciphertext.length,1088);assert.equal(a.sharedKey.length,32);assert.notDeepEqual(a.ciphertext,b.ciphertext);
+    assert.deepEqual(await PQC.decapsulate(dk,a.ciphertext),a.sharedKey);
+    const bad=Buffer.from(a.ciphertext);bad[0]^=1;assert.notDeepEqual(await PQC.decapsulate(dk,bad),a.sharedKey);
+    await assert.rejects(PQC.generateKeyPair("ml-kem-256"));
+    const invalid=publicText(keys.publicKey);assert.throws(()=>PQC.createPublicKey(invalid.slice(0,-4)));
 });
 
-test("v2 packets are readable JSON and decrypt for sender and the correct contact", async () => {
-    const senderKeys = await PQC.generateKeyPair(ACTIVE_SCHEME);
-    const bobKeys = await PQC.generateKeyPair(ACTIVE_SCHEME);
-    const carolKeys = await PQC.generateKeyPair(ACTIVE_SCHEME);
-    const senderData = keyConfig(senderKeys);
-    const sender = client(senderData);
-    sender.saveRecipients("100", [{user_id: "2", public_key_spki_base64: publicText(bobKeys.publicKey)}], ACTIVE_SCHEME);
-    sender.saveRecipients("200", [{user_id: "3", public_key_spki_base64: publicText(carolKeys.publicKey)}], ACTIVE_SCHEME);
-    const text = "Educational packet: **hello** 👋\nSecond line";
-    const wire = await sender.encryptMessage("100", text);
-    const toCarol = await sender.encryptMessage("200", "For Carol");
-    assert.ok(wire.startsWith('{\n\t"qcord_version"'));
-    assert.ok(wire.endsWith("\n"));
-    const packet = JSON.parse(wire);
-    assert.equal(packet.channel_id, "100");
-    assert.equal(packet.recipients.length, 2);
-    assert.equal(Buffer.from(packet.recipients[0].kem_ciphertext_base64, "base64").length, 768);
-    assert.equal(Buffer.from(packet.recipients[0].wrapped_message_key.ciphertext_base64, "base64").length, 32);
-    assert.equal(Buffer.from(packet.encrypted_message.nonce_base64, "base64").length, 12);
-    assert.equal(Buffer.from(packet.encrypted_message.authentication_tag_base64, "base64").length, 16);
-    assert.equal(await sender.decryptMessage(wire, "100"), text);
-    assert.notEqual(wire, await sender.encryptMessage("100", text));
-    const bob = client(keyConfig(bobKeys));
-    assert.equal(await bob.decryptMessage(wire, "100"), text);
-    assert.equal(await bob.decryptMessage(JSON.stringify(packet), "100"), text);
-    assert.equal(await bob.decryptMessage(JSON.stringify(Object.fromEntries(Object.entries(packet).reverse()), null, 2), "100"), text);
-    await assert.rejects(bob.decryptMessage(toCarol, "200"), /not addressed/);
-    const carol = client(keyConfig(carolKeys));
-    assert.equal(await carol.decryptMessage(toCarol, "200"), "For Carol");
-    await assert.rejects(carol.decryptMessage(wire, "100"), /not addressed/);
-    store = senderData;
-    sender.removePartner("100");
-    assert.equal(sender.getSavedPartners().length, 1);
-    assert.equal(await sender.decryptMessage(toCarol, "200"), "For Carol");
-    await assert.rejects(sender.encryptMessage("100", "missing key"), /Save your DM partner/);
+test("educational NTT multiplication matches independent ring multiplication",()=>{
+    const a=Array.from({length:256},(_,i)=>(i*71+19)%3329),b=Array.from({length:256},(_,i)=>(i*11+2)%3329);
+    assert.deepEqual(L.ntt(L.ntt(a),true),a);
+    const expected=Array(256).fill(0);
+    for(let i=0;i<256;i++)for(let j=0;j<256;j++)expected[(i+j)%256]=L.mod(expected[(i+j)%256]+(i+j>=256?-1:1)*a[i]*b[j]);
+    assert.deepEqual(L.ntt(L.multiply(L.ntt(a),L.ntt(b)),true),expected);
+    assert.deepEqual(L.bits([65]),[1,0,0,0,0,0,1,0]);
+    for(let i=0;i<3329;i++)for(const d of [1,4,10])assert.equal(L.compress(i,d),Math.round(2**d*i/3329)%2**d);
+    assert.equal(L.decompress(1,1),1665);
 });
 
-test("protected header, KEM, message key, ciphertext and tags reject tampering", async () => {
-    const plugin = client();
-    const own = await plugin.generateKeys(ACTIVE_SCHEME);
-    plugin.saveRecipients("100", [{user_id: "2", public_key_spki_base64: publicText(own.publicKey)}], ACTIVE_SCHEME);
-    const wire = await plugin.encryptMessage("100", "Secret");
-    const flip = value => { const bytes = Buffer.from(value, "base64"); bytes[0] ^= 1; return bytes.toString("base64"); };
-    const mutations = [
-        p => { p.channel_id = "200"; },
-        p => { p.kem_algorithm = "ml-kem-768"; },
-        p => { p.encryption_algorithm = "aes-128-gcm"; },
-        p => { p.key_derivation_algorithm = "none"; },
-        p => { p.recipient_key_fingerprints_sha256[0] = "0".repeat(64); },
-        p => { p.recipients[0].kem_ciphertext_base64 = flip(p.recipients[0].kem_ciphertext_base64); },
-        p => { p.recipients[0].wrapped_message_key.ciphertext_base64 = flip(p.recipients[0].wrapped_message_key.ciphertext_base64); },
-        p => { p.recipients[0].wrapped_message_key.authentication_tag_base64 = flip(p.recipients[0].wrapped_message_key.authentication_tag_base64); },
-        p => { p.encrypted_message.ciphertext_base64 = flip(p.encrypted_message.ciphertext_base64); },
-        p => { p.encrypted_message.nonce_base64 = flip(p.encrypted_message.nonce_base64); },
-        p => { p.encrypted_message.authentication_tag_base64 = flip(p.encrypted_message.authentication_tag_base64); }
-    ];
-    for (const mutate of mutations) {
-        const packet = JSON.parse(wire);
-        mutate(packet);
-        await assert.rejects(plugin.decryptMessage(JSON.stringify(packet), "100"));
+test("actual educational traces reproduce encapsulation and reconstruct key noise",async()=>{
+    for(let i=0;i<5;i++){
+        const keys=await PQC.generateKeyPair(ACTIVE_SCHEME),enc=await PQC.encapsulate(keys.publicKey,true);
+        const recovered=L.decapsulationTrace(keys.privateKey.bytes,enc.ciphertext);
+        assert.deepEqual(recovered.m,enc.trace.m);
+        const priv=L.privateTrace(keys.publicKey.bytes,keys.privateKey.bytes);
+        assert.ok([...priv.s,...priv.e].every(p=>p.length===256&&p.every(c=>Math.abs(c)<=2)));
+        const damaged=Uint8Array.from(enc.ciphertext);damaged[50]^=1;
+        assert.throws(()=>L.encapsulationTrace(keys.publicKey.bytes,enc.trace.m,damaged),/did not match/);
     }
-    await assert.rejects(plugin.decryptMessage(wire, "200"), /wrong channel/);
-    await plugin.testScheme(ACTIVE_SCHEME, "Local check");
 });
 
-test("invalid recipients and unsupported channels cannot enable encrypted sending", async () => {
-    const plugin = client();
-    const keys = await plugin.generateKeys(ACTIVE_SCHEME);
-    const row = {user_id: "2", public_key_spki_base64: publicText(keys.publicKey)};
-    assert.throws(() => plugin.saveRecipients("300", [row], ACTIVE_SCHEME), /one-to-one/);
-    assert.throws(() => plugin.saveRecipients("400", [row], ACTIVE_SCHEME), /one-to-one/);
-    assert.throws(() => plugin.saveRecipients("100", [row, row], ACTIVE_SCHEME), /one public key/);
-    assert.throws(() => plugin.saveRecipients("200", [row], ACTIVE_SCHEME), /must match/);
-    assert.throws(() => plugin.saveRecipients("100", [{...row, public_key_spki_base64: "invalid"}], ACTIVE_SCHEME));
-    await assert.rejects(plugin.encryptMessage("300", "secret"), /one-to-one/);
-    plugin.saveRecipients("100", [row], ACTIVE_SCHEME);
-    await assert.rejects(plugin.encryptMessage("100", "a".repeat(MAX_DECODED_FILE_SIZE)), /1 MiB/);
-    await assert.rejects(plugin.decryptMessage("{" + " ".repeat(MAX_DECODED_FILE_SIZE), "100"), /too large/);
-    plugin.enabled = false;
-    await assert.rejects(plugin.encryptMessage("100", "secret"), /stopped/);
+test("one attachment opens with either participant's dk; preview corresponds to the attached bytes",async()=>{
+    const {sender,contact}=await pair();const message="A private message 👋\nα + β = γ\n<script>alert(1)</script>";
+    sender.enabled=false; // Manual learning composition works while automatic mode is off.
+    const prepared=await sender.encryptMessage("100",message,{inspect:true});
+    assert.equal(prepared.recovery.text,message);assert.equal(prepared.packet.qcord_version,3);
+    assert.equal(prepared.packet.kem_algorithm,ACTIVE_SCHEME);assert.equal(prepared.packet.recipients.length,2);
+    assert.ok(!prepared.wire.includes(message));assert.ok(!prepared.wire.includes(privateText(contact.privateKey)));
+    assert.ok(!prepared.wire.includes(Buffer.from(prepared.trace.m).toString("base64")));
+    assert.equal(await sender.decryptMessage(prepared.wire,"100"),message);
+    const receiver=client();receiver.keyPairs.set(ACTIVE_SCHEME,contact);
+    assert.equal(await receiver.decryptMessage(prepared.wire,"100"),message);
+    const unrelated=await PQC.generateKeyPair(ACTIVE_SCHEME);receiver.keyPairs.set(ACTIVE_SCHEME,unrelated);
+    await assert.rejects(receiver.decryptMessage(prepared.wire,"100"),/not addressed/);
+    receiver.keyPairs.clear();await assert.rejects(receiver.decryptMessage(prepared.wire,"100"),/No saved/);
 });
 
-test("unknown config versions fail without modifying saved keys", () => {
-    store = {config_version: 99, key_pairs: {secret: "preserve me"}};
-    assert.throws(() => config.migrateConfiguration(), /Unsupported/);
-    assert.deepEqual(store, {config_version: 99, key_pairs: {secret: "preserve me"}});
+test("modified ciphertext, authenticated metadata, algorithms, and wrong channels are rejected",async()=>{
+    const {sender}=await pair(),wire=await sender.encryptMessage("100","Secret");
+    const mutations=[p=>p.channel_id="200",p=>p.qcord_version=2,p=>p.kem_algorithm="ml-kem-512",p=>p.encryption_algorithm="none",p=>p.key_derivation_algorithm="none",p=>p.recipient_key_fingerprints_sha256.reverse(),p=>p.recipients.push(p.recipients[0]),
+        p=>p.recipients[0].kem_ciphertext_base64=flip(p.recipients[0].kem_ciphertext_base64),p=>p.recipients[0].wrapped_message_key.authentication_tag_base64=flip(p.recipients[0].wrapped_message_key.authentication_tag_base64),
+        p=>p.encrypted_message.nonce_base64=flip(p.encrypted_message.nonce_base64),p=>p.encrypted_message.ciphertext_base64=flip(p.encrypted_message.ciphertext_base64),p=>p.encrypted_message.authentication_tag_base64=flip(p.encrypted_message.authentication_tag_base64)];
+    for(const mutate of mutations){const packet=JSON.parse(wire);mutate(packet);await assert.rejects(sender.decryptMessage(JSON.stringify(packet),"100"));}
+    await assert.rejects(sender.decryptMessage(wire,"200"),/wrong channel/);
+    await assert.rejects(sender.encryptMessage("300","secret"),/one-to-one/);
+    await assert.rejects(sender.encryptMessage("100","a".repeat(MAX_DECODED_FILE_SIZE)),/1 MiB/);
+    await assert.rejects(sender.encryptMessage("100",""),/Write a message/);
 });
 
-test("malformed legacy config is preserved and post-reset switch values survive startup", () => {
-    store = {keyPairs: {"ml-kem-512": {publicKey: "incomplete"}}, enabled: true};
-    const snapshot = structuredClone(store);
-    assert.throws(() => config.migrateConfiguration(), /left unchanged/);
-    assert.deepEqual(store, snapshot);
-    store = {encrypt_outgoing_messages: true, decrypt_incoming_messages: false};
-    config.migrateConfiguration();
-    assert.equal(store.encrypt_outgoing_messages, true);
-    assert.equal(store.decrypt_incoming_messages, false);
+test("manual staging binds the exact preview, channel and current contact key; blocks plaintext captions",async()=>{
+    const {sender}=await pair(Qcord),prepared=await sender.encryptMessage("100","Learning",{inspect:true});staged=[];channel="200";
+    await assert.rejects(sender.stageLearningDraft(prepared),/selected recipient/);channel="100";draftText="plain";
+    await assert.rejects(sender.stageLearningDraft(prepared),/Clear the Discord composer/);draftText="";
+    await sender.stageLearningDraft(prepared);assert.equal(staged.length,1);
+    assert.equal(await staged[0].files[0].file.text(),prepared.wire);
+    const replacement=await PQC.generateKeyPair(ACTIVE_SCHEME);sender.saveRecipients("100",[{user_id:"2",public_key_spki_base64:publicText(replacement.publicKey)}],ACTIVE_SCHEME);
+    await assert.rejects(sender.stageLearningDraft(prepared),/key changed/);
 });
 
-test("partner panel selects, edits and removes independent contacts and shows avatars", async () => {
-    const plugin = client();
-    const keys = await plugin.generateKeys(ACTIVE_SCHEME);
-    plugin.saveRecipients("100", [{user_id: "2", public_key_spki_base64: publicText(keys.publicKey)}], ACTIVE_SCHEME);
-    plugin.saveRecipients("200", [{user_id: "3", public_key_spki_base64: publicText(keys.publicKey)}], ACTIVE_SCHEME);
-    const states = [];
-    const effects = [];
-    let cursor = 0;
-    let initialized = false;
-    BdApi.React = {
-        createElement: (type, props, ...children) => ({type, props: props || {}, children: children.flat().filter(child => child !== null && child !== false && child !== undefined)}),
-        useState: initial => {
-            const index = cursor++;
-            if (!(index in states)) states[index] = typeof initial === "function" ? initial() : initial;
-            return [states[index], next => { states[index] = next; }];
-        },
-        useEffect: callback => { if (!initialized) effects.push(callback); }
-    };
-    const component = panel(plugin).type;
-    const render = () => { cursor = 0; return component(); };
-    render(); initialized = true;
-    effects.forEach(effect => effect());
-    await new Promise(resolve => setImmediate(resolve));
-    const nodes = tree => [tree, ...tree.children.filter(child => typeof child === "object").flatMap(nodes)];
-    const label = tree => typeof tree === "string" ? tree : (tree.children || []).map(label).join("");
-    const findButton = (tree, text) => nodes(tree).find(node => node.type === "button" && label(node) === text);
-    let tree = render();
-    const cards = nodes(tree).filter(node => node.type === "button" && node.props.className?.includes("qcord-partner-card"));
-    assert.equal(cards.length, 2);
-    assert.ok(nodes(tree).some(node => node.type === "img" && node.props.src.includes("/avatars/2/")));
-    cards[1].props.onClick(); tree = render();
-    assert.ok(label(tree).includes("channel_id: 200"));
-    assert.ok(label(tree).includes("user_id: 3"));
-    const input = nodes(tree).find(node => node.type === "textarea" && !node.props.readOnly);
-    input.props.onChange({target: {value: publicText(keys.publicKey)}}); tree = render();
-    findButton(tree, "Replace key").props.onClick(); tree = render();
-    assert.equal(plugin.getSavedPartners().length, 2);
-    findButton(tree, "Remove partner").props.onClick(); tree = render();
-    assert.equal(plugin.getSavedPartners().length, 1);
-    assert.equal(plugin.getSavedPartners()[0].channel_id, "100");
-    assert.ok(label(tree).includes("channel_id: 100"));
+test("automatic send never falls back to plaintext and cancels when the toggle changes",async()=>{
+    const {sender}=await pair(Qcord);staged=[];toasts=[];
+    const result=await sender.prepareMessageFile("100","Automatic");assert.equal(result.shouldClear,true);assert.equal(staged.length,1);
+    const fail=await sender.prepareMessageFile("200","Keep this draft");assert.equal(fail.shouldClear,false);assert.equal(staged.length,1);
+    const old=sender.encryptMessage.bind(sender);let resume;
+    sender.encryptMessage=async(...args)=>{await new Promise(r=>resume=r);return old(...args);};
+    const pending=sender.prepareMessageFile("100","Cancel me");
+    const duplicate=await sender.prepareMessageFile("100","Cancel me");assert.equal(duplicate.shouldClear,false);
+    sender.setEnabled(false);sender.setEnabled(true);resume();assert.equal((await pending).shouldClear,false);assert.equal(staged.length,1);
+    assert.equal(store.learning_quantum_conversations,true);
+});
+
+test("existing configuration and decapsulation keys are not erased by the fresh edition",()=>{
+    store={key_pairs:{"ml-kem-512":{private_key_pkcs8_base64:"old private key"}},encrypt_outgoing_messages:true};
+    config.initialize();assert.equal(config.load("quantum_conversations"),undefined);assert.equal(store.key_pairs["ml-kem-512"].private_key_pkcs8_base64,"old private key");
+    store.learning_config_version=99;assert.throws(()=>config.initialize(),/Unsupported/);
+});
+
+for (const scheme of ["ml-kem-512", "ml-kem-768", "ml-kem-1024"]) {
+    test(scheme + " trace, saved keys, two-party round trip and BOM preservation", async () => {
+        const params = require("../src/parameters").parameters(scheme);
+        const sender = client(), own = await sender.generateKeys(scheme), peer = await PQC.generateKeyPair(scheme);
+        assert.equal(own.publicKey.bytes.length, params.publicBytes);
+        assert.equal(own.privateKey.bytes.length, params.privateBytes);
+        sender.saveRecipients("100", [{user_id:"2",public_key_spki_base64:publicText(peer.publicKey)}], scheme);
+        const messages = ["\uFEFFHello", "\uFEFF\uFEFF", "middle\uFEFFend\uFEFF", "\u0000\r\n\uFFFD"];
+        for (const message of messages) {
+            const draft = await sender.encryptMessage("100", message, {inspect:true,scheme});
+            assert.equal(draft.recovery.text, message);
+            assert.equal(draft.trace.ciphertext.length,params.ciphertextBytes);
+            assert.equal(await sender.decryptMessage("\uFEFF" + draft.wire, "100"), message);
+            assert.notEqual(draft.wire.charCodeAt(0), 0xFEFF);
+            const recovery = L.decapsulationTrace(peer.privateKey.bytes, draft.trace.ciphertext, scheme);
+            assert.deepEqual(recovery.m, draft.trace.m);
+            const receiver = Object.assign(new MessageCrypto(), {running:true,session:{},keyPairs:new Map([[scheme,peer]]),keyTasks:new Map()});
+            assert.equal(await receiver.decryptMessage(draft.wire,"100"),message);
+            const secret = L.privateTrace(own.publicKey.bytes,own.privateKey.bytes,scheme);
+            assert.equal(secret.s.length,params.k);
+            assert.ok([...secret.s,...secret.e].every(p=>p.every(x=>Math.abs(x)<=params.eta1)));
+        }
+        await assert.rejects(sender.encryptMessage("100","bad\uD800",{scheme}),/unpaired Unicode surrogate/);
+        const wrong = scheme === "ml-kem-512" ? "ml-kem-768" : "ml-kem-512";
+        assert.throws(()=>sender.saveRecipients("100",[{user_id:"2",public_key_spki_base64:publicText(peer.publicKey)}],wrong),/selected ML-KEM/);
+    });
+}
+
+test("changing parameters preserves all identities and contact bindings, including concurrent key generation", async () => {
+    const sender = client(Qcord), schemes = ["ml-kem-512","ml-kem-768","ml-kem-1024"];
+    await Promise.all(schemes.map(s=>sender.generateKeys(s)));
+    const before=structuredClone(store.learning_key_pairs);
+    assert.equal(Object.keys(before).length,3);
+    for (const scheme of schemes) {
+        const peer=await PQC.generateKeyPair(scheme);
+        sender.saveRecipients("100",[{user_id:"2",public_key_spki_base64:publicText(peer.publicKey)}],scheme);
+    }
+    assert.equal(sender.getSavedPartners().length,3);
+    for (const scheme of schemes) {
+        sender.setScheme(scheme);
+        const wire=await sender.encryptMessage("100","keep my keys");
+        assert.equal(JSON.parse(wire).kem_algorithm,scheme);
+        const other=schemes.find(s=>s!==scheme);sender.setScheme(other);
+        assert.equal(await sender.decryptMessage(wire,"100"),"keep my keys");
+    }
+    assert.deepEqual(store.learning_key_pairs,before);
+    sender.removePartner("100","ml-kem-512");
+    assert.equal(sender.getSavedPartners().length,2);
+    assert.ok(sender.getRecipients("100","ml-kem-768").length);
+});
+
+test("plugin and source files are UTF-8 without an added BOM", () => {
+    const fs=require("node:fs"),path=require("node:path");
+    for(const file of ["qcord.plugin.js",...fs.readdirSync("src").map(f=>path.join("src",f))]) {
+        const bytes=fs.readFileSync(file);
+        assert.notEqual(bytes.subarray(0,3).toString("hex"),"efbbbf",file);
+    }
 });

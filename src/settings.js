@@ -2,186 +2,199 @@
 
 const {PQC} = require("./pqc");
 const {ACTIVE_SCHEME} = require("./constants");
+const {PARAMETER_SETS, parameters} = require("./parameters");
+const L = require("./learning");
+const createUI = require("./ui");
+const createContacts = require("./contacts");
+const hex = bytes => Buffer.from(bytes).toString("hex");
+const stageNames = ["Write", "Encode", "Keys", "Encapsulate", "Attach"];
 
-module.exports = function getSettingsPanel(plugin) {
-    const {createElement: h, useState, useEffect} = BdApi.React;
-    const channelId = BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId();
-    return h(function Panel() {
-        let openPartner = null;
-        try { openPartner = plugin.getDirectPartner(channelId); } catch {}
-        const [partners, setPartners] = useState(() => plugin.getSavedPartners());
-        const [selectedChannel, setSelectedChannel] = useState(() => openPartner ? channelId : partners[0]?.channel_id || "");
-        const selectedSaved = partners.find(row => row.channel_id === selectedChannel);
-        let partner = null;
-        try { partner = plugin.getDirectPartner(selectedChannel); } catch {}
-        const partnerUserId = partner?.userId || selectedSaved?.user_id;
-        const [enabled, setEnabled] = useState(Boolean(plugin.enabled));
-        const [decoding, setDecoding] = useState(plugin.decodeIncoming !== false);
-        const [publicKey, setPublicKey] = useState("");
-        const [createdAt, setCreatedAt] = useState(null);
-        const [recipientKey, setRecipientKey] = useState("");
-        const [busy, setBusy] = useState(true);
-        const [status, setStatus] = useState("");
-        const current = selectedSaved && (!partner || selectedSaved.user_id === partner.userId) ? selectedSaved : null;
-        const exportPublic = key => key.export({type: "spki", format: "base64"});
-        useEffect(() => {
-            let active = true;
-            plugin.generateKeys(ACTIVE_SCHEME).then(keys => {
-                if (active) { setPublicKey(exportPublic(keys.publicKey)); setCreatedAt(keys.createdAt); }
-            }).catch(error => { if (active) setStatus(error.message); })
-                .finally(() => { if (active) setBusy(false); });
-            return () => { active = false; };
+module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
+    const R = BdApi.React, ui = createUI(R);
+    const {h, p, button, field, formula, code, Tabs, Avatar, Polynomial} = ui;
+    const Contacts = createContacts(R, ui);
+    const split = (left, right) => h("div", {className: "qc-split"}, h("section", {className: "qc-explanation"}, left), h("section", {className: "qc-visual"}, right));
+    const subscript = n => String(n).replace(/\d/g, d => "₀₁₂₃₄₅₆₇₈₉"[Number(d)]);
+
+    function Compression({params}) {
+        const [x, setX] = R.useState(1665), [d, setD] = R.useState(1);
+        const compressed = L.compress(x, d), restored = L.decompress(compressed, d);
+        return h(R.Fragment, null,
+            field(`Exercise coefficient x = ${x}`, h("input", {type: "range", min: 0, max: 3328, value: x, onChange: e => setX(Number(e.target.value))})),
+            field("Bits d", h("select", {value: d, onChange: e => setD(Number(e.target.value))}, [1, params.dv, params.du].map(n => h("option", {key: n, value: n}, n)))),
+            formula(`Compress${subscript(d)}(${x}) = round(${2**d} × ${x} / 3329) mod ${2**d} = ${compressed}`),
+            formula(`Decompress${subscript(d)}(${compressed}) = round(3329 × ${compressed} / ${2**d}) = ${restored}`),
+            p("Exercise values update live. They do not change your keys or attachment."));
+    }
+
+    function Panel() {
+        const [step, setStep] = R.useState(0), [enabled, setEnabled] = R.useState(plugin.enabled);
+        const [scheme, setScheme] = R.useState(plugin.scheme || ACTIVE_SCHEME);
+        const [text, setText] = R.useState(() => plugin.composerText());
+        const [channel, setChannel] = R.useState(() => plugin.currentChannel() || "");
+        const [partners, setPartners] = R.useState(() => plugin.getSavedPartners());
+        const [keys, setKeys] = R.useState(null), [draft, setDraft] = R.useState(null);
+        const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
+        const [contactsOpen, setContactsOpen] = R.useState(false), [attached, setAttached] = R.useState(false), [stopped, setStopped] = R.useState(!plugin.running);
+        const [encodeTab, setEncodeTab] = R.useState("bytes"), [keyTab, setKeyTab] = R.useState("matrix"), [kemTab, setKemTab] = R.useState("mu"), [reviewTab, setReviewTab] = R.useState("summary");
+        const [vectorIndex, setVectorIndex] = R.useState(0), [matrixCell, setMatrixCell] = R.useState(0), [bytePage, setBytePage] = R.useState(0), [noise, setNoise] = R.useState("r");
+        const [privateView, setPrivateView] = R.useState(null), [privateVariable, setPrivateVariable] = R.useState("s");
+        const [revision, setRevision] = R.useState(0);
+        const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null), secret = R.useRef(null);
+        const params = parameters(scheme), indices = Array.from({length: params.k}, (_, i) => i);
+        const row = partners.find(r => r.channel_id === channel && r.key_algorithm === scheme);
+        const anyRow = partners.find(r => r.channel_id === channel);
+        const profile = anyRow ? plugin.getPartnerProfile(anyRow.user_id) : null;
+        const publicInfo = R.useMemo(() => {
+            try { return row ? L.publicTrace(PQC.createPublicKey(row.public_key_spki_base64).bytes, scheme) : null; } catch { return null; }
+        }, [row, scheme]);
+        R.useEffect(() => {
+            const stop = () => { alive.current = false; ticket.current++; L.wipe(preview.current); L.wipe(secret.current); setDraft(null); setPrivateView(null); setKeys(null); setText(""); setStopped(true); };
+            plugin.panels.add(stop);
+            return () => { alive.current = false; ticket.current++; L.wipe(preview.current); L.wipe(secret.current); plugin.panels.delete(stop); };
         }, []);
-        const button = (label, onClick, disabled = false, className = "", attributes = {}) => h("button", {
-            ...attributes, type: "button", className, disabled: disabled || busy || !plugin.running || plugin.resetting, onClick
-        }, label);
-        const copy = async (text, label = "Public key") => {
-            try { await navigator.clipboard.writeText(text); setStatus(label + " copied."); }
-            catch { setStatus("Select and copy the key manually; clipboard access is unavailable."); }
-        };
-        const copyIcon = () => h("svg", {width: 24, height: 24, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true, focusable: false},
-            h("rect", {width: 14, height: 14, x: 8, y: 8, rx: 2, ry: 2}),
-            h("path", {d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"}));
-        const copyButton = (label, text, description) => button(h("span", {className: "qcord-copy-label"}, copyIcon(), label), () => copy(text, description));
-        const fingerprint = key => plugin.keyId(PQC.createPublicKey(key));
-        const partnerIdentity = userId => {
-            const profile = plugin.getPartnerProfile(userId);
-            return h("span", {className: "qcord-partner-identity"},
-                h("span", {className: "qcord-avatar", "aria-hidden": true}, profile.displayName.slice(0, 1).toUpperCase(),
-                    profile.avatar && h("img", {src: profile.avatar, alt: "", width: 40, height: 40, loading: "lazy",
-                        onError: event => { event.currentTarget.style.display = "none"; }})),
-                h("span", null, h("strong", null, profile.displayName), h("span", {className: "qcord-partner-text"}, profile.username),
-                    h("span", {className: "qcord-partner-text"}, "user_id: ", h("code", null, userId))));
-        };
-        const selectPartner = value => { setSelectedChannel(value); setRecipientKey(""); setStatus(""); };
-        const saveKey = () => {
-            try {
-                plugin.saveRecipients(selectedChannel, [{user_id: partner?.userId, public_key_spki_base64: recipientKey}], ACTIVE_SCHEME);
-                setPartners(plugin.getSavedPartners());
-                setRecipientKey(""); setStatus("DM partner's key saved.");
-            } catch (error) { setStatus(error.message); }
-        };
-        const confirmSave = () => {
-            if (!current) { saveKey(); return; }
-            try {
-                const replacement = fingerprint(recipientKey);
-                if (replacement === fingerprint(current.public_key_spki_base64)) { saveKey(); return; }
-                BdApi.UI.showConfirmationModal("Replace partner's public key?",
-                    "Their fingerprint will change. Verify the new fingerprint with your partner before using it.",
-                    {confirmText: "Replace key", cancelText: "Cancel", onConfirm: saveKey});
-            } catch (error) { setStatus(error.message); }
-        };
-        const removeKey = () => {
-            try {
-                plugin.removePartner(selectedChannel);
-                const remaining = plugin.getSavedPartners();
-                setPartners(remaining); setRecipientKey("");
-                if (selectedChannel !== channelId) setSelectedChannel(openPartner ? channelId : remaining[0]?.channel_id || "");
-                setStatus("Partner removed. Other saved partners are unchanged.");
-            } catch (error) { setStatus(error.message); }
-        };
-        const testKey = async () => {
-            setBusy(true);
-            setStatus("Checking key exchange, encryption and tamper rejection...");
-            try { await plugin.testScheme(ACTIVE_SCHEME, "Qcord key check"); setStatus("Passed: key exchange, message encryption/decryption, and tamper rejection. This local test does not need a DM partner."); }
-            catch (error) { setStatus(error.message); }
-            finally { setBusy(false); }
-        };
-        const createKey = async () => {
-            setBusy(true);
-            try {
-                const keys = await plugin.generateKeys(ACTIVE_SCHEME);
-                setPublicKey(exportPublic(keys.publicKey)); setCreatedAt(keys.createdAt);
-                setStatus("New key pair saved. Exchange your new public key with your partner.");
-            }
-            catch (error) { setStatus(error.message); }
-            finally { setBusy(false); }
-        };
-        const resetConfig = () => BdApi.UI.showConfirmationModal("Clear Qcord configuration?",
-            "This deletes your private keys, partner keys and settings. Without a backup, messages encrypted to deleted keys cannot be recovered.", {
-                danger: true, confirmText: "Clear configuration", cancelText: "Cancel",
-                onConfirm: async () => {
-                    setBusy(true);
-                    try {
-                        await plugin.clearConfiguration();
-                        setStatus("Configuration cleared. Create a new key pair to start again.");
-                    } catch (error) { setStatus(error.message); }
-                    finally {
-                        setPublicKey(""); setCreatedAt(null); setPartners([]); setSelectedChannel(openPartner ? channelId : ""); setRecipientKey("");
-                        setEnabled(false); setDecoding(false); setBusy(false);
-                    }
-                }
-            });
-        const toggle = (label, checked, onChange) => h("label", {className: "qcord-toggle"},
-            h("input", {type: "checkbox", checked, disabled: !plugin.running || plugin.resetting, onChange}), label);
-        const lesson = (title, text) => h("div", null, h("h4", null, title), h("p", null, text));
-        return h("div", {className: "qcord-panel"},
-            h("div", {className: "qcord-heading"}, h("h3", null, "Direct messaging"), h("span", null, "ML-KEM-512")),
-            h("div", {className: "qcord-switches"},
-                toggle("Encrypt outgoing", enabled, event => { plugin.setEnabled(event.target.checked); setEnabled(plugin.enabled); }),
-                toggle("Decrypt incoming", decoding, event => { plugin.setDecoding(event.target.checked); setDecoding(plugin.decodeIncoming); })),
-            h("p", null, "Enter prepares the encrypted file. Press Send or Enter again to send it."),
-            h("div", {className: "qcord-workspace"},
-                h("section", {className: "qcord-section"},
-                    h("h3", null, "My public key", publicKey && h("span", {className: "qcord-created-at"},
-                        createdAt && Number.isFinite(Date.parse(createdAt))
-                            ? " (created " + new Date(createdAt).toLocaleString() + ")"
-                            : " (creation date unavailable)")),
-                    h("textarea", {readOnly: true, rows: 4, value: publicKey, placeholder: "Loading key...", "aria-label": "My public key"}),
-                    h("div", {className: "qcord-actions"}, publicKey ? copyButton("Copy public key", publicKey) : button("Create key pair", createKey),
-                        button("Check my key pair", testKey, !publicKey)),
-                    publicKey && h("p", {className: "qcord-fingerprint"}, "Public key fingerprint (SHA-256, 32 bytes): " + fingerprint(publicKey)),
-                    publicKey && copyButton("Copy fingerprint", fingerprint(publicKey), "Fingerprint"),
-                    h("p", null, "Share this public key in Discord DMs. Keep your private key and config file secret.")),
-                h("section", {className: "qcord-section"},
-                    h("div", {className: "qcord-heading"}, h("h3", null, "DM partners"), h("span", {className: "qcord-count"}, partners.length + " saved")),
-                    h("p", null, "Add contacts from their one-to-one DM. Select a saved contact here to manage their key. Encryption always uses the partner in the DM you send from."),
-                    h("div", {className: "qcord-partner-list", role: "group", "aria-label": "Choose a DM partner"},
-                        openPartner && !partners.some(row => row.channel_id === channelId) && button(
-                            h("span", null, partnerIdentity(openPartner.userId), h("span", {className: "qcord-partner-state"}, "Current DM · Add public key")),
-                            () => selectPartner(channelId), false, selectedChannel === channelId ? "qcord-partner-card qcord-selected" : "qcord-partner-card",
-                            {"aria-pressed": selectedChannel === channelId}),
-                        ...partners.map(row => h("button", {key: row.channel_id, type: "button", className: "qcord-partner-card" + (selectedChannel === row.channel_id ? " qcord-selected" : ""),
-                            "aria-pressed": selectedChannel === row.channel_id, disabled: busy || !plugin.running || plugin.resetting, onClick: () => selectPartner(row.channel_id)},
-                            partnerIdentity(row.user_id), h("span", {className: "qcord-partner-state"}, row.channel_id === channelId ? "Current DM · Key saved" : "Key saved")))),
-                    !partnerUserId && h("p", {className: "qcord-empty"}, "Open a one-to-one DM and reopen this panel to add your first partner. To add another, open their DM and paste their public key here."),
-                    partnerUserId && h("div", {className: "qcord-partner-editor"},
-                    partnerIdentity(partnerUserId),
-                    h("p", {className: "qcord-identifiers"}, "channel_id: ", h("code", null, selectedChannel)),
-                    !partner && h("p", null, "Open this partner's DM and reopen the panel to replace their key."),
-                    h("label", {className: "qcord-field"}, current ? "Replacement public key" : "Their public key",
-                        h("textarea", {rows: 4, value: recipientKey, placeholder: "Paste their ML-KEM-512 public key", disabled: busy || !partner || !plugin.running,
-                            onChange: event => setRecipientKey(event.target.value)})),
-                    h("div", {className: "qcord-actions"},
-                        button(current ? "Replace key" : "Save partner", confirmSave, !partner || !recipientKey.trim())),
-                    current && h("div", {className: "qcord-saved-key"},
-                        h("p", {className: "qcord-fingerprint"}, "Saved public key fingerprint (SHA-256): " + fingerprint(current.public_key_spki_base64)),
-                        h("div", {className: "qcord-actions"},
-                            copyButton("Copy saved key", current.public_key_spki_base64),
-                            copyButton("Copy fingerprint", fingerprint(current.public_key_spki_base64), "Fingerprint"),
-                            button("Remove partner", removeKey))),
-                    h("p", null, "Public keys are safe to share here. Verify fingerprints over an independent route, such as a call or in person, to check that the key belongs to your partner.")))),
-            status && h("p", {className: "qcord-status", role: "status", "aria-live": "polite"}, status),
-            h("details", {className: "qcord-section"}, h("summary", null, "Keys, IDs and message integrity"),
-                h("div", {className: "qcord-lessons"},
-                    lesson("user_id vs. channel_id", "user_id identifies a Discord account even when its @username changes. channel_id identifies the DM conversation. Qcord reads both from Discord and stores them beside each contact's public key in dm_partners. IDs and avatars identify the Discord account; they do not prove ownership of a key."),
-                    lesson("1. ML-KEM establishes a secret", "ML-KEM-512, standardized in FIPS 203 and derived from Kyber, produces a 32-byte shared secret and a 768-byte KEM ciphertext per recipient. Only the matching private key can recover that secret from the KEM ciphertext. ML-KEM does not encrypt your message text or sign it. Using this algorithm does not mean Qcord is FIPS-certified."),
-                    lesson("2. HKDF derives a wrapping key", "HKDF-SHA256 turns the ML-KEM shared secret into a 32-byte AES key for wrapping the message key. The shared secret and wrapping key stay local; neither is written into the packet."),
-                    lesson("3. AES encrypts the text and message key", "AES-256-GCM encrypts your text with a fresh random 32-byte (256-bit) message key. That same message key is separately encrypted for you and your partner using each recipient's wrapping key. Each AES operation uses a 12-byte nonce and produces a 16-byte authentication tag."),
-                    lesson("4. Fingerprints and tags are not signatures", "SHA-256 produces a 32-byte public-key fingerprint, displayed as 64 hexadecimal characters. Compare it to recognize a key. GCM's 16-byte authentication tag detects altered ciphertext and protected metadata. Neither is a digital signature or proof of the sender's identity. Qcord currently has no sender signatures.")),
-                h("p", null, "Private keys are stored unencrypted in qcord.config.json. This experimental format has no sender signatures or forward secrecy."),
-                h("p", null, "Check your key pair locally, even without a DM partner. This checks cryptography on this device, not Discord delivery.")),
-            h("details", {className: "qcord-section"}, h("summary", null, "Read a .qcord packet and config file"),
-                h("p", null, "New .qcord files are JSON with tab indentation and new lines. _base64 fields encode binary bytes as text; Base64 is not encryption. Fingerprints are hexadecimal. Your plaintext, private key, shared secret and unwrapped AES message key are never included."),
-                h("div", {className: "qcord-lessons"},
-                    lesson("Packet header", "qcord_version selects the packet format. kem_algorithm, encryption_algorithm and key_derivation_algorithm name the algorithms. channel_id binds the file to its DM. recipient_key_fingerprints_sha256 lists the keys allowed to decrypt; these fingerprints are not Discord user IDs. The header is authenticated but visible."),
-                    lesson("recipients", "Each entry has public_key_fingerprint_sha256 to locate the matching key, kem_ciphertext_base64 for ML-KEM decapsulation, and wrapped_message_key containing that recipient's AES-encrypted copy of the message key. It normally includes your own key and your partner's key."),
-                    lesson("encrypted_message and wrapped_message_key", "nonce_base64 is the public 12-byte AES-GCM nonce. ciphertext_base64 is encrypted bytes: message text in encrypted_message, or the 32-byte AES message key in wrapped_message_key. authentication_tag_base64 is the 16-byte tamper-detection tag checked before decryption succeeds."),
-                    lesson("qcord.config.json", "encrypt_outgoing_messages and decrypt_incoming_messages are switches. key_pairs stores public_key_spki_base64, private_key_pkcs8_base64 and created_at by algorithm. SPKI and PKCS#8 are DER key containers, encoded as Base64. dm_partners stores channel_id, user_id, key_algorithm, public_key_spki_base64 and saved_at. This local config contains your unencrypted private key; never send it."))),
-            h("details", {className: "qcord-section"}, h("summary", null, "Future algorithms"),
-                h("p", null, "ML-KEM-768/1024: larger standardized parameter sets. HQC: a code-based KEM selected for standardization, planned for evaluation. ML-DSA/SLH-DSA: signatures for sender verification. No release dates yet."),
-                h("a", {href: "https://csrc.nist.gov/News/2025/hqc-announced-as-a-4th-round-selection", target: "_blank", rel: "noreferrer"}, "NIST: HQC selection")),
-            h("div", {className: "qcord-actions"}, button("Clear qcord.config.json", resetConfig, false, "qcord-danger"))
-        );
-    });
+        R.useEffect(() => {
+            let active = true; setKeys(null);
+            plugin.generateKeys(scheme).then(value => { if (active && alive.current) setKeys(value); }).catch(e => { if (active && alive.current) setError(e.message); });
+            return () => { active = false; };
+        }, [scheme, revision]);
+        function invalidate() {
+            ticket.current++; L.wipe(preview.current); preview.current = null; setDraft(null); setAttached(false); setError(""); setNotice("");
+        }
+        function clearPrivate() { L.wipe(secret.current); secret.current = null; setPrivateView(null); }
+        function changeScheme(value) {
+            invalidate(); clearPrivate(); plugin.setScheme(value); setScheme(value); setKeys(null); setVectorIndex(0); setMatrixCell(0); setStep(Math.min(step, 2));
+        }
+        async function run(task) {
+            if (pending.current || !alive.current || !plugin.running) return;
+            pending.current = true; setBusy(true); setError(""); setNotice("");
+            try { await task(); } catch (e) { if (alive.current) setError(e.message); }
+            finally { pending.current = false; if (alive.current) setBusy(false); }
+        }
+        async function prepare(target, fresh = false) {
+            if (!row) throw new Error(`Choose a contact with a saved ${params.label} public key.`);
+            if (!text.length) throw new Error("Write a message first.");
+            if (draft && !fresh) { setStep(target); return; }
+            if (fresh) invalidate();
+            const request = ++ticket.current;
+            const result = await plugin.encryptMessage(channel, text, {inspect: true, scheme});
+            if (!alive.current || request !== ticket.current) { L.wipe(result); return; }
+            preview.current = result; setDraft(result); setStep(target);
+        }
+        const navigate = value => run(async () => { if (value >= 3) await prepare(value); else setStep(value); });
+        const editText = value => { invalidate(); setText(value); setBytePage(0); };
+        const refreshed = () => { invalidate(); clearPrivate(); setPartners(plugin.getSavedPartners()); setRevision(v => v + 1); };
+        const bytes = new TextEncoder().encode(text), block = bytes.slice(bytePage*32, bytePage*32+32);
+        const hasBOM = bytes.length >= 3 && bytes[0] === 239 && bytes[1] === 187 && bytes[2] === 191;
+        const vectorSelector = field("Vector index", h("select", {value: vectorIndex, onChange: e => setVectorIndex(Number(e.target.value))}, indices.map(i => h("option", {key: i, value: i}, i))));
+        let content, pages, detail;
+
+        if (step === 0) {
+            pages = "32–35, 56, 97";
+            content = split(h(R.Fragment, null,
+                h("h3", null, "Start with your words"),
+                field("Your message · stays local until you send", h("textarea", {className: "qc-message", rows: 6, maxLength: 64000, value: text, disabled: busy, onChange: e => editText(e.target.value), placeholder: "Write a message…"})),
+                h("div", {className: "qc-row"}, h("span", {className: "qc-muted"}, `${bytes.length} UTF-8 bytes${hasBOM ? " · leading BOM detected" : ""}`), button("Read Discord draft", () => editText(plugin.composerText()), {disabled: busy})),
+                p("Next shows your bytes and bits. Use the tabs to revisit any step.")),
+            h(R.Fragment, null, h("h3", null, "One message. Two ways to compose."),
+                h("div", {className: "qc-option"}, h("h4", null, "Walk through the math"), p("Follow your text, the recipient's public key, and the actual polynomial values into the attachment.")),
+                h("div", {className: "qc-option"}, h("h4", null, "Prepare it automatically"), p("Skip the lesson and review the encrypted file. With Quantum conversations on, pressing Enter in Discord also stages a file."),
+                    button("Make .qcord automatically", () => run(() => prepare(4)), {disabled: busy || !row || !text, className: "qc-primary"})),
+                h("div", {className: "qc-facts"}, code(`n = 256   q = 3329   k = ${params.k}`), code(`ek ${params.publicBytes} B · dk ${params.privateBytes} B · c ${params.ciphertextBytes} B`)),
+                !row && h("div", {className: "qc-note"}, `Open Contacts & keys to save a ${params.label} recipient key.`)));
+        }
+        if (step === 1) {
+            pages = "10, 57–59, 65–68, 86, 97";
+            content = split(h(R.Fragment, null, h("h3", null, "Text becomes bytes, then bits"),
+                field("Edit your message", h("textarea", {rows: 3, value: text, maxLength: 64000, onChange: e => editText(e.target.value)})),
+                p("UTF-8 encodes your characters. BytesToBits below reads the least-significant bit first, matching the slides."),
+                formula("μᵢ = Decompress₁(bᵢ)"), formula("0 → 0     1 → 1665"),
+                h("div", {className: "qc-note"}, "Text mapping is an exercise. Actual ML-KEM uses a random 32-byte m; your complete text goes to AES-GCM.")),
+            h(R.Fragment, null, h(Tabs, {label: "Encoding views", items: [["bytes", "Bytes & bits"], ["polynomial", "Polynomial"], ["bom", "UTF-8 BOM"]], value: encodeTab, onChange: setEncodeTab}),
+                encodeTab === "bytes" && h("div", {className: "qc-byte-grid"}, Array.from(block).map((b,i) => h("div", {key:i,className:hasBOM && bytePage===0 && i<3 ? "qc-bom-byte" : ""}, h("small", null, `byte ${bytePage*32+i}`), h("strong", null, b), code(L.bits([b]).join(""))))),
+                encodeTab === "polynomial" && h(Polynomial, {values: L.bits(block).map(b => L.decompress(b,1)), name: "Text mapping exercise μ"}),
+                encodeTab === "bom" && h("div", {className: "qc-bom-view"}, h("h3", null, hasBOM ? "Leading BOM detected and preserved" : "No leading BOM in this message"),
+                    formula("U+FEFF → EF BB BF"), p("BOM means Byte Order Mark. In UTF-8 it can mark the start of a text stream; UTF-8 has no byte-order choice."),
+                    p("If pasted text starts with U+FEFF, Qcord encrypts and recovers it unchanged. The byte preview highlights its three bytes."),
+                    p("Generated .qcord JSON and plugin source use UTF-8 without an added BOM. An optional BOM on an imported JSON file is accepted.")),
+                encodeTab !== "bom" && h("div", {className: "qc-row qc-pagination"}, button("Previous 32 bytes", () => setBytePage(bytePage-1), {disabled: bytePage===0}), h("span", null, `${bytes.length ? bytePage*32+1 : 0}–${Math.min(bytes.length,(bytePage+1)*32)} / ${bytes.length} bytes`), button("Next 32 bytes", () => setBytePage(bytePage+1), {disabled: (bytePage+1)*32>=bytes.length}))));
+        }
+        if (step === 2) {
+            pages = "34, 56, 64, 72–75, 82, 96";
+            detail = "Final FIPS 203: (ρ, σ) = G(d ∥ byte(k)); Â[i,j] = SampleNTT(ρ ∥ byte(j) ∥ byte(i)). Slide 74 uses older details.";
+            content = split(h(R.Fragment, null, h("h3", null, "A public key built from polynomials"),
+                p(`${params.label} uses a ${params.k} × ${params.k} matrix Â. Each square is a polynomial with 256 coefficients modulo 3329.`),
+                formula("t̂ = Â ∘ ŝ + ê"), formula("ek = ByteEncode₁₂(t̂) ∥ ρ"),
+                p("A hat marks an NTT representation. The ∘ operation multiplies polynomials in that representation."),
+                h("div", {className: "qc-facts"}, code(`k = ${params.k} · η₁ = ${params.eta1} · η₂ = ${params.eta2}`)),
+                p("Your contact keeps s and e private. Only your own saved secret vectors can be revealed here.")),
+            h(R.Fragment, null, h(Tabs, {label: "Key views", items: [["matrix", "Public matrix"], ["vector", "Public vector"], ["secret", "My secret"], ["format", "Key format"]], value: keyTab, onChange: setKeyTab}),
+                !publicInfo && keyTab !== "secret" && keyTab !== "format" ? h("div", {className: "qc-empty-state"}, p(`Select a contact with a ${params.label} public key.`), button("Choose contact", () => setContactsOpen(true))) :
+                keyTab === "matrix" ? h(R.Fragment, null,
+                    h("div", {className: "qc-matrix", style: {gridTemplateColumns: `repeat(${params.k}, 1fr)`}, "aria-label": "Public matrix A hat"}, publicInfo.aHat.flatMap((r,i) => r.map((_,j) => button(`Â[${i}, ${j}]`, () => setMatrixCell(i*params.k+j), {key:i*params.k+j,"aria-pressed":matrixCell===i*params.k+j})))),
+                    h(Polynomial, {values: publicInfo.aHat[Math.floor(matrixCell/params.k)][matrixCell%params.k], name: `Â[${Math.floor(matrixCell/params.k)}, ${matrixCell%params.k}] · NTT`})) :
+                keyTab === "vector" ? h(R.Fragment, null, vectorSelector, h(Polynomial, {values: publicInfo.tHat[vectorIndex], name: `t̂[${vectorIndex}] · NTT`}), code(`ρ = ${hex(publicInfo.rho)}`)) :
+                keyTab === "secret" ? h(R.Fragment, null,
+                    button(privateView ? "Hide my secret vectors" : "Reveal my local s and e", () => {
+                        if (privateView) clearPrivate();
+                        else if (keys) { const value=L.privateTrace(keys.publicKey.bytes,keys.privateKey.bytes,scheme); secret.current=value; setPrivateView(value); }
+                    }, {disabled: !keys}),
+                    privateView ? h(R.Fragment, null, h("div", {className: "qc-row"}, vectorSelector, field("Private vector", h("select", {value:privateVariable,onChange:e=>setPrivateVariable(e.target.value)}, h("option",{value:"s"},"Secret s"),h("option",{value:"e"},"Noise e")))),
+                        h(Polynomial, {values:privateView[privateVariable][vectorIndex],name:`My ${privateVariable}[${vectorIndex}]`,signed:true}), p("Private values from your own saved key. Do not share screenshots.")) : p("Reveal is optional. Your contact's secret values are never available here.")) :
+                h(R.Fragment, null, h("h3", null, "Public and private parts"), formula("dk = dkPKE ∥ ek ∥ H(ek) ∥ z"), code(`ek: ${params.publicBytes} bytes\ndk: ${params.privateBytes} bytes\nShared secret K: 32 bytes`), p("ρ reconstructs the public matrix. z is a private fallback used when decapsulation implicitly rejects a ciphertext."), button("Open Contacts & keys", () => setContactsOpen(true)))));
+        }
+        if (step === 3 && draft) {
+            pages = "53–60, 84–90, 97";
+            detail = "Scalar r is a 32-byte seed; r⃗ is a vector of noise polynomials. H = SHA3-256; G = SHA3-512. This trace matches the actual library ciphertext.";
+            const t = draft.trace;
+            const vector = kemTab === "noise" ? noise === "r" ? t.rVector[vectorIndex] : noise === "e1" ? t.e1[vectorIndex] : t.e2 : kemTab === "u" ? t.u[vectorIndex] : kemTab === "v" ? t.v : t.mu;
+            const label = kemTab === "noise" ? `${noise}[${noise === "e2" ? "" : vectorIndex}]` : kemTab === "u" ? `u[${vectorIndex}]` : kemTab === "v" ? "v" : "μ · random m";
+            content = split(h(R.Fragment, null, h("h3", null, "Encapsulate for your contact"),
+                formula("(K, r) = G(m ∥ H(ek))"),
+                kemTab === "u" ? formula("u = NTT⁻¹(Âᵀ ∘ r̂) + e₁") : kemTab === "v" ? formula("v = NTT⁻¹(t̂ᵀ ∘ r̂) + e₂ + μ") : kemTab === "compress" ? formula(`c = Encode${subscript(params.du)}(Compress${subscript(params.du)}(u)) ∥ Encode${subscript(params.dv)}(Compress${subscript(params.dv)}(v))`) : formula("μ = Decompress₁(ByteDecode₁(m))"),
+                p("These are real values from the selected recipient's envelope. Fresh randomness changes them while your text stays the same."),
+                h("div", {className: "qc-packet-bars"}, h("span", null, `c₁ · ${32*params.du*params.k} B`), h("span", null, `c₂ · ${32*params.dv} B`)),
+                code(`c: first 16 / ${params.ciphertextBytes} bytes\n${hex(t.ciphertext.slice(0,16))}`),
+                button("Sample fresh randomness", () => run(() => prepare(3,true)), {disabled: busy})),
+            h(R.Fragment, null, h(Tabs, {label: "Encapsulation views", items: [["mu", "Encode m"], ["noise", "Noise"], ["u", "Compute u"], ["v", "Compute v"], ["compress", "Compress"]], value: kemTab, onChange: setKemTab}),
+                kemTab === "compress" ? h(Compression, {params, key:scheme}) : h(R.Fragment, null,
+                    (kemTab === "noise" || kemTab === "u") && h("div", {className: "qc-row"}, vectorSelector, kemTab === "noise" && field("Noise vector", h("select", {value:noise,onChange:e=>setNoise(e.target.value)}, h("option",{value:"r"},"r⃗"),h("option",{value:"e1"},"e₁"),h("option",{value:"e2"},"e₂")))),
+                    h(Polynomial, {values:vector,name:label,signed:kemTab==="noise"}),
+                    kemTab === "mu" && p("m is uniformly random, not your typed text. Each 1 bit becomes a coefficient of 1665."))));
+        }
+        if (step === 4 && draft) {
+            pages = "35, 91–93, 97–98";
+            detail = "HKDF-SHA256 and AES-256-GCM are Qcord's application layer. FIPS 204/205 signatures and PKI are deferred.";
+            content = split(h(R.Fragment, null, h("h3", null, "Review before attaching"),
+                h("div", {className: "qc-success"}, "Local decryption passed · exact UTF-8 text recovered"),
+                p("A fresh AES key encrypts your text. Each participant's ML-KEM shared secret derives a wrapping key for that AES key."),
+                h("dl", {className: "qc-stats"}, h("dt",null,"Recipient"),h("dd",null,profile?.username || channel),h("dt",null,"Parameter set"),h("dd",null,params.label),h("dt",null,"File"),h("dd",null,`${Buffer.byteLength(draft.wire)} bytes`),h("dt",null,"KEM ciphertext"),h("dd",null,`${params.ciphertextBytes} bytes / envelope`)),
+                p("The file includes your envelope too, so your saved dk can read your sent message."),
+                h("div", {className: "qc-note"}, "Open the selected DM and clear any plaintext in the Discord composer before attaching. This preview keeps your message.")),
+            h(R.Fragment, null, h(Tabs, {label: "Review views", items: [["summary", "Recovered text"], ["decaps", "Decapsulation"], ["file", "Exact file"]], value: reviewTab, onChange: setReviewTab}),
+                reviewTab === "summary" ? h(R.Fragment, null, h("blockquote", {className:"qc-plaintext"}, draft.recovery.text),
+                    p(hasBOM ? "A leading UTF-8 BOM is preserved in the recovered message." : "No BOM was added to your message."),
+                    h("div", {className: "qc-flow"}, h("span",null,"ML-KEM → K"),h("span",null,"HKDF → wrapping key"),h("span",null,"AES-GCM → text")),
+                    p("The attachment contains ciphertext and public metadata. It contains no private keys, random m, or unwrapped symmetric keys. It does not authenticate the sender.")) :
+                reviewTab === "decaps" ? h(R.Fragment, null, formula("w = v′ − NTT⁻¹(ŝᵀ ∘ NTT(u′))"), h(Polynomial, {values:draft.recovery.w,name:"My envelope's w"}),
+                    p("Compress₁(w) recovers m′. ML-KEM re-encrypts and compares c′ with c; a mismatch selects J(z ∥ c), causing AES authentication to fail.")) :
+                h(R.Fragment, null, p("Exact attachment · UTF-8 JSON without a BOM"), h("pre", {className:"qc-json"}, draft.wire))));
+        }
+        if (stopped) return h("div", {className: "qc-panel"}, h("h2", null, "Qcord is stopped"), p("Enable the plugin and reopen the composer."));
+        return h("div", {className: "qc-panel qc-composer"},
+            h("header", {className: "qc-header"}, h("div", null,h("span",{className:"qc-eyebrow"},"QCORD / LEARNING EDITION"),h("h2",null,"A message, made private")),
+                h("div",{className:"qc-row"},h("label",{className:"qc-toggle"},h("input",{type:"checkbox",role:"switch",checked:enabled,disabled:busy,onChange:e=>{plugin.setEnabled(e.target.checked);setEnabled(plugin.enabled);}}),h("span",null,"Quantum conversations",h("small",null,enabled?"Automatic encryption + decryption on":"Automatic encryption + decryption off"))), onClose && button("Close",onClose,{"aria-label":"Close Qcord composer"}))),
+            h("div", {className:"qc-toolbar"},field("ML-KEM parameter set",h("select",{value:scheme,disabled:busy,onChange:e=>changeScheme(e.target.value)},Object.entries(PARAMETER_SETS).map(([s,v])=>h("option",{key:s,value:s},v.label)))),
+                h("div", {className:"qc-level", "aria-live":"polite"}, h("span",null,"NIST security level"), h("strong",null,`Level ${params.category}`)),
+                button(h(R.Fragment,null,profile && h(Avatar,{profile}),h("span",null,h("strong",null,profile?.displayName || "Choose a recipient"),h("small",null,row?`${profile.username} · ${params.label} key saved`:`${params.label} key needed`))),()=>setContactsOpen(true),{className:"qc-recipient",disabled:busy,"aria-haspopup":"dialog","aria-label":"Choose recipient"}),
+                button("Contacts & keys",()=>setContactsOpen(true),{disabled:busy,"aria-haspopup":"dialog"})),
+            h(Tabs, {label:"Composition steps",items:stageNames.map((name,i)=>[i,`${i+1}. ${name}`]),value:step,onChange:navigate,disabled:busy}),
+            h("main", {className:"qc-main",role:"tabpanel","aria-label":`${stageNames[step]} stage`,"aria-busy":busy}, content),
+            h("aside", {className:"qc-source"},`Lecture 6 · slides ${pages} · PQC_Lecture_6_ML-KEM_v3.pdf`,detail && h("span",null,detail)),
+            h("div", {className:"qc-feedback"},h("div",{role:"alert",className:"qc-error"},error),h("div",{role:"status"},busy?"Working locally…":notice)),
+            h("footer", {className:"qc-footer"},button("Back",()=>navigate(step-1),{disabled:busy||step===0}),h("span",{className:"qc-muted"},attached?"Attached · review it in Discord":`Step ${step+1} of 5 · ${params.label}`),
+                step<4?button("Next",()=>navigate(step+1),{className:"qc-primary",disabled:busy||!text||(step>=2&&!row)}):button(attached?"Attached":"Attach .qcord to composer",()=>run(async()=>{await plugin.stageLearningDraft(draft);if(alive.current){setAttached(true);setNotice("Attached. Close this panel and press Send in Discord.");}}),{className:"qc-primary",disabled:busy||attached||!draft})),
+            contactsOpen && h(Contacts,{plugin,scheme,channel,keys,onClose:()=>setContactsOpen(false),onChanged:refreshed,onSelect:id=>{invalidate();setChannel(id);setPartners(plugin.getSavedPartners());}}));
+    }
+    return h(Panel);
 };

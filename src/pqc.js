@@ -1,12 +1,14 @@
 "use strict";
 
-const {ml_kem512} = require("@noble/post-quantum/ml-kem.js");
+const {ml_kem512, ml_kem768, ml_kem1024} = require("@noble/post-quantum/ml-kem.js");
 const {equalBytes} = require("@noble/post-quantum/utils.js");
 const {pack, unpack, readKeyData} = require("./der");
 
-// NIST identifier for ML-KEM-512 SPKI / PKCS#8 keys.
+// NIST identifiers for ML-KEM SPKI / PKCS#8 keys.
 const algorithms = {
-    "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"}
+    "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"},
+    "ml-kem-768": {impl: ml_kem768, oid: "608648016503040402"},
+    "ml-kem-1024": {impl: ml_kem1024, oid: "608648016503040403"}
 };
 
 function algorithm(scheme) {
@@ -88,17 +90,26 @@ const PQC = {
     backend: "bundled @noble/post-quantum 0.7.1",
     generateKeyPair: scheme => run(() => {
         const {impl} = algorithm(scheme);
-        const {publicKey, secretKey} = impl.keygen(randomBytes(impl.lengths.seed));
-        return {publicKey: new Key(scheme, "public", publicKey), privateKey: new Key(scheme, "private", secretKey)};
+        const seed = randomBytes(impl.lengths.seed);
+        try {
+            const {publicKey, secretKey} = impl.keygen(seed);
+            const pair = {publicKey: new Key(scheme, "public", publicKey), privateKey: new Key(scheme, "private", secretKey)};
+            secretKey.fill(0);
+            return pair;
+        } finally { seed.fill(0); }
     }),
     createPublicKey: key => key instanceof Key
         ? new Key(key.asymmetricKeyType, "public", requireKey(key, "private").getPublicKey(key.bytes))
         : importKey(key, "public"),
     createPrivateKey: text => importKey(text, "private"),
-    encapsulate: key => run(() => {
+    encapsulate: (key, inspect = false) => run(() => {
         const impl = requireKey(key, "public");
-        const {cipherText, sharedSecret} = impl.encapsulate(key.bytes, randomBytes(impl.lengths.msgRand));
-        return {ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret)};
+        const m = randomBytes(impl.lengths.msgRand);
+        try {
+            const {cipherText, sharedSecret} = impl.encapsulate(key.bytes, m);
+            const trace = inspect ? require("./learning").encapsulationTrace(key.bytes, m, cipherText, key.asymmetricKeyType) : null;
+            return {ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret), trace};
+        } finally { m.fill(0); }
     }),
     decapsulate: (key, ciphertext) => run(() => Buffer.from(requireKey(key, "private").decapsulate(Uint8Array.from(ciphertext), key.bytes)))
 };

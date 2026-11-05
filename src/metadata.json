@@ -2,8 +2,8 @@
   "name": "Qcord",
   "author": "Eric, Arsh, Yasser",
   "authorId": "215269534540496896",
-  "version": "0.0.3",
-  "description": "Encrypted chat files with bundled ML-KEM, saved local keys, and a channel recipient list.",
+  "version": "1.1.0",
+  "description": "Compose encrypted attachments with ML-KEM-512, 768 or 1024 and explore the math in a tabbed lesson.",
   "invite": "GSdMfMBW5g",
   "source": "https://github.com/EricZoop/qcord"
 }

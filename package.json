@@ -1,11 +1,12 @@
 {
   "name": "qcord",
-  "version": "0.0.3",
+  "version": "1.1.0",
   "private": true,
-  "description": "Build the Qcord BetterDiscord plugin with bundled PQC support",
+  "description": "Qcord: a visual ML-KEM learning tool for BetterDiscord",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test scripts/test.cjs"
+    "test": "node scripts/test.cjs",
+    "test:ui": "node scripts/test-ui.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "2.4.0",
@@ -13,7 +14,11 @@
     "@noble/post-quantum": "0.7.1"
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "buffer": "6.0.3",
+    "esbuild": "0.28.2",
+    "playwright": "1.58.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
   },
   "engines": {
     "node": ">=20.19.0"
