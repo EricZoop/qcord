@@ -33,9 +33,6 @@
 .qc-header p { margin-top: 4px; color: var(--qc-muted); font-size: 13px; }
 .qc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .qc-row > .qc-field { flex: 1; min-width: 110px; }
-.qc-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; }
-.qc-toggle small { display: block; font-size: 11px; color: var(--qc-muted); }
-.qc-toggle input { accent-color: var(--qc-accent); width: 20px; height: 20px; margin: 0; }
 .qc-toolbar { display: grid; grid-template-columns: 250px 130px minmax(200px, 1fr) auto; gap: 14px; align-items: end; flex: 0 0 auto; }
 .qc-level { display: flex; flex-direction: column; gap: 5px; }
 .qc-level > span:first-child { font-size: 12px; color: var(--qc-muted); }
@@ -49,7 +46,6 @@
 .qc-panel select { height: 42px; }
 .qc-panel textarea { min-height: 64px; resize: none; line-height: 1.6; }
 .qc-panel textarea::placeholder, .qc-panel input::placeholder { color: var(--qc-muted); opacity: .85; }
-.qc-panel .qc-message { height: clamp(150px, 23vh, 230px); font-size: 17px; }
 .qc-panel button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--qc-line); border-radius: 5px; padding: 8px 14px; background: var(--qc-surface); color: var(--qc-text); font: inherit; font-size: 13px; line-height: 1.4; min-height: 38px; cursor: pointer; }
 .qc-panel button:hover:not(:disabled) { background: var(--qc-empty); border-color: var(--qc-accent); }
 .qc-panel button:disabled { opacity: .45; cursor: default; }
@@ -63,7 +59,7 @@
 .qc-recipient small { font-size: 11px; color: var(--qc-muted); margin-top: 2px; }
 .qc-avatar { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; object-fit: cover; display: block; }
 .qc-avatar-fallback { display: flex; align-items: center; justify-content: center; background: #43494b; color: #fff; font-size: 17px; }
-.qc-tabs { display: flex; flex: 0 0 auto; gap: 4px; border-bottom: 1px solid var(--qc-line); }
+.qc-tabs { display: flex; flex: 0 0 auto; gap: 4px; border-bottom: 1px solid var(--qc-line); overflow-x: auto; }
 .qc-tabs > button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 9px 12px; min-height: 40px; color: var(--qc-muted); white-space: nowrap; }
 .qc-composer > .qc-tabs > button { flex: 1; font-size: 14px; }
 .qc-tabs > button[aria-selected="true"] { color: var(--qc-text); border-bottom-color: var(--qc-accent); }
@@ -74,20 +70,16 @@
 .qc-visual { border-left: 1px solid var(--qc-line); padding-left: 26px; }
 .qc-equation { flex: 0 0 auto; font: 24px/1.45 "Cambria Math", "STIX Two Math", ui-monospace, monospace; padding: 12px 14px; border-left: 2px solid var(--qc-accent); border-radius: 0 4px 4px 0; background: var(--qc-surface); overflow-wrap: anywhere; }
 .qc-code { display: block; font: 12px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.qc-muted, .qc-label { color: var(--qc-muted); font-size: 12px; }
-.qc-note, .qc-success { padding: 10px 12px; background: var(--qc-surface); border-left: 2px solid var(--qc-line); font-size: 13px; }
-.qc-success { border-left-color: var(--qc-accent); }
-.qc-option { display: flex; flex-direction: column; gap: 9px; padding: 14px; border: 1px solid var(--qc-line); border-radius: 6px; }
-.qc-option button { align-self: start; }
-.qc-facts { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding: 10px 0; }
-.qc-byte-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
-.qc-byte-grid > div { padding: 6px 5px; border: 1px solid var(--qc-line); border-radius: 4px; background: var(--qc-surface); }
-.qc-byte-grid small { display: block; font-size: 9px; color: var(--qc-muted); }
-.qc-byte-grid strong { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
-.qc-byte-grid .qc-code { font-size: 10px; letter-spacing: -.3px; }
-.qc-byte-grid .qc-bom-byte { border-color: var(--qc-accent); }
-.qc-pagination { justify-content: space-between; font-size: 12px; margin-top: auto; }
-.qc-pagination button { padding: 7px 9px; font-size: 11px; }
+.qc-parameters { width: 100%; border-collapse: collapse; font-size: 13px; }
+.qc-parameters th, .qc-parameters td { text-align: left; padding: 7px; border-bottom: 1px solid var(--qc-line); }
+.qc-parameters tr[data-selected="true"] { color: var(--qc-accent); background: var(--qc-surface); }
+.qc-key-shapes { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+.qc-key-shapes p { margin-bottom: 10px; }
+.qc-matrix > span { padding: 6px; text-align: center; background: var(--qc-surface); color: var(--qc-accent); font: 13px ui-monospace, monospace; }
+.qc-header input[type="file"] { max-width: 230px; font-size: 11px; }
+.qc-feedback { overflow-wrap: anywhere; }
+.qc-muted { color: var(--qc-muted); font-size: 12px; }
+.qc-note { padding: 10px 12px; background: var(--qc-surface); border-left: 2px solid var(--qc-line); font-size: 13px; }
 .qc-polynomial { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 6px; }
 .qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .qc-polynomial figcaption span { color: var(--qc-muted); font-size: 11px; }
@@ -97,14 +89,9 @@
 .qc-matrix { display: grid; width: min(100%, 390px); align-self: center; gap: 4px; border-left: 2px solid var(--qc-muted); border-right: 2px solid var(--qc-muted); padding: 5px; }
 .qc-matrix button { min-height: 28px; padding: 3px 7px; font-size: 12px; }
 .qc-matrix button[aria-pressed="true"] { border-color: var(--qc-accent); color: var(--qc-accent); }
-.qc-bom-view { display: flex; flex-direction: column; gap: 16px; }
-.qc-packet-bars, .qc-flow { display: flex; flex-wrap: wrap; gap: 6px; }
-.qc-packet-bars span, .qc-flow span { flex: 1; padding: 10px; border: 1px solid var(--qc-line); border-radius: 4px; font-size: 12px; }
+.qc-packet-bars { display: flex; flex-wrap: wrap; gap: 6px; }
+.qc-packet-bars span { flex: 1; padding: 10px; border: 1px solid var(--qc-line); border-radius: 4px; font-size: 12px; }
 .qc-packet-bars span:first-child { flex: 4; }
-.qc-stats { display: grid; grid-template-columns: 140px 1fr; gap: 10px; margin: 0; font-size: 14px; }
-.qc-stats dt { color: var(--qc-muted); }
-.qc-stats dd { margin: 0; }
-.qc-plaintext { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 220px; padding: 18px; background: var(--qc-surface); border-left: 2px solid var(--qc-accent); font-size: 17px; }
 .qc-json { flex: 1; min-height: 0; margin: 0; padding: 12px; overflow: auto; font: 11px/1.55 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--qc-empty); border-radius: 4px; }
 .qc-source { flex: 0 0 auto; padding-top: 9px; border-top: 1px solid var(--qc-line); color: var(--qc-muted); font-size: 11px; }
 .qc-source span { display: block; margin-top: 3px; }
@@ -133,25 +120,18 @@
 .qc-person p { font-size: 12px; color: var(--qc-muted); }
 .qcord-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; background: transparent; color: var(--interactive-normal, #b5bac1); cursor: pointer; }
 .qcord-button svg { width: 22px; height: 22px; fill: currentColor; }
-.qcord-button[data-enabled="true"] { color: #a3e635; }
 .qcord-button:focus-visible { outline: 2px solid #a3e635; outline-offset: 2px; border-radius: 4px; }
-[class*="channelTextArea"]:has(.qcord-button[data-enabled="true"]) { box-shadow: inset 3px 0 #a3e635; }
-.qcord-file-hidden { display: none !important; }
-.qcord-file-plain { white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 0; }
 @media (max-height: 800px) and (min-width: 901px) {
     .qc-panel { gap: 9px; padding: 16px 24px; }
     .qc-polynomial svg { height: 85px; }
     .qc-explanation, .qc-visual { gap: 9px; }
     .qc-equation { padding: 9px 12px; font-size: 22px; }
-    .qc-option { padding: 10px; gap: 6px; }
-    .qc-panel .qc-message { height: 160px; }
 }
 @media (max-width: 1100px) {
     .qc-toolbar { grid-template-columns: 210px 110px minmax(150px, 1fr) auto; gap: 9px; }
     .qc-split { gap: 18px; }
     .qc-visual { padding-left: 18px; }
     .qc-tabs > button { font-size: 11px; padding: 8px; }
-    .qc-byte-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
     .qc-panel { padding: 16px; gap: 10px; }
@@ -163,15 +143,12 @@
     .qc-visual { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--qc-line); }
     .qc-contact-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }
     .qc-header > .qc-row { gap: 6px; }
-    .qc-toggle small { display: none; }
     .qc-contacts-dialog { max-height: 95dvh; }
 }
 @media (max-width: 600px) {
     .qcord-dialog { width: 98vw; height: 96dvh; max-width: 98vw; max-height: 96dvh; }
     .qc-header { align-items: start; gap: 10px; }
     .qc-header > .qc-row { flex-direction: column-reverse; align-items: end; }
-    .qc-toggle { font-size: 10px; }
-    .qc-toggle input { width: 16px; height: 16px; }
     .qc-header h2 { font-size: 19px; }
     .qc-composer > .qc-tabs > button { font-size: 10px; padding: 8px 3px; }
     .qc-equation { font-size: 21px; }

@@ -94,13 +94,6 @@ function publicTrace(ek, scheme = ACTIVE_SCHEME) {
     const aHat = Array.from({length: k}, (_, i) => Array.from({length: k}, (_, j) => sampleNTT(rho, i, j)));
     return {rho, tHat, aHat};
 }
-function privateTrace(ek, dk, scheme = ACTIVE_SCHEME) {
-    const {k} = parameters(scheme);
-    const pub = publicTrace(ek, scheme);
-    const sHat = Array.from({length: k}, (_, i) => decode(dk.slice(i*384, (i+1)*384), 12));
-    const eHat = pub.tHat.map((t, i) => sub(t, dot(pub.aHat[i], sHat)));
-    return {...pub, sHat, s: sHat.map(p => ntt(p, true).map(centered)), e: eHat.map(p => ntt(p, true).map(centered))};
-}
 function encapsulationTrace(ek, m, ciphertext, scheme = ACTIVE_SCHEME) {
     const {k, eta1, eta2, du, dv} = parameters(scheme);
     const pub = publicTrace(ek, scheme);
@@ -115,7 +108,7 @@ function encapsulationTrace(ek, m, ciphertext, scheme = ACTIVE_SCHEME) {
     const v = add(add(ntt(dot(pub.tHat, rHat), true), e2), mu);
     const packed = concat(...u.map(p => encode(p.map(x => compress(x, du)), du)), encode(v.map(x => compress(x, dv)), dv));
     kr.fill(0); r.fill(0);
-    if (packed.length !== ciphertext.length || packed.some((b, i) => b !== ciphertext[i])) throw new Error("The learning trace did not match ML-KEM. No preview was produced.");
+    if (packed.length !== ciphertext.length || packed.some((b, i) => b !== ciphertext[i])) throw new Error("The polynomial trace did not match ML-KEM. No preview was produced.");
     return {...pub, m: Uint8Array.from(m), mu, rVector: rVector.map(p => p.map(centered)), e1: e1.map(p => p.map(centered)), e2: e2.map(centered), u, v, ciphertext: Uint8Array.from(ciphertext)};
 }
 function decapsulationTrace(dk, ciphertext, scheme = ACTIVE_SCHEME) {
@@ -127,10 +120,6 @@ function decapsulationTrace(dk, ciphertext, scheme = ACTIVE_SCHEME) {
     const w = sub(v, ntt(dot(sHat, u.map(p => ntt(p))), true));
     return {u, v, w, m: encode(w.map(x => compress(x, 1)), 1)};
 }
-function textPreview(text) {
-    const bytes = new TextEncoder().encode(text);
-    return {bytes, bits: bits(bytes.slice(0, 32)), polynomial: bits(bytes.slice(0, 32)).map(b => decompress(b, 1))};
-}
 // Remove reachable numeric buffers when a preview is invalidated or closed.
 // JavaScript strings/GC copies cannot be reliably zeroized.
 function wipe(value) {
@@ -138,4 +127,4 @@ function wipe(value) {
     else if (Array.isArray(value)) { value.forEach(wipe); value.fill(0); }
     else if (value && typeof value === "object") Object.values(value).forEach(wipe);
 }
-module.exports = {Q, N, mod, bits, compress, decompress, ntt, multiply, encode, decode, publicTrace, privateTrace, encapsulationTrace, decapsulationTrace, textPreview, wipe};
+module.exports = {Q, N, mod, bits, compress, decompress, ntt, multiply, encode, decode, publicTrace, encapsulationTrace, decapsulationTrace, wipe};

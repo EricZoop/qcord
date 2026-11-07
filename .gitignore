@@ -1,6 +1,8 @@
 node_modules/
+.npm/
 .tools/
 *.config.json
+!schemas/*.config.json
 *.log
 .env
 .env.*

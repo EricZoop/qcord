@@ -5,9 +5,6 @@ module.exports = {
     // One cache name for settings and keys: Windows filenames ignore case.
     KEY_STORE: "qcord",
     ACTIVE_SCHEME: "ml-kem-768",
-    BASE64_RE: /^[A-Za-z0-9+/]*={0,2}$/,
     BUTTON_SELECTOR: ".qcord-button",
-    DECODED_SELECTOR: ".qcord-plain",
-    FILE_NAME_RE: /\.qcord$/i,
     MAX_DECODED_FILE_SIZE: 1024 * 1024
 };

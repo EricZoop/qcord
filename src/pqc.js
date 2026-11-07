@@ -35,6 +35,13 @@ class Key {
         this.type = type;
         // Normalize bytes from Electron/Node contexts before passing them to noble.
         this.bytes = Uint8Array.from(bytes);
+        if (type === "public") {
+            // FIPS 203 encapsulation-key modulus check, before visualization/import.
+            for (let i = 0; i < bytes.length - 32; i += 3) {
+                if ((bytes[i] | ((bytes[i + 1] & 15) << 8)) >= 3329 ||
+                    ((bytes[i + 1] >> 4) | (bytes[i + 2] << 4)) >= 3329) throw new Error("Invalid public key coefficient.");
+            }
+        }
     }
 
     equals(other) {
@@ -55,7 +62,11 @@ class Key {
 }
 
 function importKey(text, type) {
-    const top = unpack(readKeyData(text));
+    // Shared and saved keys are raw FIPS 203 bytes in Base64. DER remains importable.
+    const raw = readKeyData(text);
+    const rawScheme = Object.keys(algorithms).find(name => algorithms[name].impl.lengths[type === "public" ? "publicKey" : "secretKey"] === raw.length);
+    if (rawScheme) return new Key(rawScheme, type, raw);
+    const top = unpack(raw);
     if (top.length !== 1 || top[0].tag !== 0x30) throw new Error("Invalid key sequence.");
     const fields = unpack(top[0].value);
     if (fields.length !== (type === "private" ? 3 : 2)) throw new Error("Unsupported key structure.");
@@ -107,9 +118,19 @@ const PQC = {
         const m = randomBytes(impl.lengths.msgRand);
         try {
             const {cipherText, sharedSecret} = impl.encapsulate(key.bytes, m);
-            const trace = inspect ? require("./learning").encapsulationTrace(key.bytes, m, cipherText, key.asymmetricKeyType) : null;
-            return {ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret), trace};
+            const trace = inspect ? require("./mlkem").encapsulationTrace(key.bytes, m, cipherText, key.asymmetricKeyType) : null;
+            const result = {ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret), m: Uint8Array.from(m), trace};
+            sharedSecret.fill(0);
+            return result;
         } finally { m.fill(0); }
+    }),
+    // Reproduce one saved encapsulation; never use saved m for a new exchange.
+    restoreEncapsulation: (key, m) => run(() => {
+        if (!(m instanceof Uint8Array) || m.length !== 32) throw new Error("m must contain 32 bytes.");
+        const {cipherText, sharedSecret} = requireKey(key, "public").encapsulate(key.bytes, Uint8Array.from(m));
+        const result = {ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret)};
+        sharedSecret.fill(0);
+        return result;
     }),
     decapsulate: (key, ciphertext) => run(() => Buffer.from(requireKey(key, "private").decapsulate(Uint8Array.from(ciphertext), key.bytes)))
 };

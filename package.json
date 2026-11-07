@@ -1,19 +1,20 @@
 {
   "name": "qcord",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Qcord: a visual ML-KEM learning tool for BetterDiscord",
+  "description": "Qcord: a FIPS 203 ML-KEM walkthrough for BetterDiscord",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node scripts/test.cjs",
-    "test:ui": "node scripts/test-ui.mjs"
+    "test:ui": "node scripts/test-ui.mjs",
+    "examples": "node scripts/generate-examples.cjs"
   },
   "dependencies": {
-    "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@noble/post-quantum": "0.7.1"
   },
   "devDependencies": {
+    "ajv": "8.20.0",
     "buffer": "6.0.3",
     "esbuild": "0.28.2",
     "playwright": "1.58.2",

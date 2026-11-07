@@ -2,8 +2,8 @@
  * @name Qcord
  * @author Eric, Arsh, Yasser
  * @authorId 215269534540496896
- * @version 1.1.0
- * @description Compose encrypted attachments with ML-KEM-512, 768 or 1024 and explore the math in a tabbed lesson.
+ * @version 2.0.0
+ * @description Inspect recipient keys and construct ML-KEM u, v encapsulations with a FIPS 203 walkthrough.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
  */
@@ -39,31 +39,6 @@ THE SOFTWARE.
 The MIT License (MIT)
 
 Copyright (c) 2022 Paul Miller (https://paulmillr.com)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-@noble/ciphers
-
-The MIT License (MIT)
-
-Copyright (c) 2022 Paul Miller (https://paulmillr.com)
-Copyright (c) 2016 Thomas Pornin <pornin@bolet.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the “Software”), to deal
@@ -135,35 +110,11 @@ function split(lst, le = false) {
   }
   return [Ah, Al];
 }
-function setU64FromNum(view, byteOffset, n, isLE3) {
-  const h = fromNumH(n);
-  const l = fromNumL(n);
-  view.setUint32(byteOffset, isLE3 ? l : h, isLE3);
-  view.setUint32(byteOffset + 4, isLE3 ? h : l, isLE3);
-}
-function add(Ah, Al, Bh, Bl) {
-  const l = (Al >>> 0) + (Bl >>> 0);
-  return { h: Ah + Bh + (l / 2 ** 32 | 0) | 0, l: l | 0 };
-}
-var U32_MASK64, _32n, fromNumH, fromNumL, shrSH, shrSL, rotrSH, rotrSL, rotrBH, rotrBL, add3L, add3H, add4L, add4H, add5L, add5H;
+var U32_MASK64, _32n;
 var init_u64 = __esm({
   "node_modules/@noble/hashes/_u64.js"() {
     U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
     _32n = /* @__PURE__ */ BigInt(32);
-    fromNumH = (n) => n / 2 ** 32 | 0;
-    fromNumL = (n) => n >>> 0;
-    shrSH = (h, _l, s) => h >>> s;
-    shrSL = (h, l, s) => h << 32 - s | l >>> s;
-    rotrSH = (h, l, s) => h >>> s | l << 32 - s;
-    rotrSL = (h, l, s) => h << 32 - s | l >>> s;
-    rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
-    rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
-    add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
-    add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
-    add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
-    add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
-    add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
-    add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
   }
 });
 
@@ -224,12 +175,6 @@ function clean(...arrays) {
   for (let i = 0; i < arrays.length; i++) {
     arrays[i].fill(0);
   }
-}
-function createView(arr) {
-  return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
-}
-function rotr(word, shift) {
-  return word << 32 - shift | word >>> shift;
 }
 function byteSwap(word) {
   return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
@@ -1641,18 +1586,15 @@ var require_constants = __commonJS({
       // One cache name for settings and keys: Windows filenames ignore case.
       KEY_STORE: "qcord",
       ACTIVE_SCHEME: "ml-kem-768",
-      BASE64_RE: /^[A-Za-z0-9+/]*={0,2}$/,
       BUTTON_SELECTOR: ".qcord-button",
-      DECODED_SELECTOR: ".qcord-plain",
-      FILE_NAME_RE: /\.qcord$/i,
       MAX_DECODED_FILE_SIZE: 1024 * 1024
     };
   }
 });
 
-// src/learning.js
-var require_learning = __commonJS({
-  "src/learning.js"(exports2, module2) {
+// src/mlkem.js
+var require_mlkem = __commonJS({
+  "src/mlkem.js"(exports2, module2) {
     "use strict";
     var { sha3_256: sha3_2562, sha3_512: sha3_5122, shake128: shake1282, shake256: shake2562 } = (init_sha3(), __toCommonJS(sha3_exports));
     var { parameters: parameters2 } = require_parameters();
@@ -1664,7 +1606,7 @@ var require_learning = __commonJS({
     var bits = (bytes) => Array.from(bytes).flatMap((b) => Array.from({ length: 8 }, (_, i) => b >> i & 1));
     var compress2 = (x, d) => Math.floor((mod(x) * 2 ** d + 1664) / Q2) % 2 ** d;
     var decompress = (x, d) => Math.floor((Q2 * x + 2 ** (d - 1)) / 2 ** d);
-    var add2 = (a, b) => a.map((v, i) => mod(v + b[i]));
+    var add = (a, b) => a.map((v, i) => mod(v + b[i]));
     var sub = (a, b) => a.map((v, i) => mod(v - b[i]));
     var centered = (x) => x > 1664 ? x - Q2 : x;
     function decode(bytes, d) {
@@ -1719,7 +1661,7 @@ var require_learning = __commonJS({
       }
       return out;
     }
-    var dot = (a, b) => a.reduce((sum, poly, i) => add2(sum, multiply(poly, b[i])), Array(N2).fill(0));
+    var dot = (a, b) => a.reduce((sum, poly, i) => add(sum, multiply(poly, b[i])), Array(N2).fill(0));
     function sampleNTT(rho, i, j) {
       const xof = shake1282.create().update(concat(rho, [j, i]));
       const out = [];
@@ -1751,13 +1693,6 @@ var require_learning = __commonJS({
       const aHat = Array.from({ length: k }, (_, i) => Array.from({ length: k }, (_2, j) => sampleNTT(rho, i, j)));
       return { rho, tHat, aHat };
     }
-    function privateTrace(ek, dk, scheme = ACTIVE_SCHEME2) {
-      const { k } = parameters2(scheme);
-      const pub = publicTrace(ek, scheme);
-      const sHat = Array.from({ length: k }, (_, i) => decode(dk.slice(i * 384, (i + 1) * 384), 12));
-      const eHat = pub.tHat.map((t, i) => sub(t, dot(pub.aHat[i], sHat)));
-      return { ...pub, sHat, s: sHat.map((p) => ntt(p, true).map(centered)), e: eHat.map((p) => ntt(p, true).map(centered)) };
-    }
     function encapsulationTrace(ek, m, ciphertext, scheme = ACTIVE_SCHEME2) {
       const { k, eta1, eta2, du, dv } = parameters2(scheme);
       const pub = publicTrace(ek, scheme);
@@ -1768,12 +1703,12 @@ var require_learning = __commonJS({
       const e1 = Array.from({ length: k }, (_, i) => cbd(r, k + i, eta2));
       const e2 = cbd(r, 2 * k, eta2);
       const mu = bits(m).map((b) => decompress(b, 1));
-      const u = e1.map((e, i) => add2(ntt(dot(pub.aHat.map((row) => row[i]), rHat), true), e));
-      const v = add2(add2(ntt(dot(pub.tHat, rHat), true), e2), mu);
+      const u = e1.map((e, i) => add(ntt(dot(pub.aHat.map((row) => row[i]), rHat), true), e));
+      const v = add(add(ntt(dot(pub.tHat, rHat), true), e2), mu);
       const packed = concat(...u.map((p) => encode(p.map((x) => compress2(x, du)), du)), encode(v.map((x) => compress2(x, dv)), dv));
       kr.fill(0);
       r.fill(0);
-      if (packed.length !== ciphertext.length || packed.some((b, i) => b !== ciphertext[i])) throw new Error("The learning trace did not match ML-KEM. No preview was produced.");
+      if (packed.length !== ciphertext.length || packed.some((b, i) => b !== ciphertext[i])) throw new Error("The polynomial trace did not match ML-KEM. No preview was produced.");
       return { ...pub, m: Uint8Array.from(m), mu, rVector: rVector.map((p) => p.map(centered)), e1: e1.map((p) => p.map(centered)), e2: e2.map(centered), u, v, ciphertext: Uint8Array.from(ciphertext) };
     }
     function decapsulationTrace(dk, ciphertext, scheme = ACTIVE_SCHEME2) {
@@ -1785,10 +1720,6 @@ var require_learning = __commonJS({
       const w = sub(v, ntt(dot(sHat, u.map((p) => ntt(p))), true));
       return { u, v, w, m: encode(w.map((x) => compress2(x, 1)), 1) };
     }
-    function textPreview(text) {
-      const bytes = new TextEncoder().encode(text);
-      return { bytes, bits: bits(bytes.slice(0, 32)), polynomial: bits(bytes.slice(0, 32)).map((b) => decompress(b, 1)) };
-    }
     function wipe(value) {
       if (ArrayBuffer.isView(value)) value.fill(0);
       else if (Array.isArray(value)) {
@@ -1796,7 +1727,7 @@ var require_learning = __commonJS({
         value.fill(0);
       } else if (value && typeof value === "object") Object.values(value).forEach(wipe);
     }
-    module2.exports = { Q: Q2, N: N2, mod, bits, compress: compress2, decompress, ntt, multiply, encode, decode, publicTrace, privateTrace, encapsulationTrace, decapsulationTrace, textPreview, wipe };
+    module2.exports = { Q: Q2, N: N2, mod, bits, compress: compress2, decompress, ntt, multiply, encode, decode, publicTrace, encapsulationTrace, decapsulationTrace, wipe };
   }
 });
 
@@ -1805,7 +1736,7 @@ var require_pqc = __commonJS({
   "src/pqc.js"(exports2, module2) {
     "use strict";
     var { ml_kem512: ml_kem5122, ml_kem768: ml_kem7682, ml_kem1024: ml_kem10242 } = (init_ml_kem(), __toCommonJS(ml_kem_exports));
-    var { equalBytes: equalBytes3 } = (init_utils3(), __toCommonJS(utils_exports));
+    var { equalBytes: equalBytes2 } = (init_utils3(), __toCommonJS(utils_exports));
     var { pack, unpack, readKeyData } = require_der();
     var algorithms = {
       "ml-kem-512": { impl: ml_kem5122, oid: "608648016503040401" },
@@ -1831,9 +1762,14 @@ var require_pqc = __commonJS({
         this.asymmetricKeyType = scheme;
         this.type = type;
         this.bytes = Uint8Array.from(bytes);
+        if (type === "public") {
+          for (let i = 0; i < bytes.length - 32; i += 3) {
+            if ((bytes[i] | (bytes[i + 1] & 15) << 8) >= 3329 || (bytes[i + 1] >> 4 | bytes[i + 2] << 4) >= 3329) throw new Error("Invalid public key coefficient.");
+          }
+        }
       }
       equals(other) {
-        return other instanceof _Key && this.type === other.type && this.asymmetricKeyType === other.asymmetricKeyType && equalBytes3(this.bytes, other.bytes);
+        return other instanceof _Key && this.type === other.type && this.asymmetricKeyType === other.asymmetricKeyType && equalBytes2(this.bytes, other.bytes);
       }
       export({ type, format }) {
         const privateKey = this.type === "private";
@@ -1845,7 +1781,10 @@ var require_pqc = __commonJS({
       }
     };
     function importKey(text, type) {
-      const top = unpack(readKeyData(text));
+      const raw = readKeyData(text);
+      const rawScheme = Object.keys(algorithms).find((name) => algorithms[name].impl.lengths[type === "public" ? "publicKey" : "secretKey"] === raw.length);
+      if (rawScheme) return new Key(rawScheme, type, raw);
+      const top = unpack(raw);
       if (top.length !== 1 || top[0].tag !== 48) throw new Error("Invalid key sequence.");
       const fields = unpack(top[0].value);
       if (fields.length !== (type === "private" ? 3 : 2)) throw new Error("Unsupported key structure.");
@@ -1895,2369 +1834,25 @@ var require_pqc = __commonJS({
         const m = randomBytes3(impl.lengths.msgRand);
         try {
           const { cipherText, sharedSecret } = impl.encapsulate(key.bytes, m);
-          const trace = inspect ? require_learning().encapsulationTrace(key.bytes, m, cipherText, key.asymmetricKeyType) : null;
-          return { ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret), trace };
+          const trace = inspect ? require_mlkem().encapsulationTrace(key.bytes, m, cipherText, key.asymmetricKeyType) : null;
+          const result = { ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret), m: Uint8Array.from(m), trace };
+          sharedSecret.fill(0);
+          return result;
         } finally {
           m.fill(0);
         }
       }),
+      // Reproduce one saved encapsulation; never use saved m for a new exchange.
+      restoreEncapsulation: (key, m) => run(() => {
+        if (!(m instanceof Uint8Array) || m.length !== 32) throw new Error("m must contain 32 bytes.");
+        const { cipherText, sharedSecret } = requireKey(key, "public").encapsulate(key.bytes, Uint8Array.from(m));
+        const result = { ciphertext: Buffer.from(cipherText), sharedKey: Buffer.from(sharedSecret) };
+        sharedSecret.fill(0);
+        return result;
+      }),
       decapsulate: (key, ciphertext) => run(() => Buffer.from(requireKey(key, "private").decapsulate(Uint8Array.from(ciphertext), key.bytes)))
     };
-    module2.exports = { PQC, randomBytes: randomBytes3, equalBytes: equalBytes3 };
-  }
-});
-
-// node_modules/@noble/ciphers/utils.js
-function isBytes2(a) {
-  return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
-}
-function abool2(value, title = "") {
-  if (typeof value !== "boolean")
-    throw new TypeError(atitle2(title) + "expected boolean, got type=" + typeof value);
-  return value;
-}
-function anumber2(n, title = "") {
-  if (typeof n !== "number")
-    throw new TypeError(atitle2(title) + "expected number, got " + typeof n);
-  if (!Number.isSafeInteger(n) || n < 0)
-    throw new RangeError(atitle2(title) + "expected integer >= 0, got " + n);
-  return n;
-}
-function abytes2(value, length, title = "") {
-  if (isBytes2(value) && (length === void 0 || value.length === length))
-    return value;
-  if (length !== void 0)
-    anumber2(length, "length");
-  const bytes = isBytes2(value);
-  const ofLen = length !== void 0 ? ` of length ${length}` : "";
-  const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
-  const message = atitle2(title) + "expected Uint8Array" + ofLen + ", got " + got;
-  if (!bytes)
-    throw new TypeError(message);
-  throw new RangeError(message);
-}
-function aexists2(instance, checkFinished = true) {
-  if (instance.destroyed)
-    throw new Error("hash was destroyed");
-  if (checkFinished && instance.finished)
-    throw new Error("digest() was already called");
-}
-function aoutput2(out, instance) {
-  abytes2(out, void 0, "output");
-  const min = instance.outputLen;
-  if (!(out.length >= min)) {
-    throw new RangeError('"output" expected length >= ' + min);
-  }
-}
-function aoutput32(out, instance) {
-  aoutput2(out, instance);
-  if (!isAligned32(out))
-    throw new Error("invalid output, must be aligned");
-}
-function u8(arr) {
-  return new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
-}
-function u322(arr) {
-  return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
-}
-function clean2(...arrays) {
-  for (let i = 0; i < arrays.length; i++) {
-    arrays[i].fill(0);
-  }
-}
-function createView2(arr) {
-  return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
-}
-function byteSwap2(word) {
-  return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
-}
-function byteSwap322(arr) {
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = byteSwap2(arr[i]);
-  }
-  return arr;
-}
-function overlapBytes(a, b) {
-  if (!a.byteLength || !b.byteLength)
-    return false;
-  return a.buffer === b.buffer && // best we can do, may fail with an obscure Proxy
-  a.byteOffset < b.byteOffset + b.byteLength && // a starts before b end
-  b.byteOffset < a.byteOffset + a.byteLength;
-}
-function complexOverlapBytes(input, output) {
-  if (overlapBytes(input, output) && input.byteOffset < output.byteOffset)
-    throw new Error("complex overlap of input and output is not supported");
-}
-function concatBytes2(...arrays) {
-  let sum = 0;
-  for (let i = 0; i < arrays.length; i++) {
-    const a = arrays[i];
-    abytes2(a);
-    sum += a.length;
-  }
-  const res = new Uint8Array(sum);
-  for (let i = 0, pad = 0; i < arrays.length; i++) {
-    const a = arrays[i];
-    res.set(a, pad);
-    pad += a.length;
-  }
-  return res;
-}
-function equalBytes2(a, b) {
-  a = abytes2(a);
-  b = abytes2(b);
-  if (a.length !== b.length)
-    return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++)
-    diff |= a[i] ^ b[i];
-  return diff === 0;
-}
-function wrapMacConstructor(keyLen, macCons, fromMsg) {
-  const mac = macCons;
-  const getArgs = fromMsg || (() => []);
-  const macC = (msg, key) => mac(key, ...getArgs(msg)).update(msg).digest();
-  const tmp = mac(new Uint8Array(keyLen), ...getArgs(new Uint8Array(0)));
-  macC.outputLen = tmp.outputLen;
-  macC.blockLen = tmp.blockLen;
-  macC.create = (key, ...args) => mac(key, ...args);
-  return macC;
-}
-function getOutput(expectedLength, out, onlyAligned = true) {
-  if (out === void 0)
-    return new Uint8Array(expectedLength);
-  abytes2(out, expectedLength, "output");
-  if (onlyAligned && !isAligned32(out))
-    throw new Error("invalid output, must be aligned");
-  return out;
-}
-function u64Lengths(dataLength, aadLength, isLE3) {
-  anumber2(dataLength);
-  anumber2(aadLength);
-  abool2(isLE3);
-  const num = new Uint8Array(16);
-  const view = createView2(num);
-  view.setBigUint64(0, BigInt(aadLength), isLE3);
-  view.setBigUint64(8, BigInt(dataLength), isLE3);
-  return num;
-}
-function isAligned32(bytes) {
-  return bytes.byteOffset % 4 === 0;
-}
-function copyBytes2(bytes) {
-  return Uint8Array.from(abytes2(bytes));
-}
-var atitle2, isLE2, swap8IfBE, swap32IfBE2, wrapCipher;
-var init_utils4 = __esm({
-  "node_modules/@noble/ciphers/utils.js"() {
-    /*! noble-ciphers - MIT License (c) 2023 Paul Miller (paulmillr.com) */
-    atitle2 = (title) => title ? `"${title}" ` : "";
-    isLE2 = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
-    swap8IfBE = isLE2 ? (n) => n : (n) => byteSwap2(n) >>> 0;
-    swap32IfBE2 = isLE2 ? (u) => u : byteSwap322;
-    wrapCipher = /* @__NO_SIDE_EFFECTS__ */ (params, constructor) => {
-      function wrappedCipher(key, ...args) {
-        abytes2(key, void 0, "key");
-        if (params.nonceLength !== void 0) {
-          const nonce = args[0];
-          abytes2(nonce, params.varSizeNonce ? void 0 : params.nonceLength, "nonce");
-        }
-        const tagl = params.tagLength;
-        const aadStart = params.nonceLength !== void 0 ? 1 : 0;
-        if (!params.withAAD) {
-          for (let i = aadStart; i < args.length; i++)
-            if (isBytes2(args[i]))
-              throw new Error("AAD not supported");
-        }
-        if (params.withAAD && args[aadStart] !== void 0)
-          abytes2(args[aadStart], void 0, "AAD");
-        const cipher = constructor(key, ...args);
-        const checkOutput = (fnLength, output) => {
-          if (output !== void 0) {
-            if (fnLength !== 2)
-              throw new Error("cipher output not supported");
-            abytes2(output, void 0, "output");
-          }
-        };
-        let called = false;
-        const wrCipher = {
-          encrypt(data, output) {
-            if (called)
-              throw new Error("cannot encrypt() twice with same key + nonce");
-            called = true;
-            abytes2(data, void 0, "data");
-            checkOutput(cipher.encrypt.length, output);
-            return cipher.encrypt(data, output);
-          },
-          decrypt(data, output) {
-            abytes2(data, void 0, "data");
-            if (tagl && data.length < tagl)
-              throw new Error('"ciphertext" expected length >= tagLength=' + tagl);
-            checkOutput(cipher.decrypt.length, output);
-            return cipher.decrypt(data, output);
-          }
-        };
-        return wrCipher;
-      }
-      Object.assign(wrappedCipher, params);
-      return wrappedCipher;
-    };
-  }
-});
-
-// node_modules/@noble/ciphers/_polyval.js
-function _toGHASHKey(k) {
-  k.reverse();
-  const hiBit = k[15] & 1;
-  let carry = 0;
-  for (let i = 0; i < k.length; i++) {
-    const t = k[i];
-    k[i] = t >>> 1 | carry;
-    carry = (t & 1) << 7;
-  }
-  k[0] ^= -hiBit & 225;
-  return k;
-}
-var BLOCK_SIZE, ZEROS16, ZEROS32, POLY, mul2, swapLE, swap8IfLE, estimateWindow, GHASH, Polyval, ghash, polyval;
-var init_polyval = __esm({
-  "node_modules/@noble/ciphers/_polyval.js"() {
-    init_utils4();
-    BLOCK_SIZE = 16;
-    ZEROS16 = /* @__PURE__ */ new Uint8Array(16);
-    ZEROS32 = /* @__PURE__ */ u322(ZEROS16);
-    POLY = 225;
-    mul2 = (s0, s1, s2, s3) => {
-      const hiBit = s3 & 1;
-      return {
-        s3: s2 << 31 | s3 >>> 1,
-        s2: s1 << 31 | s2 >>> 1,
-        s1: s0 << 31 | s1 >>> 1,
-        // NIST SP 800-38D §6.3 applies `V >> 1` and XORs R on carry. In this
-        // 4x32-bit split, R = 0xe1 || 0^120 lives in the top byte of s0.
-        s0: s0 >>> 1 ^ POLY << 24 & -(hiBit & 1)
-        // reduce % poly
-      };
-    };
-    swapLE = (n) => (n >>> 0 & 255) << 24 | (n >>> 8 & 255) << 16 | (n >>> 16 & 255) << 8 | n >>> 24 & 255 | 0;
-    swap8IfLE = (n) => swap8IfBE(swapLE(n));
-    estimateWindow = (bytes) => {
-      if (bytes > 64 * 1024)
-        return 8;
-      if (bytes > 1024)
-        return 4;
-      return 2;
-    };
-    GHASH = class {
-      // We select bits per window adaptively based on expectedLength
-      constructor(key, expectedLength) {
-        __publicField(this, "blockLen", BLOCK_SIZE);
-        __publicField(this, "outputLen", BLOCK_SIZE);
-        __publicField(this, "s0", 0);
-        __publicField(this, "s1", 0);
-        __publicField(this, "s2", 0);
-        __publicField(this, "s3", 0);
-        __publicField(this, "finished", false);
-        __publicField(this, "destroyed", false);
-        __publicField(this, "t");
-        __publicField(this, "W");
-        __publicField(this, "windowSize");
-        abytes2(key, 16, "key");
-        key = copyBytes2(key);
-        const kView = createView2(key);
-        let k0 = kView.getUint32(0, false);
-        let k1 = kView.getUint32(4, false);
-        let k2 = kView.getUint32(8, false);
-        let k3 = kView.getUint32(12, false);
-        const doubles = [];
-        for (let i = 0; i < 128; i++) {
-          doubles.push({ s0: swapLE(k0), s1: swapLE(k1), s2: swapLE(k2), s3: swapLE(k3) });
-          ({ s0: k0, s1: k1, s2: k2, s3: k3 } = mul2(k0, k1, k2, k3));
-        }
-        const W = estimateWindow(expectedLength || 1024);
-        if (![1, 2, 4, 8].includes(W))
-          throw new Error("ghash: invalid window size, expected 2, 4 or 8");
-        this.W = W;
-        const bits = 128;
-        const windows = bits / W;
-        const windowSize = this.windowSize = 2 ** W;
-        const items = [];
-        for (let w = 0; w < windows; w++) {
-          for (let byte = 0; byte < windowSize; byte++) {
-            let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
-            for (let j = 0; j < W; j++) {
-              const bit = byte >>> W - j - 1 & 1;
-              if (!bit)
-                continue;
-              const { s0: d0, s1: d1, s2: d2, s3: d3 } = doubles[W * w + j];
-              s0 ^= d0, s1 ^= d1, s2 ^= d2, s3 ^= d3;
-            }
-            items.push({ s0, s1, s2, s3 });
-          }
-        }
-        this.t = items;
-      }
-      _updateBlock(s0, s1, s2, s3) {
-        s0 ^= this.s0, s1 ^= this.s1, s2 ^= this.s2, s3 ^= this.s3;
-        const { W, t, windowSize } = this;
-        let o0 = 0, o1 = 0, o2 = 0, o3 = 0;
-        const mask = (1 << W) - 1;
-        let w = 0;
-        for (const num of [s0, s1, s2, s3]) {
-          for (let bytePos = 0; bytePos < 4; bytePos++) {
-            const byte = num >>> 8 * bytePos & 255;
-            for (let bitPos = 8 / W - 1; bitPos >= 0; bitPos--) {
-              const bit = byte >>> W * bitPos & mask;
-              const { s0: e0, s1: e1, s2: e2, s3: e3 } = t[w * windowSize + bit];
-              o0 ^= e0, o1 ^= e1, o2 ^= e2, o3 ^= e3;
-              w += 1;
-            }
-          }
-        }
-        this.s0 = o0;
-        this.s1 = o1;
-        this.s2 = o2;
-        this.s3 = o3;
-      }
-      update(data) {
-        aexists2(this);
-        abytes2(data);
-        data = copyBytes2(data);
-        const b32 = u322(data);
-        const blocks = Math.floor(data.length / BLOCK_SIZE);
-        const left = data.length % BLOCK_SIZE;
-        for (let i = 0; i < blocks; i++) {
-          this._updateBlock(swap8IfBE(b32[i * 4 + 0]), swap8IfBE(b32[i * 4 + 1]), swap8IfBE(b32[i * 4 + 2]), swap8IfBE(b32[i * 4 + 3]));
-        }
-        if (left) {
-          ZEROS16.set(data.subarray(blocks * BLOCK_SIZE));
-          this._updateBlock(swap8IfBE(ZEROS32[0]), swap8IfBE(ZEROS32[1]), swap8IfBE(ZEROS32[2]), swap8IfBE(ZEROS32[3]));
-          clean2(ZEROS32);
-        }
-        return this;
-      }
-      destroy() {
-        this.destroyed = true;
-        const { t } = this;
-        for (const elm of t) {
-          elm.s0 = 0, elm.s1 = 0, elm.s2 = 0, elm.s3 = 0;
-        }
-      }
-      digestInto(out) {
-        aexists2(this);
-        aoutput32(out, this);
-        this.finished = true;
-        const { s0, s1, s2, s3 } = this;
-        const o32 = u322(out);
-        o32[0] = s0;
-        o32[1] = s1;
-        o32[2] = s2;
-        o32[3] = s3;
-        if (!isLE2)
-          swap32IfBE2(o32.subarray(0, BLOCK_SIZE / 4));
-      }
-      digest() {
-        const res = new Uint8Array(BLOCK_SIZE);
-        this.digestInto(res);
-        this.destroy();
-        return res;
-      }
-    };
-    Polyval = class extends GHASH {
-      constructor(key, expectedLength) {
-        abytes2(key);
-        const ghKey = _toGHASHKey(copyBytes2(key));
-        super(ghKey, expectedLength);
-        clean2(ghKey);
-      }
-      update(data) {
-        aexists2(this);
-        abytes2(data);
-        data = copyBytes2(data);
-        const b32 = u322(data);
-        const left = data.length % BLOCK_SIZE;
-        const blocks = Math.floor(data.length / BLOCK_SIZE);
-        for (let i = 0; i < blocks; i++) {
-          this._updateBlock(swap8IfLE(b32[i * 4 + 3]), swap8IfLE(b32[i * 4 + 2]), swap8IfLE(b32[i * 4 + 1]), swap8IfLE(b32[i * 4 + 0]));
-        }
-        if (left) {
-          ZEROS16.set(data.subarray(blocks * BLOCK_SIZE));
-          this._updateBlock(swap8IfLE(ZEROS32[3]), swap8IfLE(ZEROS32[2]), swap8IfLE(ZEROS32[1]), swap8IfLE(ZEROS32[0]));
-          clean2(ZEROS32);
-        }
-        return this;
-      }
-      digestInto(out) {
-        aexists2(this);
-        aoutput32(out, this);
-        this.finished = true;
-        const view = out.subarray(0, this.outputLen);
-        const { s0, s1, s2, s3 } = this;
-        const o32 = u322(view);
-        o32[0] = s0;
-        o32[1] = s1;
-        o32[2] = s2;
-        o32[3] = s3;
-        swap32IfBE2(o32);
-        view.reverse();
-      }
-    };
-    ghash = /* @__PURE__ */ wrapMacConstructor(16, (key, expectedLength) => new GHASH(key, expectedLength), (msg) => [msg.length]);
-    polyval = /* @__PURE__ */ wrapMacConstructor(16, (key, expectedLength) => new Polyval(key, expectedLength), (msg) => [msg.length]);
-  }
-});
-
-// node_modules/@noble/ciphers/aes.js
-var aes_exports = {};
-__export(aes_exports, {
-  __TESTS: () => __TESTS,
-  aeskw: () => aeskw,
-  aeskwp: () => aeskwp,
-  aessiv: () => aessiv2,
-  cbc: () => cbc,
-  cfb: () => cfb,
-  cmac: () => cmac,
-  ctr: () => ctr,
-  ecb: () => ecb,
-  gcm: () => gcm,
-  gcmsiv: () => gcmsiv,
-  rngAesCtrDrbg128: () => rngAesCtrDrbg128,
-  rngAesCtrDrbg256: () => rngAesCtrDrbg256,
-  siv: () => siv,
-  unsafe: () => unsafe
-});
-function validateKeyLength(key) {
-  if (![16, 24, 32].includes(key.length))
-    throw new Error('"aes key" expected Uint8Array of length 16/24/32, got length=' + key.length);
-}
-function mul22(n) {
-  return n << 1 ^ POLY2 & -(n >> 7);
-}
-function mul(a, b) {
-  let res = 0;
-  for (; b > 0; b >>= 1) {
-    res ^= a & -(b & 1);
-    a = mul22(a);
-  }
-  return res;
-}
-function genTtable(sbox2, fn) {
-  if (sbox2.length !== 256)
-    throw new Error("wrong sbox length");
-  const T0 = new Uint32Array(256).map((_, j) => fn(sbox2[j]));
-  const T1 = T0.map(rotl32_8);
-  const T2 = T1.map(rotl32_8);
-  const T3 = T2.map(rotl32_8);
-  const T01 = new Uint32Array(256 * 256);
-  const T23 = new Uint32Array(256 * 256);
-  const sbox22 = new Uint16Array(256 * 256);
-  for (let i = 0; i < 256; i++) {
-    for (let j = 0; j < 256; j++) {
-      const idx = i * 256 + j;
-      T01[idx] = T0[i] ^ T1[j];
-      T23[idx] = T2[i] ^ T3[j];
-      sbox22[idx] = sbox2[i] << 8 | sbox2[j];
-    }
-  }
-  return { sbox: sbox2, sbox2: sbox22, T0, T1, T2, T3, T01, T23 };
-}
-function expandKeyLE(key) {
-  abytes2(key);
-  const len = key.length;
-  validateKeyLength(key);
-  const { sbox2 } = tableEncoding;
-  const toClean = [];
-  if (!isLE2 || !isAligned32(key))
-    toClean.push(key = copyBytes2(key));
-  const k32 = swap32IfBE2(u322(key));
-  const Nk = k32.length;
-  const subByte = (n) => applySbox(sbox2, n, n, n, n);
-  const xk = new Uint32Array(len + 28);
-  xk.set(k32);
-  for (let i = Nk; i < xk.length; i++) {
-    let t = xk[i - 1];
-    if (i % Nk === 0)
-      t = subByte(rotr32_8(t)) ^ xPowers[i / Nk - 1];
-    else if (Nk > 6 && i % Nk === 4)
-      t = subByte(t);
-    xk[i] = xk[i - Nk] ^ t;
-  }
-  clean2(...toClean);
-  return xk;
-}
-function expandKeyDecLE(key) {
-  const encKey = expandKeyLE(key);
-  const xk = encKey.slice();
-  const Nk = encKey.length;
-  const { sbox2 } = tableEncoding;
-  const { T0, T1, T2, T3 } = tableDecoding;
-  for (let i = 0; i < Nk; i += 4) {
-    for (let j = 0; j < 4; j++)
-      xk[i + j] = encKey[Nk - i - 4 + j];
-  }
-  clean2(encKey);
-  for (let i = 4; i < Nk - 4; i++) {
-    const x = xk[i];
-    const w = applySbox(sbox2, x, x, x, x);
-    xk[i] = T0[w & 255] ^ T1[w >>> 8 & 255] ^ T2[w >>> 16 & 255] ^ T3[w >>> 24];
-  }
-  return xk;
-}
-function apply0123(T01, T23, s0, s1, s2, s3) {
-  return T01[s0 << 8 & 65280 | s1 >>> 8 & 255] ^ T23[s2 >>> 8 & 65280 | s3 >>> 24 & 255];
-}
-function applySbox(sbox2, s0, s1, s2, s3) {
-  return sbox2[s0 & 255 | s1 & 65280] | sbox2[s2 >>> 16 & 255 | s3 >>> 16 & 65280] << 16;
-}
-function encrypt(xk, s0, s1, s2, s3) {
-  const { sbox2, T01, T23 } = tableEncoding;
-  let k = 0;
-  s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
-  const rounds = xk.length / 4 - 2;
-  for (let i = 0; i < rounds; i++) {
-    const t02 = xk[k++] ^ apply0123(T01, T23, s0, s1, s2, s3);
-    const t12 = xk[k++] ^ apply0123(T01, T23, s1, s2, s3, s0);
-    const t22 = xk[k++] ^ apply0123(T01, T23, s2, s3, s0, s1);
-    const t32 = xk[k++] ^ apply0123(T01, T23, s3, s0, s1, s2);
-    s0 = t02, s1 = t12, s2 = t22, s3 = t32;
-  }
-  const t0 = xk[k++] ^ applySbox(sbox2, s0, s1, s2, s3);
-  const t1 = xk[k++] ^ applySbox(sbox2, s1, s2, s3, s0);
-  const t2 = xk[k++] ^ applySbox(sbox2, s2, s3, s0, s1);
-  const t3 = xk[k++] ^ applySbox(sbox2, s3, s0, s1, s2);
-  return { s0: t0, s1: t1, s2: t2, s3: t3 };
-}
-function decrypt(xk, s0, s1, s2, s3) {
-  const { sbox2, T01, T23 } = tableDecoding;
-  let k = 0;
-  s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
-  const rounds = xk.length / 4 - 2;
-  for (let i = 0; i < rounds; i++) {
-    const t02 = xk[k++] ^ apply0123(T01, T23, s0, s3, s2, s1);
-    const t12 = xk[k++] ^ apply0123(T01, T23, s1, s0, s3, s2);
-    const t22 = xk[k++] ^ apply0123(T01, T23, s2, s1, s0, s3);
-    const t32 = xk[k++] ^ apply0123(T01, T23, s3, s2, s1, s0);
-    s0 = t02, s1 = t12, s2 = t22, s3 = t32;
-  }
-  const t0 = xk[k++] ^ applySbox(sbox2, s0, s3, s2, s1);
-  const t1 = xk[k++] ^ applySbox(sbox2, s1, s0, s3, s2);
-  const t2 = xk[k++] ^ applySbox(sbox2, s2, s1, s0, s3);
-  const t3 = xk[k++] ^ applySbox(sbox2, s3, s2, s1, s0);
-  return { s0: t0, s1: t1, s2: t2, s3: t3 };
-}
-function ctrCounter(xk, nonce, src, dst) {
-  abytes2(nonce, BLOCK_SIZE2, "nonce");
-  abytes2(src);
-  const srcLen = src.length;
-  dst = getOutput(srcLen, dst);
-  complexOverlapBytes(src, dst);
-  const ctr2 = nonce;
-  const c32 = u322(ctr2);
-  const src32 = u322(src);
-  const dst32 = u322(dst);
-  for (let i = 0; i + 4 <= src32.length; i += 4) {
-    const { s0, s1, s2, s3 } = encrypt(xk, swap8IfBE(c32[0]), swap8IfBE(c32[1]), swap8IfBE(c32[2]), swap8IfBE(c32[3]));
-    dst32[i + 0] = src32[i + 0] ^ swap8IfBE(s0);
-    dst32[i + 1] = src32[i + 1] ^ swap8IfBE(s1);
-    dst32[i + 2] = src32[i + 2] ^ swap8IfBE(s2);
-    dst32[i + 3] = src32[i + 3] ^ swap8IfBE(s3);
-    for (let j = BLOCK_SIZE2 - 1, carry = 1; j >= 0; j--) {
-      carry = carry + ctr2[j] | 0;
-      ctr2[j] = carry & 255;
-      carry >>>= 8;
-    }
-  }
-  const start = BLOCK_SIZE2 * Math.floor(src32.length / BLOCK_SIZE32);
-  if (start < srcLen) {
-    const { s0, s1, s2, s3 } = encrypt(xk, swap8IfBE(c32[0]), swap8IfBE(c32[1]), swap8IfBE(c32[2]), swap8IfBE(c32[3]));
-    const b32 = new Uint32Array([s0, s1, s2, s3]);
-    swap32IfBE2(b32);
-    const buf = u8(b32);
-    for (let i = start, pos = 0; i < srcLen; i++, pos++)
-      dst[i] = src[i] ^ buf[pos];
-    clean2(b32);
-  }
-  return dst;
-}
-function ctr32(xk, isLE3, nonce, src, dst) {
-  abytes2(nonce, BLOCK_SIZE2, "nonce");
-  abytes2(src);
-  dst = getOutput(src.length, dst);
-  const ctr2 = nonce;
-  const c32 = u322(ctr2);
-  const view = createView2(ctr2);
-  const src32 = u322(src);
-  const dst32 = u322(dst);
-  const ctrPos = isLE3 ? 0 : 12;
-  const srcLen = src.length;
-  let ctrNum = view.getUint32(ctrPos, isLE3);
-  for (let i = 0; i + 4 <= src32.length; i += 4) {
-    const { s0, s1, s2, s3 } = encrypt(xk, swap8IfBE(c32[0]), swap8IfBE(c32[1]), swap8IfBE(c32[2]), swap8IfBE(c32[3]));
-    dst32[i + 0] = src32[i + 0] ^ swap8IfBE(s0);
-    dst32[i + 1] = src32[i + 1] ^ swap8IfBE(s1);
-    dst32[i + 2] = src32[i + 2] ^ swap8IfBE(s2);
-    dst32[i + 3] = src32[i + 3] ^ swap8IfBE(s3);
-    ctrNum = ctrNum + 1 >>> 0;
-    view.setUint32(ctrPos, ctrNum, isLE3);
-  }
-  const start = BLOCK_SIZE2 * Math.floor(src32.length / BLOCK_SIZE32);
-  if (start < srcLen) {
-    const { s0, s1, s2, s3 } = encrypt(xk, swap8IfBE(c32[0]), swap8IfBE(c32[1]), swap8IfBE(c32[2]), swap8IfBE(c32[3]));
-    const b32 = new Uint32Array([s0, s1, s2, s3]);
-    swap32IfBE2(b32);
-    const buf = u8(b32);
-    for (let i = start, pos = 0; i < srcLen; i++, pos++)
-      dst[i] = src[i] ^ buf[pos];
-    clean2(b32);
-  }
-  return dst;
-}
-function validateBlockDecrypt(data, dst) {
-  abytes2(data);
-  if (data.length % BLOCK_SIZE2 !== 0) {
-    throw new Error("ciphertext must be multiple of " + BLOCK_SIZE2);
-  }
-  if (dst !== void 0) {
-    getOutput(data.length, dst);
-    complexOverlapBytes(data, dst);
-  }
-}
-function validateBlockEncrypt(plaintext, pkcs5, dst) {
-  abytes2(plaintext);
-  let outLen = plaintext.length;
-  const remaining = outLen % BLOCK_SIZE2;
-  if (!pkcs5 && remaining !== 0)
-    throw new Error("plaintext must be multiple of " + BLOCK_SIZE2);
-  if (pkcs5) {
-    let left = BLOCK_SIZE2 - remaining;
-    if (!left)
-      left = BLOCK_SIZE2;
-    outLen = outLen + left;
-  }
-  if (dst !== void 0) {
-    getOutput(outLen, dst);
-    complexOverlapBytes(plaintext, dst);
-  }
-  return outLen;
-}
-function prepareBlockEncrypt(plaintext, outLen, dst) {
-  if (dst === void 0)
-    dst = new Uint8Array(outLen);
-  if (!isLE2 || !isAligned32(plaintext))
-    plaintext = copyBytes2(plaintext);
-  const o = u322(dst);
-  return { b: plaintext, o, out: dst };
-}
-function validatePKCS(data, pkcs5) {
-  if (!pkcs5)
-    return data;
-  const len = data.length;
-  if (len === 0)
-    throw new Error("pkcs7: empty ciphertext not allowed");
-  const lastByte = data[len - 1];
-  let valid = 1;
-  valid &= lastByte - 1 >>> 31 ^ 1;
-  valid &= 16 - lastByte >>> 31 ^ 1;
-  for (let i = 0; i < 16; i++) {
-    const shouldCheck = i - lastByte >>> 31;
-    const eq = (data[len - 1 - i] ^ lastByte) === 0 ? 1 : 0;
-    valid &= eq | shouldCheck ^ 1;
-  }
-  if (!valid)
-    throw new Error("aes: bad decrypt");
-  return data.subarray(0, len - lastByte);
-}
-function padPCKS(left) {
-  const tmp = new Uint8Array(16);
-  const tmp32 = u322(tmp);
-  tmp.set(left);
-  const paddingByte = BLOCK_SIZE2 - left.length;
-  for (let i = BLOCK_SIZE2 - paddingByte; i < BLOCK_SIZE2; i++)
-    tmp[i] = paddingByte;
-  return tmp32;
-}
-function computeTag(fn, isLE3, key, data, AAD) {
-  const aadLength = AAD ? AAD.length : 0;
-  const h = fn.create(key, data.length + aadLength);
-  if (AAD)
-    h.update(AAD);
-  const num = u64Lengths(8 * data.length, 8 * aadLength, isLE3);
-  h.update(data);
-  h.update(num);
-  const res = h.digest();
-  clean2(num);
-  return res;
-}
-function isBytes32(a) {
-  return a instanceof Uint32Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint32Array";
-}
-function encryptBlock(xk, block) {
-  abytes2(block, 16, "block");
-  if (!isBytes32(xk))
-    throw new Error("_encryptBlock accepts result of expandKeyLE");
-  const b32 = u322(block);
-  swap32IfBE2(b32);
-  let { s0, s1, s2, s3 } = encrypt(xk, b32[0], b32[1], b32[2], b32[3]);
-  b32[0] = s0, b32[1] = s1, b32[2] = s2, b32[3] = s3;
-  swap32IfBE2(b32);
-  return block;
-}
-function decryptBlock(xk, block) {
-  abytes2(block, 16, "block");
-  if (!isBytes32(xk))
-    throw new Error("_decryptBlock accepts result of expandKeyLE");
-  const b32 = u322(block);
-  swap32IfBE2(b32);
-  let { s0, s1, s2, s3 } = decrypt(xk, b32[0], b32[1], b32[2], b32[3]);
-  b32[0] = s0, b32[1] = s1, b32[2] = s2, b32[3] = s3;
-  swap32IfBE2(b32);
-  return block;
-}
-function dbl(block) {
-  let carry = 0;
-  for (let i = BLOCK_SIZE2 - 1; i >= 0; i--) {
-    const newCarry = (block[i] & 128) >>> 7;
-    block[i] = block[i] << 1 | carry;
-    carry = newCarry;
-  }
-  block[BLOCK_SIZE2 - 1] ^= 135 & -carry;
-  return block;
-}
-function xorBlock(a, b) {
-  if (a.length !== b.length)
-    throw new Error("xorBlock: blocks must have same length");
-  for (let i = 0; i < a.length; i++) {
-    a[i] = a[i] ^ b[i];
-  }
-  return a;
-}
-function xorend(a, b) {
-  if (b.length > a.length) {
-    throw new Error("xorend: expected len(B) <= len(A)");
-  }
-  const offset = a.length - b.length;
-  for (let i = 0; i < b.length; i++) {
-    a[offset + i] = a[offset + i] ^ b[i];
-  }
-  return a;
-}
-function s2v(key, strings) {
-  validateKeyLength(key);
-  const len = strings.length;
-  if (len > 127) {
-    throw new Error("s2v: expected <= 127 inputs");
-  }
-  if (len === 0)
-    return cmac(ONE_BLOCK, key);
-  let d = cmac(EMPTY_BLOCK, key);
-  for (let i = 0; i < len - 1; i++) {
-    dbl(d);
-    const cmacResult = cmac(strings[i], key);
-    xorBlock(d, cmacResult);
-    clean2(cmacResult);
-  }
-  const s_n = strings[len - 1];
-  abytes2(s_n);
-  let t;
-  if (s_n.byteLength >= BLOCK_SIZE2) {
-    t = xorend(Uint8Array.from(s_n), d);
-  } else {
-    const paddedSn = new Uint8Array(BLOCK_SIZE2);
-    paddedSn.set(s_n);
-    paddedSn[s_n.length] = 128;
-    t = xorBlock(dbl(d), paddedSn);
-    clean2(paddedSn);
-  }
-  const result = cmac(t, key);
-  clean2(d, t);
-  return result;
-}
-var BLOCK_SIZE2, BLOCK_SIZE32, EMPTY_BLOCK, ONE_BLOCK, POLY2, incBytes, sbox, invSbox, rotr32_8, rotl32_8, tableEncoding, tableDecoding, xPowers, ctr, ecb, cbc, cfb, gcm, limit, gcmsiv, AESW, AESKW_IV, aeskw, AESKWP_IV, aeskwp, _AesCtrDRBG, createAesDrbg, rngAesCtrDrbg128, rngAesCtrDrbg256, _CMAC, cmac, siv, aessiv2, unsafe, __TESTS;
-var init_aes = __esm({
-  "node_modules/@noble/ciphers/aes.js"() {
-    init_polyval();
-    init_utils4();
-    BLOCK_SIZE2 = 16;
-    BLOCK_SIZE32 = 4;
-    EMPTY_BLOCK = /* @__PURE__ */ new Uint8Array(BLOCK_SIZE2);
-    ONE_BLOCK = /* @__PURE__ */ Uint8Array.from([
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1
-    ]);
-    POLY2 = 283;
-    incBytes = (data, isLE3, carry = 1) => {
-      if (!Number.isSafeInteger(carry) || carry < 0 || carry > 4294967040)
-        throw new Error("incBytes: wrong carry " + carry);
-      abytes2(data);
-      for (let i = 0; i < data.length; i++) {
-        const pos = !isLE3 ? data.length - 1 - i : i;
-        carry = carry + (data[pos] & 255) | 0;
-        data[pos] = carry & 255;
-        carry >>>= 8;
-      }
-    };
-    sbox = /* @__PURE__ */ (() => {
-      const t = new Uint8Array(256);
-      for (let i = 0, x = 1; i < 256; i++, x ^= mul22(x))
-        t[i] = x;
-      const box = new Uint8Array(256);
-      box[0] = 99;
-      for (let i = 0; i < 255; i++) {
-        let x = t[255 - i];
-        x |= x << 8;
-        box[t[i]] = (x ^ x >> 4 ^ x >> 5 ^ x >> 6 ^ x >> 7 ^ 99) & 255;
-      }
-      clean2(t);
-      return box;
-    })();
-    invSbox = /* @__PURE__ */ sbox.map((_, j) => sbox.indexOf(j));
-    rotr32_8 = (n) => n << 24 | n >>> 8;
-    rotl32_8 = (n) => n << 8 | n >>> 24;
-    tableEncoding = /* @__PURE__ */ genTtable(sbox, (s) => mul(s, 3) << 24 | s << 16 | s << 8 | mul(s, 2));
-    tableDecoding = /* @__PURE__ */ genTtable(invSbox, (s) => mul(s, 11) << 24 | mul(s, 13) << 16 | mul(s, 9) << 8 | mul(s, 14));
-    xPowers = /* @__PURE__ */ (() => {
-      const p = new Uint8Array(16);
-      for (let i = 0, x = 1; i < 16; i++, x = mul22(x))
-        p[i] = x;
-      return p;
-    })();
-    ctr = /* @__PURE__ */ wrapCipher({ blockSize: 16, nonceLength: 16 }, function aesctr(key, nonce) {
-      function processCtr(buf, dst) {
-        abytes2(buf);
-        if (dst !== void 0) {
-          abytes2(dst);
-          if (!isAligned32(dst))
-            throw new Error("unaligned destination");
-        }
-        const xk = expandKeyLE(key);
-        const n = copyBytes2(nonce);
-        const toClean = [xk, n];
-        if (!isAligned32(buf))
-          toClean.push(buf = copyBytes2(buf));
-        const out = ctrCounter(xk, n, buf, dst);
-        clean2(...toClean);
-        return out;
-      }
-      return {
-        encrypt: (plaintext, dst) => processCtr(plaintext, dst),
-        decrypt: (ciphertext, dst) => processCtr(ciphertext, dst)
-      };
-    });
-    ecb = /* @__PURE__ */ wrapCipher({ blockSize: 16 }, function aesecb(key, opts2 = {}) {
-      const pkcs5 = !opts2.disablePadding;
-      return {
-        encrypt(plaintext, dst) {
-          const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
-          const xk = expandKeyLE(key);
-          const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-          const b = u322(input);
-          swap32IfBE2(b);
-          let i = 0;
-          for (; i + 4 <= b.length; ) {
-            const { s0, s1, s2, s3 } = encrypt(xk, b[i + 0], b[i + 1], b[i + 2], b[i + 3]);
-            o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-          }
-          if (pkcs5) {
-            const tmp32 = padPCKS(plaintext.subarray(i * 4));
-            swap32IfBE2(tmp32);
-            const { s0, s1, s2, s3 } = encrypt(xk, tmp32[0], tmp32[1], tmp32[2], tmp32[3]);
-            o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-            clean2(tmp32);
-          }
-          swap32IfBE2(o);
-          clean2(xk);
-          if (input !== plaintext)
-            clean2(input);
-          return _out;
-        },
-        decrypt(ciphertext, dst) {
-          validateBlockDecrypt(ciphertext, dst);
-          const xk = expandKeyDecLE(key);
-          if (dst === void 0)
-            dst = new Uint8Array(ciphertext.length);
-          const toClean = [xk];
-          if (!isLE2 || !isAligned32(ciphertext))
-            toClean.push(ciphertext = copyBytes2(ciphertext));
-          const b = u322(ciphertext);
-          const o = u322(dst);
-          swap32IfBE2(b);
-          for (let i = 0; i + 4 <= b.length; ) {
-            const { s0, s1, s2, s3 } = decrypt(xk, b[i + 0], b[i + 1], b[i + 2], b[i + 3]);
-            o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-          }
-          swap32IfBE2(o);
-          clean2(...toClean);
-          return validatePKCS(dst, pkcs5);
-        }
-      };
-    });
-    cbc = /* @__PURE__ */ wrapCipher({ blockSize: 16, nonceLength: 16 }, function aescbc(key, iv, opts2 = {}) {
-      const pkcs5 = !opts2.disablePadding;
-      return {
-        encrypt(plaintext, dst) {
-          const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
-          const xk = expandKeyLE(key);
-          const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-          const b = u322(input);
-          swap32IfBE2(b);
-          let _iv = iv;
-          const toClean = [xk];
-          if (!isLE2 || !isAligned32(_iv))
-            toClean.push(_iv = copyBytes2(_iv));
-          const n32 = u322(_iv);
-          swap32IfBE2(n32);
-          let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
-          let i = 0;
-          for (; i + 4 <= b.length; ) {
-            s0 ^= b[i + 0], s1 ^= b[i + 1], s2 ^= b[i + 2], s3 ^= b[i + 3];
-            ({ s0, s1, s2, s3 } = encrypt(xk, s0, s1, s2, s3));
-            o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-          }
-          if (pkcs5) {
-            const tmp32 = padPCKS(plaintext.subarray(i * 4));
-            swap32IfBE2(tmp32);
-            s0 ^= tmp32[0], s1 ^= tmp32[1], s2 ^= tmp32[2], s3 ^= tmp32[3];
-            ({ s0, s1, s2, s3 } = encrypt(xk, s0, s1, s2, s3));
-            o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-            clean2(tmp32);
-          }
-          swap32IfBE2(o);
-          clean2(...toClean);
-          if (input !== plaintext)
-            clean2(input);
-          return _out;
-        },
-        decrypt(ciphertext, dst) {
-          validateBlockDecrypt(ciphertext, dst);
-          const xk = expandKeyDecLE(key);
-          if (dst === void 0)
-            dst = new Uint8Array(ciphertext.length);
-          let _iv = iv;
-          const toClean = [xk];
-          if (!isLE2 || !isAligned32(_iv))
-            toClean.push(_iv = copyBytes2(_iv));
-          const n32 = u322(_iv);
-          swap32IfBE2(n32);
-          if (!isLE2 || !isAligned32(ciphertext))
-            toClean.push(ciphertext = copyBytes2(ciphertext));
-          const b = u322(ciphertext);
-          const o = u322(dst);
-          swap32IfBE2(b);
-          let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
-          for (let i = 0; i + 4 <= b.length; ) {
-            const ps0 = s0, ps1 = s1, ps2 = s2, ps3 = s3;
-            s0 = b[i + 0], s1 = b[i + 1], s2 = b[i + 2], s3 = b[i + 3];
-            const { s0: o0, s1: o1, s2: o2, s3: o3 } = decrypt(xk, s0, s1, s2, s3);
-            o[i++] = o0 ^ ps0, o[i++] = o1 ^ ps1, o[i++] = o2 ^ ps2, o[i++] = o3 ^ ps3;
-          }
-          swap32IfBE2(o);
-          clean2(...toClean);
-          return validatePKCS(dst, pkcs5);
-        }
-      };
-    });
-    cfb = /* @__PURE__ */ wrapCipher({ blockSize: 16, nonceLength: 16 }, function aescfb(key, iv) {
-      function processCfb(src, isEncrypt, dst) {
-        abytes2(src);
-        const srcLen = src.length;
-        dst = getOutput(srcLen, dst);
-        if (overlapBytes(src, dst))
-          throw new Error("overlapping src and dst not supported");
-        const xk = expandKeyLE(key);
-        let _iv = iv;
-        const toClean = [xk];
-        if (!isLE2 || !isAligned32(_iv))
-          toClean.push(_iv = copyBytes2(_iv));
-        if (!isLE2 || !isAligned32(src))
-          toClean.push(src = copyBytes2(src));
-        const src32 = u322(src);
-        const dst32 = u322(dst);
-        const next32 = isEncrypt ? dst32 : src32;
-        const n32 = u322(_iv);
-        swap32IfBE2(src32);
-        swap32IfBE2(n32);
-        let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
-        for (let i = 0; i + 4 <= src32.length; ) {
-          const { s0: e0, s1: e1, s2: e2, s3: e3 } = encrypt(xk, s0, s1, s2, s3);
-          dst32[i + 0] = src32[i + 0] ^ e0;
-          dst32[i + 1] = src32[i + 1] ^ e1;
-          dst32[i + 2] = src32[i + 2] ^ e2;
-          dst32[i + 3] = src32[i + 3] ^ e3;
-          s0 = next32[i++], s1 = next32[i++], s2 = next32[i++], s3 = next32[i++];
-        }
-        const start = BLOCK_SIZE2 * Math.floor(src32.length / BLOCK_SIZE32);
-        if (start < srcLen) {
-          if (!isLE2)
-            swap32IfBE2(src32.subarray(start / 4));
-          ({ s0, s1, s2, s3 } = encrypt(xk, s0, s1, s2, s3));
-          const tmp = new Uint32Array([s0, s1, s2, s3]);
-          swap32IfBE2(tmp);
-          const buf = u8(tmp);
-          for (let i = start, pos = 0; i < srcLen; i++, pos++)
-            dst[i] = src[i] ^ buf[pos];
-          clean2(buf);
-        }
-        if (!isLE2)
-          swap32IfBE2(dst32.subarray(0, start / 4));
-        clean2(...toClean);
-        return dst;
-      }
-      return {
-        encrypt: (plaintext, dst) => processCfb(plaintext, true, dst),
-        decrypt: (ciphertext, dst) => processCfb(ciphertext, false, dst)
-      };
-    });
-    gcm = /* @__PURE__ */ wrapCipher({ blockSize: 16, nonceLength: 12, tagLength: 16, withAAD: true, varSizeNonce: true }, function aesgcm(key, nonce, AAD) {
-      if (nonce.length < 8)
-        throw new Error("aes/gcm: invalid nonce length");
-      const tagLength = 16;
-      function _computeTag(authKey, tagMask, data) {
-        const tag = computeTag(ghash, false, authKey, data, AAD);
-        for (let i = 0; i < tagMask.length; i++)
-          tag[i] ^= tagMask[i];
-        return tag;
-      }
-      function deriveKeys() {
-        const xk = expandKeyLE(key);
-        const authKey = EMPTY_BLOCK.slice();
-        const counter = EMPTY_BLOCK.slice();
-        ctr32(xk, false, counter, counter, authKey);
-        if (nonce.length === 12) {
-          counter.set(nonce);
-        } else {
-          const nonceLen = EMPTY_BLOCK.slice();
-          const view = createView2(nonceLen);
-          view.setBigUint64(8, BigInt(nonce.length * 8), false);
-          const g = ghash.create(authKey).update(nonce).update(nonceLen);
-          g.digestInto(counter);
-          g.destroy();
-        }
-        const tagMask = ctr32(xk, false, counter, EMPTY_BLOCK);
-        return { xk, authKey, counter, tagMask };
-      }
-      return {
-        encrypt(plaintext) {
-          const { xk, authKey, counter, tagMask } = deriveKeys();
-          const out = new Uint8Array(plaintext.length + tagLength);
-          const toClean = [xk, authKey, counter, tagMask];
-          if (!isAligned32(plaintext))
-            toClean.push(plaintext = copyBytes2(plaintext));
-          ctr32(xk, false, counter, plaintext, out.subarray(0, plaintext.length));
-          const tag = _computeTag(authKey, tagMask, out.subarray(0, out.length - tagLength));
-          toClean.push(tag);
-          out.set(tag, plaintext.length);
-          clean2(...toClean);
-          return out;
-        },
-        decrypt(ciphertext) {
-          const { xk, authKey, counter, tagMask } = deriveKeys();
-          const toClean = [xk, authKey, tagMask, counter];
-          if (!isAligned32(ciphertext))
-            toClean.push(ciphertext = copyBytes2(ciphertext));
-          const data = ciphertext.subarray(0, -tagLength);
-          const passedTag = ciphertext.subarray(-tagLength);
-          const tag = _computeTag(authKey, tagMask, data);
-          toClean.push(tag);
-          if (!equalBytes2(tag, passedTag)) {
-            clean2(...toClean);
-            throw new Error("aes-gcm: invalid tag");
-          }
-          const out = ctr32(xk, false, counter, data);
-          clean2(...toClean);
-          return out;
-        }
-      };
-    });
-    limit = (name, min, max) => (value) => {
-      if (!Number.isSafeInteger(value) || min > value || value > max) {
-        const minmax = "[" + min + ".." + max + "]";
-        throw new Error("" + name + ": expected value in range " + minmax + ", got " + value);
-      }
-    };
-    gcmsiv = /* @__PURE__ */ wrapCipher({ blockSize: 16, nonceLength: 12, tagLength: 16, withAAD: true, varSizeNonce: true }, function aessiv(key, nonce, AAD) {
-      const tagLength = 16;
-      const AAD_LIMIT = limit("AAD", 0, 2 ** 36);
-      const PLAIN_LIMIT = limit("plaintext", 0, 2 ** 36);
-      const NONCE_LIMIT = limit("nonce", 12, 12);
-      const CIPHER_LIMIT = limit("ciphertext", 16, 2 ** 36 + 16);
-      abytes2(key);
-      validateKeyLength(key);
-      NONCE_LIMIT(nonce.length);
-      if (AAD !== void 0)
-        AAD_LIMIT(AAD.length);
-      function deriveKeys() {
-        const xk = expandKeyLE(key);
-        const encKey = new Uint8Array(key.length);
-        const authKey = new Uint8Array(16);
-        const toClean = [xk, encKey];
-        let _nonce = nonce;
-        if (!isLE2 || !isAligned32(_nonce))
-          toClean.push(_nonce = copyBytes2(_nonce));
-        const n32 = u322(_nonce);
-        swap32IfBE2(n32);
-        let s0 = 0, s1 = n32[0], s2 = n32[1], s3 = n32[2];
-        let counter = 0;
-        for (const derivedKey of [authKey, encKey].map(u322)) {
-          const d32 = u322(derivedKey);
-          for (let i = 0; i < d32.length; i += 2) {
-            const { s0: o0, s1: o1 } = encrypt(xk, s0, s1, s2, s3);
-            d32[i + 0] = o0;
-            d32[i + 1] = o1;
-            s0 = ++counter;
-          }
-          swap32IfBE2(d32);
-        }
-        const res = { authKey, encKey: expandKeyLE(encKey) };
-        clean2(...toClean);
-        return res;
-      }
-      function _computeTag(encKey, authKey, data) {
-        const tag = computeTag(polyval, true, authKey, data, AAD);
-        for (let i = 0; i < 12; i++)
-          tag[i] ^= nonce[i];
-        tag[15] &= 127;
-        const t32 = u322(tag);
-        swap32IfBE2(t32);
-        let s0 = t32[0], s1 = t32[1], s2 = t32[2], s3 = t32[3];
-        ({ s0, s1, s2, s3 } = encrypt(encKey, s0, s1, s2, s3));
-        t32[0] = s0, t32[1] = s1, t32[2] = s2, t32[3] = s3;
-        swap32IfBE2(t32);
-        return tag;
-      }
-      function processSiv(encKey, tag, input) {
-        let block = copyBytes2(tag);
-        block[15] |= 128;
-        const res = ctr32(encKey, true, block, input);
-        clean2(block);
-        return res;
-      }
-      return {
-        encrypt(plaintext) {
-          PLAIN_LIMIT(plaintext.length);
-          const { encKey, authKey } = deriveKeys();
-          const tag = _computeTag(encKey, authKey, plaintext);
-          const toClean = [encKey, authKey, tag];
-          if (!isAligned32(plaintext))
-            toClean.push(plaintext = copyBytes2(plaintext));
-          const out = new Uint8Array(plaintext.length + tagLength);
-          out.set(tag, plaintext.length);
-          out.set(processSiv(encKey, tag, plaintext));
-          clean2(...toClean);
-          return out;
-        },
-        decrypt(ciphertext) {
-          CIPHER_LIMIT(ciphertext.length);
-          const tag = ciphertext.subarray(-tagLength);
-          const { encKey, authKey } = deriveKeys();
-          const toClean = [encKey, authKey];
-          if (!isAligned32(ciphertext))
-            toClean.push(ciphertext = copyBytes2(ciphertext));
-          const plaintext = processSiv(encKey, tag, ciphertext.subarray(0, -tagLength));
-          const expectedTag = _computeTag(encKey, authKey, plaintext);
-          toClean.push(expectedTag);
-          if (!equalBytes2(tag, expectedTag)) {
-            clean2(plaintext, ...toClean);
-            throw new Error("invalid polyval tag");
-          }
-          clean2(...toClean);
-          return plaintext;
-        }
-      };
-    });
-    AESW = {
-      /*
-      High-level pseudocode:
-      ```
-      A: u64 = IV
-      out = []
-      for (let i=0, ctr = 0; i<6; i++) {
-        for (const chunk of chunks(plaintext, 8)) {
-          A ^= swapEndianess(ctr++)
-          [A, res] = chunks(encrypt(A || chunk), 8);
-          out ||= res
-        }
-      }
-      out = A || out
-      ```
-      Decrypt is the same, but reversed.
-      */
-      encrypt(kek, out) {
-        if (out.length >= 2 ** 32)
-          throw new Error("plaintext should be less than 4gb");
-        const xk = expandKeyLE(kek);
-        if (out.length === 16)
-          encryptBlock(xk, out);
-        else {
-          const o32 = u322(out);
-          swap32IfBE2(o32);
-          let a0 = o32[0], a1 = o32[1];
-          for (let j = 0, ctr2 = 1; j < 6; j++) {
-            for (let pos = 2; pos < o32.length; pos += 2, ctr2++) {
-              const { s0, s1, s2, s3 } = encrypt(xk, a0, a1, o32[pos], o32[pos + 1]);
-              a0 = s0, a1 = s1 ^ byteSwap2(ctr2), o32[pos] = s2, o32[pos + 1] = s3;
-            }
-          }
-          o32[0] = a0, o32[1] = a1;
-          swap32IfBE2(o32);
-        }
-        xk.fill(0);
-      },
-      decrypt(kek, out) {
-        if (out.length - 8 >= 2 ** 32)
-          throw new Error("ciphertext should be less than 4gb");
-        const xk = expandKeyDecLE(kek);
-        const chunks = out.length / 8 - 1;
-        if (chunks === 1)
-          decryptBlock(xk, out);
-        else {
-          const o32 = u322(out);
-          swap32IfBE2(o32);
-          let a0 = o32[0], a1 = o32[1];
-          for (let j = 0, ctr2 = chunks * 6; j < 6; j++) {
-            for (let pos = chunks * 2; pos >= 1; pos -= 2, ctr2--) {
-              a1 ^= byteSwap2(ctr2);
-              const { s0, s1, s2, s3 } = decrypt(xk, a0, a1, o32[pos], o32[pos + 1]);
-              a0 = s0, a1 = s1, o32[pos] = s2, o32[pos + 1] = s3;
-            }
-          }
-          o32[0] = a0, o32[1] = a1;
-          swap32IfBE2(o32);
-        }
-        xk.fill(0);
-      }
-    };
-    AESKW_IV = /* @__PURE__ */ new Uint8Array(8).fill(166);
-    aeskw = /* @__PURE__ */ wrapCipher({ blockSize: 8 }, (kek) => ({
-      encrypt(plaintext) {
-        if (!plaintext.length || plaintext.length % 8 !== 0)
-          throw new Error("invalid plaintext length");
-        if (plaintext.length === 8)
-          throw new Error("8-byte keys not allowed, use AESKWP");
-        const out = concatBytes2(AESKW_IV, plaintext);
-        AESW.encrypt(kek, out);
-        return out;
-      },
-      decrypt(ciphertext) {
-        if (ciphertext.length % 8 !== 0 || ciphertext.length < 3 * 8)
-          throw new Error("invalid ciphertext length");
-        const out = copyBytes2(ciphertext);
-        AESW.decrypt(kek, out);
-        if (!equalBytes2(out.subarray(0, 8), AESKW_IV))
-          throw new Error("integrity check failed");
-        out.subarray(0, 8).fill(0);
-        return out.subarray(8);
-      }
-    }));
-    AESKWP_IV = 2790873510;
-    aeskwp = /* @__PURE__ */ wrapCipher({ blockSize: 8 }, (kek) => ({
-      encrypt(plaintext) {
-        if (!plaintext.length)
-          throw new Error("invalid plaintext length");
-        const padded = Math.ceil(plaintext.length / 8) * 8;
-        const out = new Uint8Array(8 + padded);
-        out.set(plaintext, 8);
-        const out32 = u322(out);
-        out32[0] = swap8IfBE(AESKWP_IV);
-        out32[1] = swap8IfBE(byteSwap2(plaintext.length));
-        AESW.encrypt(kek, out);
-        return out;
-      },
-      decrypt(ciphertext) {
-        if (ciphertext.length < 16)
-          throw new Error("invalid ciphertext length");
-        const out = copyBytes2(ciphertext);
-        const o32 = u322(out);
-        AESW.decrypt(kek, out);
-        const len = byteSwap2(swap8IfBE(o32[1])) >>> 0;
-        const padded = Math.ceil(len / 8) * 8;
-        if (swap8IfBE(o32[0]) !== AESKWP_IV || out.length - 8 !== padded)
-          throw new Error("integrity check failed");
-        for (let i = len; i < padded; i++)
-          if (out[8 + i] !== 0)
-            throw new Error("integrity check failed");
-        out.subarray(0, 8).fill(0);
-        return out.subarray(8, 8 + len);
-      }
-    }));
-    _AesCtrDRBG = class {
-      constructor(keyLen, seed, personalization) {
-        __publicField(this, "blockLen");
-        __publicField(this, "key");
-        __publicField(this, "nonce");
-        __publicField(this, "state");
-        __publicField(this, "reseedCnt");
-        __publicField(this, "destroyed", false);
-        this.blockLen = ctr.blockSize;
-        const keyLenBytes = keyLen / 8;
-        const nonceLen = 16;
-        this.state = new Uint8Array(keyLenBytes + nonceLen);
-        this.key = this.state.subarray(0, keyLenBytes);
-        this.nonce = this.state.subarray(keyLenBytes, keyLenBytes + nonceLen);
-        this.reseedCnt = 1;
-        incBytes(this.nonce, false, 1);
-        this.addEntropy(seed, personalization);
-      }
-      update(data) {
-        ctr(this.key, this.nonce).encrypt(new Uint8Array(this.state.length), this.state);
-        if (data) {
-          abytes2(data);
-          for (let i = 0; i < data.length; i++)
-            this.state[i] ^= data[i];
-        }
-        incBytes(this.nonce, false, 1);
-      }
-      // Optional `info` is additional input XORed into the reseed block and is
-      // limited to the internal state width.
-      addEntropy(seed, info) {
-        if (this.destroyed)
-          throw new Error("cannot use destroyed DRBG");
-        abytes2(seed, this.state.length, "seed");
-        const _seed = seed.slice();
-        if (info) {
-          abytes2(info);
-          if (info.length > _seed.length)
-            throw new Error("info length is too big");
-          for (let i = 0; i < info.length; i++)
-            _seed[i] ^= info[i];
-        }
-        this.update(_seed);
-        _seed.fill(0);
-        this.reseedCnt = 1;
-      }
-      // Optional `info` is additional input for the pre/post-update steps; bytes
-      // SP 800-90A Rev. 1 CTR_DRBG without a derivation function limits
-      // additional_input to seedlen, which is exactly this internal state width.
-      randomBytes(len, info) {
-        if (this.destroyed)
-          throw new Error("cannot use destroyed DRBG");
-        anumber2(len);
-        if (len > 2 ** 16)
-          throw new Error("requested output is too big");
-        if (this.reseedCnt > 2 ** 48)
-          throw new Error("entropy exhausted");
-        if (info) {
-          abytes2(info);
-          if (info.length > this.state.length)
-            throw new Error("info length is too big");
-          this.update(info);
-        }
-        const res = new Uint8Array(len);
-        ctr(this.key, this.nonce).encrypt(res, res);
-        incBytes(this.nonce, false, Math.ceil(len / this.blockLen));
-        this.update(info);
-        this.reseedCnt++;
-        return res;
-      }
-      // Zeroes the current state and marks the instance destroyed. Fails closed:
-      // any later randomBytes()/addEntropy() throws instead of continuing from the
-      // zeroed state (which would make subsequent output the predictable zero-key stream).
-      clean() {
-        this.state.fill(0);
-        this.reseedCnt = 0;
-        this.destroyed = true;
-      }
-    };
-    createAesDrbg = (keyLen) => {
-      return (seed, personalization = void 0) => new _AesCtrDRBG(keyLen, seed, personalization);
-    };
-    rngAesCtrDrbg128 = /* @__PURE__ */ createAesDrbg(128);
-    rngAesCtrDrbg256 = /* @__PURE__ */ createAesDrbg(256);
-    _CMAC = class {
-      constructor(key) {
-        __publicField(this, "blockLen", BLOCK_SIZE2);
-        __publicField(this, "outputLen", BLOCK_SIZE2);
-        // CMAC can only decide between `K1` and `K2` once the true final block is known,
-        // so updates process older blocks eagerly but keep one pending block buffered.
-        __publicField(this, "buffer");
-        __publicField(this, "pos");
-        __publicField(this, "finished");
-        __publicField(this, "destroyed");
-        __publicField(this, "k1");
-        __publicField(this, "k2");
-        __publicField(this, "x");
-        __publicField(this, "x32");
-        __publicField(this, "xk");
-        abytes2(key);
-        validateKeyLength(key);
-        this.xk = expandKeyLE(key);
-        this.buffer = new Uint8Array(BLOCK_SIZE2);
-        this.pos = 0;
-        this.finished = false;
-        this.destroyed = false;
-        this.x = new Uint8Array(BLOCK_SIZE2);
-        this.x32 = u322(this.x);
-        const L = new Uint8Array(BLOCK_SIZE2);
-        encryptBlock(this.xk, L);
-        this.k1 = dbl(L);
-        this.k2 = dbl(new Uint8Array(this.k1));
-      }
-      // Consumes 16 bytes of `data` starting at `pos`; `pos` avoids a per-block
-      // subarray view allocation in update().
-      process(data, pos) {
-        const { x, x32, xk } = this;
-        for (let i = 0; i < BLOCK_SIZE2; i++)
-          x[i] ^= data[pos + i];
-        swap32IfBE2(x32);
-        const { s0, s1, s2, s3 } = encrypt(xk, x32[0], x32[1], x32[2], x32[3]);
-        x32[0] = s0, x32[1] = s1, x32[2] = s2, x32[3] = s3;
-        swap32IfBE2(x32);
-      }
-      update(data) {
-        aexists2(this);
-        abytes2(data);
-        let pos = 0;
-        if (this.pos) {
-          const take = Math.min(BLOCK_SIZE2 - this.pos, data.length);
-          this.buffer.set(data.subarray(0, take), this.pos);
-          this.pos += take;
-          pos = take;
-          if (this.pos === BLOCK_SIZE2 && pos < data.length) {
-            this.process(this.buffer, 0);
-            this.pos = 0;
-          }
-        }
-        while (pos + BLOCK_SIZE2 < data.length) {
-          this.process(data, pos);
-          pos += BLOCK_SIZE2;
-        }
-        if (pos < data.length) {
-          this.buffer.set(data.subarray(pos), 0);
-          this.pos = data.length - pos;
-        }
-        return this;
-      }
-      // See {@link https://www.rfc-editor.org/rfc/rfc4493.html#section-2.4 | RFC 4493 Section 2.4}.
-      digestInto(out) {
-        aexists2(this);
-        aoutput32(out, this);
-        this.finished = true;
-        const view = out.subarray(0, this.outputLen);
-        let last = new Uint8Array(BLOCK_SIZE2);
-        if (this.pos === BLOCK_SIZE2) {
-          last.set(this.buffer);
-          xorBlock(last, this.k1);
-        } else {
-          last.set(this.buffer.subarray(0, this.pos));
-          last[this.pos] = 128;
-          xorBlock(last, this.k2);
-        }
-        view.set(this.x);
-        xorBlock(view, last);
-        encryptBlock(this.xk, view);
-        clean2(last);
-      }
-      digest() {
-        const { buffer, outputLen } = this;
-        this.digestInto(buffer);
-        const res = buffer.slice(0, outputLen);
-        this.destroy();
-        return res;
-      }
-      destroy() {
-        const { buffer, destroyed, x, xk, k1, k2 } = this;
-        if (destroyed)
-          return;
-        this.destroyed = true;
-        clean2(buffer, x, xk, k1, k2);
-      }
-    };
-    cmac = /* @__PURE__ */ wrapMacConstructor(16, (key) => new _CMAC(key));
-    siv = () => {
-      throw new Error('"siv" from v1 is now "gcmsiv"');
-    };
-    aessiv2 = /* @__PURE__ */ wrapCipher({ blockSize: 16, tagLength: 16, withAAD: true }, function aessiv3(key, ...AAD) {
-      const PLAIN_LIMIT = limit("plaintext", 0, 2 ** 132);
-      const CIPHER_LIMIT = limit("ciphertext", 16, 2 ** 132 + 16);
-      if (AAD.length > 126) {
-        throw new Error('"AAD" expected <= 126 items');
-      }
-      AAD.forEach((aad) => abytes2(aad));
-      abytes2(key);
-      if (![32, 48, 64].includes(key.length))
-        throw new Error('"aes key" expected Uint8Array of length 32/48/64, got length=' + key.length);
-      const k1 = key.subarray(0, key.length / 2);
-      const k2 = key.subarray(key.length / 2);
-      return {
-        // {@link https://datatracker.ietf.org/doc/html/rfc5297.html#section-2.6 | RFC 5297 Section 2.6}
-        encrypt(plaintext) {
-          PLAIN_LIMIT(plaintext.length);
-          const v = s2v(k1, [...AAD, plaintext]);
-          const q = Uint8Array.from(v);
-          q[8] &= 127;
-          q[12] &= 127;
-          const c = ctr(k2, q).encrypt(plaintext);
-          return concatBytes2(v, c);
-        },
-        // {@link https://datatracker.ietf.org/doc/html/rfc5297.html#section-2.7 | RFC 5297 Section 2.7}
-        decrypt(ciphertext) {
-          CIPHER_LIMIT(ciphertext.length);
-          const v = ciphertext.subarray(0, BLOCK_SIZE2);
-          const c = ciphertext.subarray(BLOCK_SIZE2);
-          const q = Uint8Array.from(v);
-          q[8] &= 127;
-          q[12] &= 127;
-          const p = ctr(k2, q).decrypt(c);
-          const t = s2v(k1, [...AAD, p]);
-          if (equalBytes2(t, v)) {
-            return p;
-          } else {
-            clean2(p);
-            throw new Error("invalid siv tag");
-          }
-        }
-      };
-    });
-    unsafe = /* @__PURE__ */ Object.freeze({
-      expandKeyLE,
-      expandKeyDecLE,
-      encrypt,
-      decrypt,
-      encryptBlock,
-      decryptBlock,
-      ctrCounter,
-      ctr32,
-      dbl,
-      xorBlock,
-      xorend,
-      s2v
-    });
-    __TESTS = /* @__PURE__ */ Object.freeze({
-      incBytes
-    });
-  }
-});
-
-// node_modules/@noble/hashes/_md.js
-function Chi(a, b, c) {
-  return a & b ^ ~a & c;
-}
-function Maj(a, b, c) {
-  return a & b ^ a & c ^ b & c;
-}
-var HashMD, SHA256_IV, SHA224_IV, SHA384_IV, SHA512_IV;
-var init_md = __esm({
-  "node_modules/@noble/hashes/_md.js"() {
-    init_u64();
-    init_utils();
-    HashMD = class {
-      constructor(blockLen, outputLen, padOffset, isLE3) {
-        __publicField(this, "blockLen");
-        __publicField(this, "outputLen");
-        __publicField(this, "canXOF", false);
-        __publicField(this, "padOffset");
-        __publicField(this, "isLE");
-        // For partial updates less than block size
-        __publicField(this, "buffer");
-        __publicField(this, "view");
-        __publicField(this, "finished", false);
-        __publicField(this, "length", 0);
-        __publicField(this, "pos", 0);
-        __publicField(this, "destroyed", false);
-        this.blockLen = blockLen;
-        this.outputLen = outputLen;
-        this.padOffset = padOffset;
-        this.isLE = isLE3;
-        this.buffer = new Uint8Array(blockLen);
-        this.view = createView(this.buffer);
-      }
-      update(data) {
-        aexists(this);
-        abytes(data);
-        const { view, buffer, blockLen } = this;
-        const len = data.length;
-        let processed = false;
-        for (let pos = 0; pos < len; ) {
-          const take = Math.min(blockLen - this.pos, len - pos);
-          if (take === blockLen) {
-            const dataView = createView(data);
-            for (; blockLen <= len - pos; pos += blockLen)
-              this.process(dataView, pos);
-            processed = true;
-            continue;
-          }
-          buffer.set(pos === 0 && take === len ? data : data.subarray(pos, pos + take), this.pos);
-          this.pos += take;
-          pos += take;
-          if (this.pos === blockLen) {
-            this.process(view, 0);
-            this.pos = 0;
-            processed = true;
-          }
-        }
-        this.length += data.length;
-        if (processed)
-          this.roundClean();
-        return this;
-      }
-      digestInto(out) {
-        aexists(this);
-        aoutput(out, this);
-        this.finished = true;
-        const { buffer, view, blockLen, isLE: isLE3 } = this;
-        let { pos } = this;
-        buffer[pos++] = 128;
-        buffer.fill(0, pos);
-        if (this.padOffset > blockLen - pos) {
-          this.process(view, 0);
-          buffer.fill(0);
-        }
-        setU64FromNum(view, blockLen - 8, this.length * 8, isLE3);
-        this.process(view, 0);
-        this.roundClean();
-        const oview = out === buffer ? view : createView(out);
-        const len = this.outputLen;
-        const outLen = len / 4;
-        const state = this.get();
-        if (len % 4 || outLen > state.length)
-          throw new Error("invalid outputLen");
-        for (let i = 0; i < outLen; i++)
-          oview.setUint32(4 * i, state[i], isLE3);
-      }
-      digest() {
-        const { buffer, outputLen } = this;
-        this.digestInto(buffer);
-        const res = buffer.slice(0, outputLen);
-        this.destroy();
-        return res;
-      }
-      _cloneIntoMeta(to) {
-        const { buffer, length, finished, destroyed, pos } = this;
-        to.destroyed = destroyed;
-        to.finished = finished;
-        to.length = length;
-        to.pos = pos;
-        if (pos)
-          to.buffer.set(buffer);
-        return to;
-      }
-      clone() {
-        return this._cloneInto();
-      }
-    };
-    SHA256_IV = /* @__PURE__ */ Uint32Array.from([
-      1779033703,
-      3144134277,
-      1013904242,
-      2773480762,
-      1359893119,
-      2600822924,
-      528734635,
-      1541459225
-    ]);
-    SHA224_IV = /* @__PURE__ */ Uint32Array.from([
-      3238371032,
-      914150663,
-      812702999,
-      4144912697,
-      4290775857,
-      1750603025,
-      1694076839,
-      3204075428
-    ]);
-    SHA384_IV = /* @__PURE__ */ Uint32Array.from([
-      3418070365,
-      3238371032,
-      1654270250,
-      914150663,
-      2438529370,
-      812702999,
-      355462360,
-      4144912697,
-      1731405415,
-      4290775857,
-      2394180231,
-      1750603025,
-      3675008525,
-      1694076839,
-      1203062813,
-      3204075428
-    ]);
-    SHA512_IV = /* @__PURE__ */ Uint32Array.from([
-      1779033703,
-      4089235720,
-      3144134277,
-      2227873595,
-      1013904242,
-      4271175723,
-      2773480762,
-      1595750129,
-      1359893119,
-      2917565137,
-      2600822924,
-      725511199,
-      528734635,
-      4215389547,
-      1541459225,
-      327033209
-    ]);
-  }
-});
-
-// node_modules/@noble/hashes/sha2.js
-var sha2_exports = {};
-__export(sha2_exports, {
-  _SHA224: () => _SHA224,
-  _SHA256: () => _SHA256,
-  _SHA384: () => _SHA384,
-  _SHA512: () => _SHA512,
-  _SHA512_224: () => _SHA512_224,
-  _SHA512_256: () => _SHA512_256,
-  sha224: () => sha224,
-  sha256: () => sha256,
-  sha384: () => sha384,
-  sha512: () => sha512,
-  sha512_224: () => sha512_224,
-  sha512_256: () => sha512_256
-});
-var SHA256_K, SHA256_W, SHA2_32B, _SHA256, _SHA224, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, _SHA384, T224_IV, T256_IV, _SHA512_224, _SHA512_256, sha256, sha224, sha512, sha384, sha512_256, sha512_224;
-var init_sha2 = __esm({
-  "node_modules/@noble/hashes/sha2.js"() {
-    init_md();
-    init_u64();
-    init_utils();
-    SHA256_K = /* @__PURE__ */ Uint32Array.from([
-      1116352408,
-      1899447441,
-      3049323471,
-      3921009573,
-      961987163,
-      1508970993,
-      2453635748,
-      2870763221,
-      3624381080,
-      310598401,
-      607225278,
-      1426881987,
-      1925078388,
-      2162078206,
-      2614888103,
-      3248222580,
-      3835390401,
-      4022224774,
-      264347078,
-      604807628,
-      770255983,
-      1249150122,
-      1555081692,
-      1996064986,
-      2554220882,
-      2821834349,
-      2952996808,
-      3210313671,
-      3336571891,
-      3584528711,
-      113926993,
-      338241895,
-      666307205,
-      773529912,
-      1294757372,
-      1396182291,
-      1695183700,
-      1986661051,
-      2177026350,
-      2456956037,
-      2730485921,
-      2820302411,
-      3259730800,
-      3345764771,
-      3516065817,
-      3600352804,
-      4094571909,
-      275423344,
-      430227734,
-      506948616,
-      659060556,
-      883997877,
-      958139571,
-      1322822218,
-      1537002063,
-      1747873779,
-      1955562222,
-      2024104815,
-      2227730452,
-      2361852424,
-      2428436474,
-      2756734187,
-      3204031479,
-      3329325298
-    ]);
-    SHA256_W = /* @__PURE__ */ new Uint32Array(64);
-    SHA2_32B = class extends HashMD {
-      constructor(outputLen, IV) {
-        super(64, outputLen, 8, false);
-        // We cannot use array here since array allows indexing by variable
-        // which means optimizer/compiler cannot use registers.
-        // Numeric initializers matter: starting the fields as `undefined` changes
-        // V8's field representation and makes sha256 3x slower (measured).
-        __publicField(this, "A", 0);
-        __publicField(this, "B", 0);
-        __publicField(this, "C", 0);
-        __publicField(this, "D", 0);
-        __publicField(this, "E", 0);
-        __publicField(this, "F", 0);
-        __publicField(this, "G", 0);
-        __publicField(this, "H", 0);
-        this.A = IV[0] | 0;
-        this.B = IV[1] | 0;
-        this.C = IV[2] | 0;
-        this.D = IV[3] | 0;
-        this.E = IV[4] | 0;
-        this.F = IV[5] | 0;
-        this.G = IV[6] | 0;
-        this.H = IV[7] | 0;
-      }
-      get() {
-        const { A, B: B2, C, D, E, F: F2, G, H } = this;
-        return [A, B2, C, D, E, F2, G, H];
-      }
-      // prettier-ignore
-      set(A, B2, C, D, E, F2, G, H) {
-        this.A = A | 0;
-        this.B = B2 | 0;
-        this.C = C | 0;
-        this.D = D | 0;
-        this.E = E | 0;
-        this.F = F2 | 0;
-        this.G = G | 0;
-        this.H = H | 0;
-      }
-      _cloneInto(to) {
-        (to || (to = new this.constructor())).set(...this.get());
-        return this._cloneIntoMeta(to);
-      }
-      process(view, offset) {
-        for (let i = 0; i < 16; i++, offset += 4)
-          SHA256_W[i] = view.getUint32(offset, false);
-        for (let i = 16; i < 64; i++) {
-          const W15 = SHA256_W[i - 15];
-          const W2 = SHA256_W[i - 2];
-          const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ W15 >>> 3;
-          const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ W2 >>> 10;
-          SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
-        }
-        let { A, B: B2, C, D, E, F: F2, G, H } = this;
-        for (let i = 0; i < 64; i++) {
-          const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
-          const T1 = H + sigma1 + Chi(E, F2, G) + SHA256_K[i] + SHA256_W[i] | 0;
-          const sigma0 = rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22);
-          const T2 = sigma0 + Maj(A, B2, C) | 0;
-          H = G;
-          G = F2;
-          F2 = E;
-          E = D + T1 | 0;
-          D = C;
-          C = B2;
-          B2 = A;
-          A = T1 + T2 | 0;
-        }
-        A = A + this.A | 0;
-        B2 = B2 + this.B | 0;
-        C = C + this.C | 0;
-        D = D + this.D | 0;
-        E = E + this.E | 0;
-        F2 = F2 + this.F | 0;
-        G = G + this.G | 0;
-        H = H + this.H | 0;
-        this.set(A, B2, C, D, E, F2, G, H);
-      }
-      roundClean() {
-        clean(SHA256_W);
-      }
-      destroy() {
-        this.destroyed = true;
-        this.set(0, 0, 0, 0, 0, 0, 0, 0);
-        clean(this.buffer);
-      }
-    };
-    _SHA256 = class extends SHA2_32B {
-      constructor() {
-        super(32, SHA256_IV);
-      }
-    };
-    _SHA224 = class extends SHA2_32B {
-      constructor() {
-        super(28, SHA224_IV);
-      }
-    };
-    K512 = /* @__PURE__ */ (() => split([
-      "0x428a2f98d728ae22",
-      "0x7137449123ef65cd",
-      "0xb5c0fbcfec4d3b2f",
-      "0xe9b5dba58189dbbc",
-      "0x3956c25bf348b538",
-      "0x59f111f1b605d019",
-      "0x923f82a4af194f9b",
-      "0xab1c5ed5da6d8118",
-      "0xd807aa98a3030242",
-      "0x12835b0145706fbe",
-      "0x243185be4ee4b28c",
-      "0x550c7dc3d5ffb4e2",
-      "0x72be5d74f27b896f",
-      "0x80deb1fe3b1696b1",
-      "0x9bdc06a725c71235",
-      "0xc19bf174cf692694",
-      "0xe49b69c19ef14ad2",
-      "0xefbe4786384f25e3",
-      "0x0fc19dc68b8cd5b5",
-      "0x240ca1cc77ac9c65",
-      "0x2de92c6f592b0275",
-      "0x4a7484aa6ea6e483",
-      "0x5cb0a9dcbd41fbd4",
-      "0x76f988da831153b5",
-      "0x983e5152ee66dfab",
-      "0xa831c66d2db43210",
-      "0xb00327c898fb213f",
-      "0xbf597fc7beef0ee4",
-      "0xc6e00bf33da88fc2",
-      "0xd5a79147930aa725",
-      "0x06ca6351e003826f",
-      "0x142929670a0e6e70",
-      "0x27b70a8546d22ffc",
-      "0x2e1b21385c26c926",
-      "0x4d2c6dfc5ac42aed",
-      "0x53380d139d95b3df",
-      "0x650a73548baf63de",
-      "0x766a0abb3c77b2a8",
-      "0x81c2c92e47edaee6",
-      "0x92722c851482353b",
-      "0xa2bfe8a14cf10364",
-      "0xa81a664bbc423001",
-      "0xc24b8b70d0f89791",
-      "0xc76c51a30654be30",
-      "0xd192e819d6ef5218",
-      "0xd69906245565a910",
-      "0xf40e35855771202a",
-      "0x106aa07032bbd1b8",
-      "0x19a4c116b8d2d0c8",
-      "0x1e376c085141ab53",
-      "0x2748774cdf8eeb99",
-      "0x34b0bcb5e19b48a8",
-      "0x391c0cb3c5c95a63",
-      "0x4ed8aa4ae3418acb",
-      "0x5b9cca4f7763e373",
-      "0x682e6ff3d6b2b8a3",
-      "0x748f82ee5defb2fc",
-      "0x78a5636f43172f60",
-      "0x84c87814a1f0ab72",
-      "0x8cc702081a6439ec",
-      "0x90befffa23631e28",
-      "0xa4506cebde82bde9",
-      "0xbef9a3f7b2c67915",
-      "0xc67178f2e372532b",
-      "0xca273eceea26619c",
-      "0xd186b8c721c0c207",
-      "0xeada7dd6cde0eb1e",
-      "0xf57d4f7fee6ed178",
-      "0x06f067aa72176fba",
-      "0x0a637dc5a2c898a6",
-      "0x113f9804bef90dae",
-      "0x1b710b35131c471b",
-      "0x28db77f523047d84",
-      "0x32caab7b40c72493",
-      "0x3c9ebe0a15c9bebc",
-      "0x431d67c49c100d4c",
-      "0x4cc5d4becb3e42b6",
-      "0x597f299cfc657e2a",
-      "0x5fcb6fab3ad6faec",
-      "0x6c44198c4a475817"
-    ].map((n) => BigInt(n))))();
-    SHA512_Kh = /* @__PURE__ */ (() => K512[0])();
-    SHA512_Kl = /* @__PURE__ */ (() => K512[1])();
-    SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
-    SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
-    SHA2_64B = class extends HashMD {
-      constructor(outputLen, IV) {
-        super(128, outputLen, 16, false);
-        // We cannot use array here since array allows indexing by variable
-        // which means optimizer/compiler cannot use registers.
-        // h -- high 32 bits, l -- low 32 bits
-        // Numeric initializers matter: starting the fields as `undefined` changes
-        // V8's field representation and slows hashing down (measured on sha256).
-        __publicField(this, "Ah", 0);
-        __publicField(this, "Al", 0);
-        __publicField(this, "Bh", 0);
-        __publicField(this, "Bl", 0);
-        __publicField(this, "Ch", 0);
-        __publicField(this, "Cl", 0);
-        __publicField(this, "Dh", 0);
-        __publicField(this, "Dl", 0);
-        __publicField(this, "Eh", 0);
-        __publicField(this, "El", 0);
-        __publicField(this, "Fh", 0);
-        __publicField(this, "Fl", 0);
-        __publicField(this, "Gh", 0);
-        __publicField(this, "Gl", 0);
-        __publicField(this, "Hh", 0);
-        __publicField(this, "Hl", 0);
-        this.Ah = IV[0] | 0;
-        this.Al = IV[1] | 0;
-        this.Bh = IV[2] | 0;
-        this.Bl = IV[3] | 0;
-        this.Ch = IV[4] | 0;
-        this.Cl = IV[5] | 0;
-        this.Dh = IV[6] | 0;
-        this.Dl = IV[7] | 0;
-        this.Eh = IV[8] | 0;
-        this.El = IV[9] | 0;
-        this.Fh = IV[10] | 0;
-        this.Fl = IV[11] | 0;
-        this.Gh = IV[12] | 0;
-        this.Gl = IV[13] | 0;
-        this.Hh = IV[14] | 0;
-        this.Hl = IV[15] | 0;
-      }
-      // prettier-ignore
-      get() {
-        const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
-        return [Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl];
-      }
-      // prettier-ignore
-      set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
-        this.Ah = Ah | 0;
-        this.Al = Al | 0;
-        this.Bh = Bh | 0;
-        this.Bl = Bl | 0;
-        this.Ch = Ch | 0;
-        this.Cl = Cl | 0;
-        this.Dh = Dh | 0;
-        this.Dl = Dl | 0;
-        this.Eh = Eh | 0;
-        this.El = El | 0;
-        this.Fh = Fh | 0;
-        this.Fl = Fl | 0;
-        this.Gh = Gh | 0;
-        this.Gl = Gl | 0;
-        this.Hh = Hh | 0;
-        this.Hl = Hl | 0;
-      }
-      _cloneInto(to) {
-        (to || (to = new this.constructor())).set(...this.get());
-        return this._cloneIntoMeta(to);
-      }
-      process(view, offset) {
-        for (let i = 0; i < 16; i++, offset += 4) {
-          SHA512_W_H[i] = view.getUint32(offset);
-          SHA512_W_L[i] = view.getUint32(offset += 4);
-        }
-        for (let i = 16; i < 80; i++) {
-          const W15h = SHA512_W_H[i - 15] | 0;
-          const W15l = SHA512_W_L[i - 15] | 0;
-          const s0h = rotrSH(W15h, W15l, 1) ^ rotrSH(W15h, W15l, 8) ^ shrSH(W15h, W15l, 7);
-          const s0l = rotrSL(W15h, W15l, 1) ^ rotrSL(W15h, W15l, 8) ^ shrSL(W15h, W15l, 7);
-          const W2h = SHA512_W_H[i - 2] | 0;
-          const W2l = SHA512_W_L[i - 2] | 0;
-          const s1h = rotrSH(W2h, W2l, 19) ^ rotrBH(W2h, W2l, 61) ^ shrSH(W2h, W2l, 6);
-          const s1l = rotrSL(W2h, W2l, 19) ^ rotrBL(W2h, W2l, 61) ^ shrSL(W2h, W2l, 6);
-          const SUMl = add4L(s0l, s1l, SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
-          const SUMh = add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
-          SHA512_W_H[i] = SUMh | 0;
-          SHA512_W_L[i] = SUMl | 0;
-        }
-        let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
-        for (let i = 0; i < 80; i++) {
-          const sigma1h = rotrSH(Eh, El, 14) ^ rotrSH(Eh, El, 18) ^ rotrBH(Eh, El, 41);
-          const sigma1l = rotrSL(Eh, El, 14) ^ rotrSL(Eh, El, 18) ^ rotrBL(Eh, El, 41);
-          const CHIh = Eh & Fh ^ ~Eh & Gh;
-          const CHIl = El & Fl ^ ~El & Gl;
-          const T1ll = add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
-          const T1h = add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
-          const T1l = T1ll | 0;
-          const sigma0h = rotrSH(Ah, Al, 28) ^ rotrBH(Ah, Al, 34) ^ rotrBH(Ah, Al, 39);
-          const sigma0l = rotrSL(Ah, Al, 28) ^ rotrBL(Ah, Al, 34) ^ rotrBL(Ah, Al, 39);
-          const MAJh = Ah & Bh ^ Ah & Ch ^ Bh & Ch;
-          const MAJl = Al & Bl ^ Al & Cl ^ Bl & Cl;
-          Hh = Gh | 0;
-          Hl = Gl | 0;
-          Gh = Fh | 0;
-          Gl = Fl | 0;
-          Fh = Eh | 0;
-          Fl = El | 0;
-          ({ h: Eh, l: El } = add(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
-          Dh = Ch | 0;
-          Dl = Cl | 0;
-          Ch = Bh | 0;
-          Cl = Bl | 0;
-          Bh = Ah | 0;
-          Bl = Al | 0;
-          const All = add3L(T1l, sigma0l, MAJl);
-          Ah = add3H(All, T1h, sigma0h, MAJh);
-          Al = All | 0;
-        }
-        ({ h: Ah, l: Al } = add(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
-        ({ h: Bh, l: Bl } = add(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
-        ({ h: Ch, l: Cl } = add(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
-        ({ h: Dh, l: Dl } = add(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
-        ({ h: Eh, l: El } = add(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
-        ({ h: Fh, l: Fl } = add(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
-        ({ h: Gh, l: Gl } = add(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
-        ({ h: Hh, l: Hl } = add(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
-        this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
-      }
-      roundClean() {
-        clean(SHA512_W_H, SHA512_W_L);
-      }
-      destroy() {
-        this.destroyed = true;
-        clean(this.buffer);
-        this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-      }
-    };
-    _SHA512 = class extends SHA2_64B {
-      constructor() {
-        super(64, SHA512_IV);
-      }
-    };
-    _SHA384 = class extends SHA2_64B {
-      constructor() {
-        super(48, SHA384_IV);
-      }
-    };
-    T224_IV = /* @__PURE__ */ Uint32Array.from([
-      2352822216,
-      424955298,
-      1944164710,
-      2312950998,
-      502970286,
-      855612546,
-      1738396948,
-      1479516111,
-      258812777,
-      2077511080,
-      2011393907,
-      79989058,
-      1067287976,
-      1780299464,
-      286451373,
-      2446758561
-    ]);
-    T256_IV = /* @__PURE__ */ Uint32Array.from([
-      573645204,
-      4230739756,
-      2673172387,
-      3360449730,
-      596883563,
-      1867755857,
-      2520282905,
-      1497426621,
-      2519219938,
-      2827943907,
-      3193839141,
-      1401305490,
-      721525244,
-      746961066,
-      246885852,
-      2177182882
-    ]);
-    _SHA512_224 = class extends SHA2_64B {
-      constructor() {
-        super(28, T224_IV);
-      }
-    };
-    _SHA512_256 = class extends SHA2_64B {
-      constructor() {
-        super(32, T256_IV);
-      }
-    };
-    sha256 = /* @__PURE__ */ createHasher(
-      () => new _SHA256(),
-      /* @__PURE__ */ oidNist(1)
-    );
-    sha224 = /* @__PURE__ */ createHasher(
-      () => new _SHA224(),
-      /* @__PURE__ */ oidNist(4)
-    );
-    sha512 = /* @__PURE__ */ createHasher(
-      () => new _SHA512(),
-      /* @__PURE__ */ oidNist(3)
-    );
-    sha384 = /* @__PURE__ */ createHasher(
-      () => new _SHA384(),
-      /* @__PURE__ */ oidNist(2)
-    );
-    sha512_256 = /* @__PURE__ */ createHasher(
-      () => new _SHA512_256(),
-      /* @__PURE__ */ oidNist(6)
-    );
-    sha512_224 = /* @__PURE__ */ createHasher(
-      () => new _SHA512_224(),
-      /* @__PURE__ */ oidNist(5)
-    );
-  }
-});
-
-// node_modules/@noble/hashes/hmac.js
-var _HMAC, hmac;
-var init_hmac = __esm({
-  "node_modules/@noble/hashes/hmac.js"() {
-    init_utils();
-    _HMAC = class {
-      constructor(hash, key) {
-        __publicField(this, "oHash");
-        __publicField(this, "iHash");
-        __publicField(this, "blockLen");
-        __publicField(this, "outputLen");
-        __publicField(this, "canXOF", false);
-        __publicField(this, "finished", false);
-        __publicField(this, "destroyed", false);
-        ahash(hash);
-        abytes(key, void 0, "key");
-        this.iHash = hash.create();
-        if (typeof this.iHash.update !== "function")
-          throw new Error("expected Hash instance");
-        this.blockLen = this.iHash.blockLen;
-        this.outputLen = this.iHash.outputLen;
-        const blockLen = this.blockLen;
-        const pad = new Uint8Array(blockLen);
-        pad.set(key.length > blockLen ? hash.create().update(key).digest() : key);
-        for (let i = 0; i < pad.length; i++)
-          pad[i] ^= 54;
-        this.iHash.update(pad);
-        this.oHash = hash.create();
-        for (let i = 0; i < pad.length; i++)
-          pad[i] ^= 54 ^ 92;
-        this.oHash.update(pad);
-        clean(pad);
-      }
-      update(buf) {
-        aexists(this);
-        this.iHash.update(buf);
-        return this;
-      }
-      digestInto(out) {
-        aexists(this);
-        aoutput(out, this);
-        this.finished = true;
-        const buf = out.subarray(0, this.outputLen);
-        this.iHash.digestInto(buf);
-        this.oHash.update(buf);
-        this.oHash.digestInto(buf);
-        this.destroy();
-      }
-      digest() {
-        const out = new Uint8Array(this.oHash.outputLen);
-        this.digestInto(out);
-        return out;
-      }
-      _cloneInto(to) {
-        to || (to = Object.create(Object.getPrototypeOf(this), {}));
-        const { oHash, iHash, finished, destroyed, blockLen, outputLen, canXOF } = this;
-        to = to;
-        to.finished = finished;
-        to.destroyed = destroyed;
-        to.blockLen = blockLen;
-        to.outputLen = outputLen;
-        to.canXOF = canXOF;
-        to.oHash = oHash._cloneInto(to.oHash);
-        to.iHash = iHash._cloneInto(to.iHash);
-        return to;
-      }
-      clone() {
-        return this._cloneInto();
-      }
-      destroy() {
-        this.destroyed = true;
-        this.oHash.destroy();
-        this.iHash.destroy();
-      }
-    };
-    hmac = /* @__PURE__ */ (() => {
-      const hmac_ = ((hash, key, message) => new _HMAC(hash, key).update(message).digest());
-      hmac_.create = (hash, key) => new _HMAC(hash, key);
-      return hmac_;
-    })();
-  }
-});
-
-// node_modules/@noble/hashes/hkdf.js
-var hkdf_exports = {};
-__export(hkdf_exports, {
-  expand: () => expand,
-  extract: () => extract,
-  hkdf: () => hkdf
-});
-function extract(hash, ikm, salt) {
-  ahash(hash);
-  if (salt === void 0)
-    salt = new Uint8Array(hash.outputLen);
-  return hmac(hash, salt, ikm);
-}
-function expand(hash, prk, info, length = 32, _recycled) {
-  ahash(hash);
-  anumber(length, "length");
-  abytes(prk, void 0, "prk");
-  const olen = hash.outputLen;
-  if (prk.length < olen)
-    throw new Error('"prk" must be at least HashLen octets');
-  if (length > 255 * olen)
-    throw new Error("Length must be <= 255*HashLen");
-  const blocks = Math.ceil(length / olen);
-  if (info === void 0)
-    info = EMPTY_BUFFER;
-  else
-    abytes(info, void 0, "info");
-  if (!blocks) {
-    if (_recycled)
-      clean(prk);
-    return new Uint8Array();
-  }
-  const okm = _recycled && blocks === 1 ? prk : new Uint8Array(blocks * olen);
-  const { iHash, oHash } = hmac.create(hash, prk);
-  const T = _recycled ? prk : new Uint8Array(olen);
-  const worker = blocks > 1 ? _recycled?.iHash || hash.create() : void 0;
-  for (let counter = 0; counter < blocks - 1; counter++) {
-    HKDF_COUNTER[0] = counter + 1;
-    const iWork = iHash._cloneInto(worker);
-    if (counter)
-      iWork.update(T);
-    iWork.update(info).update(HKDF_COUNTER).digestInto(T);
-    oHash._cloneInto(worker).update(T).digestInto(T);
-    okm.set(T, olen * counter);
-  }
-  HKDF_COUNTER[0] = blocks;
-  if (blocks > 1)
-    iHash.update(T);
-  iHash.update(info).update(HKDF_COUNTER).digestInto(T);
-  oHash.update(T).digestInto(T);
-  okm.set(T, olen * (blocks - 1));
-  iHash.destroy();
-  oHash.destroy();
-  worker?.destroy();
-  if (T !== okm)
-    clean(T);
-  clean(HKDF_COUNTER);
-  if (length === okm.length)
-    return okm;
-  const res = okm.slice(0, length);
-  clean(okm);
-  return res;
-}
-var HKDF_COUNTER, EMPTY_BUFFER, hkdf;
-var init_hkdf = __esm({
-  "node_modules/@noble/hashes/hkdf.js"() {
-    init_hmac();
-    init_utils();
-    HKDF_COUNTER = /* @__PURE__ */ Uint8Array.of(0);
-    EMPTY_BUFFER = /* @__PURE__ */ Uint8Array.of();
-    hkdf = (hash, ikm, salt, info, length) => {
-      ahash(hash);
-      if (salt === void 0)
-        salt = new Uint8Array(hash.outputLen);
-      const HMAC = hmac.create(hash, salt).update(ikm);
-      return expand(hash, HMAC.digest(), info, length, HMAC);
-    };
+    module2.exports = { PQC, randomBytes: randomBytes3, equalBytes: equalBytes2 };
   }
 });
 
@@ -4265,16 +1860,71 @@ var init_hkdf = __esm({
 var require_config = __commonJS({
   "src/config.js"(exports2, module2) {
     "use strict";
-    var { KEY_STORE } = require_constants();
-    var field = (name) => "learning_" + name;
-    var load = (name) => BdApi.Data.load(KEY_STORE, field(name));
-    var save = (name, value) => BdApi.Data.save(KEY_STORE, field(name), value);
+    var { KEY_STORE, ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
+    var load = (name) => BdApi.Data.load(KEY_STORE, name);
+    var save = (name, value) => BdApi.Data.save(KEY_STORE, name, value);
     function initialize() {
       const version = load("config_version");
-      if (version != null && version !== 1) throw new Error("Unsupported Qcord learning configuration.");
-      if (version == null) save("config_version", 1);
+      if (version === 2) return;
+      if (version != null && version !== 1) throw new Error("Unsupported Qcord configuration.");
+      const { PQC } = require_pqc();
+      const raw = (key) => Buffer.from(key.bytes).toString("base64");
+      const oldPairs = load("learning_key_pairs") || load("key_pairs") || {};
+      const pairs = Object.fromEntries(Object.entries(oldPairs).map(([scheme, pair]) => [scheme, {
+        public_encaps: raw(PQC.createPublicKey(pair.public_key_spki_base64)),
+        private_decaps: raw(PQC.createPrivateKey(pair.private_key_pkcs8_base64))
+      }]));
+      const oldRecipients = load("learning_dm_partners") || load("dm_partners") || [];
+      const recipients = oldRecipients.map((row) => ({
+        channel_id: row.channel_id,
+        user_id: row.user_id,
+        public_encaps: raw(PQC.createPublicKey(row.public_key_spki_base64)),
+        encapsulations: []
+      }));
+      save("key_pairs", pairs);
+      save("recipients", recipients);
+      save("parameter_set", load("learning_parameter_set") || load("parameter_set") || ACTIVE_SCHEME2);
+      save("config_version", 2);
+      for (const key of ["learning_key_pairs", "learning_dm_partners", "learning_parameter_set", "learning_config_version", "learning_quantum_conversations", "dm_partners", "quantum_conversations"]) {
+        BdApi.Data.delete?.(KEY_STORE, key);
+      }
     }
     module2.exports = { load, save, initialize };
+  }
+});
+
+// src/packet.js
+var require_packet = __commonJS({
+  "src/packet.js"(exports2, module2) {
+    "use strict";
+    var { parameters: parameters2 } = require_parameters();
+    var { encode, decode } = require_mlkem();
+    var { MAX_DECODED_FILE_SIZE } = require_constants();
+    function fromCiphertext(ciphertext, scheme) {
+      const { k, du, dv, ciphertextBytes } = parameters2(scheme);
+      if (ciphertext.length !== ciphertextBytes) throw new Error("Invalid ML-KEM ciphertext length.");
+      const width = 32 * du;
+      return {
+        qcord_version: 4,
+        parameter_set: scheme,
+        u: Array.from({ length: k }, (_, i) => decode(ciphertext.slice(i * width, (i + 1) * width), du)),
+        v: decode(ciphertext.slice(k * width), dv)
+      };
+    }
+    function toCiphertext(file) {
+      if (!file || typeof file !== "object" || Array.isArray(file) || file.qcord_version !== 4) throw new Error("Expected a version-4 ML-KEM Qcord file.");
+      if (Object.keys(file).sort().join() !== "parameter_set,qcord_version,u,v") throw new Error("Unexpected Qcord file fields.");
+      const { k, du, dv } = parameters2(file.parameter_set);
+      const valid = (p, d) => Array.isArray(p) && p.length === 256 && p.every((x) => Number.isInteger(x) && x >= 0 && x < 2 ** d);
+      if (!Array.isArray(file.u) || file.u.length !== k || !file.u.every((p) => valid(p, du)) || !valid(file.v, dv)) throw new Error("Invalid compressed u or v coefficients.");
+      return Buffer.concat([...file.u.map((p) => Buffer.from(encode(p, du))), Buffer.from(encode(file.v, dv))]);
+    }
+    function parse(text) {
+      if (typeof text !== "string" || Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large or invalid.");
+      const packet = JSON.parse(text.replace(/^\uFEFF/, ""));
+      return { packet, ciphertext: toCiphertext(packet) };
+    }
+    module2.exports = { fromCiphertext, toCiphertext, parse };
   }
 });
 
@@ -4282,48 +1932,32 @@ var require_config = __commonJS({
 var require_messaging = __commonJS({
   "src/messaging.js"(exports2, module2) {
     "use strict";
-    var { PQC, randomBytes: randomBytes3 } = require_pqc();
-    var { gcm: gcm2 } = (init_aes(), __toCommonJS(aes_exports));
-    var { sha256: sha2562 } = (init_sha2(), __toCommonJS(sha2_exports));
-    var { hkdf: hkdf2 } = (init_hkdf(), __toCommonJS(hkdf_exports));
+    var { PQC, equalBytes: equalBytes2 } = require_pqc();
     var config2 = require_config();
     var { parameters: parameters2 } = require_parameters();
-    var bytes = (value) => Uint8Array.from(value);
-    var { ACTIVE_SCHEME: ACTIVE_SCHEME2, BASE64_RE, MAX_DECODED_FILE_SIZE: MAX_DECODED_FILE_SIZE2 } = require_constants();
-    module2.exports = class MessageCrypto {
+    var packet = require_packet();
+    var { ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
+    var raw = (key) => Buffer.from(key.bytes).toString("base64");
+    module2.exports = class Encapsulation {
       async generateKeys(scheme) {
-        if (!this.running || this.resetting) throw new Error("Enable Qcord first.");
+        if (!this.running) throw new Error("Enable Qcord first.");
         parameters2(scheme);
         if (this.keyPairs.has(scheme)) return this.keyPairs.get(scheme);
         if (this.keyTasks.has(scheme)) return this.keyTasks.get(scheme);
         const session = this.session;
         const task = (async () => {
           const stored = config2.load("key_pairs") || {};
-          if (typeof stored !== "object" || Array.isArray(stored)) throw new Error("Invalid saved key configuration.");
           let keys;
           if (stored[scheme]) {
-            const { public_key_spki_base64: publicKey, private_key_pkcs8_base64: privateKey, created_at: createdAt } = stored[scheme];
-            keys = { scheme, createdAt, publicKey: PQC.createPublicKey(publicKey), privateKey: PQC.createPrivateKey(privateKey) };
-            if (keys.publicKey.asymmetricKeyType !== scheme || keys.privateKey.asymmetricKeyType !== scheme || !PQC.createPublicKey(keys.privateKey).equals(keys.publicKey)) {
-              throw new Error("Saved keys do not match. Restore your key configuration from backup.");
-            }
+            keys = { scheme, publicKey: PQC.createPublicKey(stored[scheme].public_encaps), privateKey: PQC.createPrivateKey(stored[scheme].private_decaps) };
+            if (keys.publicKey.asymmetricKeyType !== scheme || keys.privateKey.asymmetricKeyType !== scheme || !PQC.createPublicKey(keys.privateKey).equals(keys.publicKey)) throw new Error("Saved public and private keys do not match.");
           } else {
             keys = { scheme, ...await PQC.generateKeyPair(scheme) };
-            keys.createdAt = (/* @__PURE__ */ new Date()).toISOString();
-            if (!this.running || this.session !== session) throw new Error("Qcord stopped during key generation.");
-            config2.save("key_pairs", {
-              ...config2.load("key_pairs"),
-              [scheme]: {
-                public_key_spki_base64: keys.publicKey.export({ type: "spki", format: "base64" }),
-                private_key_pkcs8_base64: keys.privateKey.export({ type: "pkcs8", format: "base64" }),
-                created_at: keys.createdAt
-              }
-            });
-            config2.save("config_version", 1);
+            this.checkSession(session);
+            config2.save("key_pairs", { ...config2.load("key_pairs"), [scheme]: { public_encaps: raw(keys.publicKey), private_decaps: raw(keys.privateKey) } });
           }
-          if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
+          this.checkSession(session);
           this.keyPairs.set(scheme, keys);
-          this.keys = keys;
           return keys;
         })();
         this.keyTasks.set(scheme, task);
@@ -4333,16 +1967,16 @@ var require_messaging = __commonJS({
           if (this.keyTasks.get(scheme) === task) this.keyTasks.delete(scheme);
         }
       }
-      keyId(publicKey) {
-        return Buffer.from(sha2562(bytes(publicKey.export({ type: "spki", format: "der" })))).toString("hex");
+      checkSession(session) {
+        if (!this.running || this.session !== session) throw new Error("Qcord was stopped or its keys changed.");
+      }
+      getSavedPartners() {
+        const rows = config2.load("recipients") || [];
+        if (!Array.isArray(rows)) throw new Error("Invalid saved recipients.");
+        return rows.map((row) => ({ ...row, key_algorithm: PQC.createPublicKey(row.public_encaps).asymmetricKeyType }));
       }
       getRecipients(channelId, scheme) {
         return this.getSavedPartners().filter((row) => row.channel_id === channelId && row.key_algorithm === scheme);
-      }
-      getSavedPartners() {
-        const partners = config2.load("dm_partners") || [];
-        if (!Array.isArray(partners)) throw new Error("Invalid saved DM partners.");
-        return partners;
       }
       getPartnerProfile(userId) {
         const user = BdApi.Webpack.getStore?.("UserStore")?.getUser(userId);
@@ -4352,146 +1986,121 @@ var require_messaging = __commonJS({
       }
       getDirectPartner(channelId) {
         const channel = BdApi.Webpack.getStore?.("ChannelStore")?.getChannel(channelId);
-        if (channel?.type !== 1 || !Array.isArray(channel.recipients) || channel.recipients.length !== 1) {
-          throw new Error("Open a one-to-one DM to use Qcord encryption.");
-        }
+        if (channel?.type !== 1 || !Array.isArray(channel.recipients) || channel.recipients.length !== 1) throw new Error("Open a one-to-one DM to use Qcord.");
         const recipient = channel.recipients[0];
         const userId = typeof recipient === "string" ? recipient : recipient?.id;
         if (!/^\d{1,20}$/.test(userId || "")) throw new Error("Could not identify this DM's recipient.");
         return { userId, channelId };
       }
       saveRecipients(channelId, rows, scheme) {
-        if (!this.running || this.resetting) throw new Error("Enable Qcord first.");
-        if (!/^\d+$/.test(channelId || "")) throw new Error("Open a Discord channel first.");
-        parameters2(scheme);
+        if (!this.running) throw new Error("Enable Qcord first.");
         const partner = this.getDirectPartner(channelId);
-        if (!Array.isArray(rows) || rows.length > 1) throw new Error("Save one public key for your DM partner.");
-        const entries = rows.map(({ user_id, public_key_spki_base64 }) => {
-          if (user_id !== partner.userId) throw new Error("The user ID must match this DM's recipient.");
-          const key = PQC.createPublicKey(public_key_spki_base64);
-          if (key.asymmetricKeyType !== scheme) throw new Error("Every recipient key must use the selected ML-KEM scheme.");
-          return {
-            channel_id: channelId,
-            user_id,
-            key_algorithm: scheme,
-            public_key_spki_base64: key.export({ type: "spki", format: "base64" }),
-            saved_at: (/* @__PURE__ */ new Date()).toISOString()
-          };
-        });
-        config2.save("dm_partners", [...this.getSavedPartners().filter((row) => row.channel_id !== channelId || row.key_algorithm !== scheme), ...entries]);
+        parameters2(scheme);
+        if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Save one public key for your DM partner.");
+        const { user_id, public_encaps } = rows[0];
+        if (user_id !== partner.userId) throw new Error("The user ID must match this DM's recipient.");
+        const key = PQC.createPublicKey(public_encaps);
+        if (key.asymmetricKeyType !== scheme) throw new Error("The key does not match the selected ML-KEM parameter set.");
+        const encoded = raw(key);
+        const previous = this.getRecipients(channelId, scheme)[0];
+        const entry = {
+          channel_id: channelId,
+          user_id,
+          public_encaps: encoded,
+          encapsulations: previous?.public_encaps === encoded ? previous.encapsulations : []
+        };
+        const others = (config2.load("recipients") || []).filter((row) => row.channel_id !== channelId || PQC.createPublicKey(row.public_encaps).asymmetricKeyType !== scheme);
+        config2.save("recipients", [...others, entry]);
       }
       removePartner(channelId, scheme = this.scheme || ACTIVE_SCHEME2) {
-        if (this.resetting || !this.running) throw new Error("Enable Qcord first.");
-        config2.save("dm_partners", this.getSavedPartners().filter((row) => row.channel_id !== channelId || row.key_algorithm !== scheme));
+        if (!this.running) throw new Error("Enable Qcord first.");
+        config2.save("recipients", (config2.load("recipients") || []).filter((row) => row.channel_id !== channelId || PQC.createPublicKey(row.public_encaps).asymmetricKeyType !== scheme));
       }
-      decodeBytes(value, size) {
-        if (typeof value !== "string" || value.length > MAX_DECODED_FILE_SIZE2 || !BASE64_RE.test(value)) throw new Error("Invalid encrypted file field.");
-        const bytes2 = Buffer.from(value, "base64");
-        if (bytes2.toString("base64") !== value || size !== void 0 && bytes2.length !== size) throw new Error("Invalid encrypted file field.");
-        return bytes2;
-      }
-      seal(data, key, aad) {
-        const iv = randomBytes3(12);
-        const sealed = Buffer.from(gcm2(bytes(key), iv, bytes(aad)).encrypt(bytes(data)));
-        return { nonce_base64: Buffer.from(iv).toString("base64"), ciphertext_base64: sealed.subarray(0, -16).toString("base64"), authentication_tag_base64: sealed.subarray(-16).toString("base64") };
-      }
-      openSealed(sealed, key, aad) {
-        const iv = bytes(this.decodeBytes(sealed.nonce_base64, 12));
-        const ciphertext = Buffer.concat([this.decodeBytes(sealed.ciphertext_base64), this.decodeBytes(sealed.authentication_tag_base64, 16)]);
-        return Buffer.from(gcm2(bytes(key), iv, bytes(aad)).decrypt(bytes(ciphertext)));
-      }
-      wrappingKey(sharedSecret, version = 3) {
-        return hkdf2(sha2562, bytes(sharedSecret), new Uint8Array(), new TextEncoder().encode(`Qcord v${version} key wrap`), 32);
-      }
-      packetHeader(channelId, fingerprints, scheme = this.scheme || ACTIVE_SCHEME2) {
-        return {
-          qcord_version: 3,
-          kem_algorithm: scheme,
-          encryption_algorithm: "aes-256-gcm",
-          key_derivation_algorithm: "hkdf-sha256",
-          channel_id: channelId,
-          recipient_key_fingerprints_sha256: fingerprints
-        };
-      }
-      async encryptMessage(channelId, text, { inspect = false, scheme = this.scheme || ACTIVE_SCHEME2 } = {}) {
-        if (!/^\d+$/.test(channelId || "")) throw new Error("Invalid channel.");
-        const params = parameters2(scheme);
+      async prepareEncapsulation(channelId, scheme = this.scheme || ACTIVE_SCHEME2) {
         const partner = this.getDirectPartner(channelId);
-        const recipients = this.getRecipients(channelId, scheme);
-        if (recipients.length !== 1 || recipients[0].user_id !== partner.userId) {
-          throw new Error(`Save your DM partner's ${params.label} key in Qcord first.`);
-        }
-        if (typeof text !== "string" || !text.length) throw new Error("Write a message first.");
-        const input = Buffer.from(text, "utf8");
-        if (new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(input) !== text) throw new Error("Your text contains an unpaired Unicode surrogate. Remove that character before encrypting.");
-        if (input.length > MAX_DECODED_FILE_SIZE2) throw new Error("Message is too large for a Qcord file.");
+        const row = this.getRecipients(channelId, scheme)[0];
+        if (!row || row.user_id !== partner.userId) throw new Error(`Save this recipient's ${parameters2(scheme).label} public key first.`);
         const session = this.session;
-        const ownKeys = await this.generateKeys(scheme);
-        const publicKeys = /* @__PURE__ */ new Map();
-        for (const key of [ownKeys.publicKey, ...recipients.map((row) => PQC.createPublicKey(row.public_key_spki_base64))]) {
-          if (key.asymmetricKeyType !== scheme) throw new Error("Recipient key algorithm does not match.");
-          publicKeys.set(this.keyId(key), key);
-        }
-        const header = this.packetHeader(channelId, [...publicKeys.keys()], scheme);
-        const aad = Buffer.from(JSON.stringify(header));
-        const payloadKey = randomBytes3(32);
-        const envelopes = [];
-        let trace = null;
-        const partnerId = this.keyId(PQC.createPublicKey(recipients[0].public_key_spki_base64));
-        for (const [id, publicKey] of publicKeys) {
-          const { sharedKey, ciphertext, trace: observed } = await PQC.encapsulate(publicKey, inspect && id === partnerId);
-          if (observed) trace = observed;
-          envelopes.push({
-            public_key_fingerprint_sha256: id,
-            kem_ciphertext_base64: ciphertext.toString("base64"),
-            wrapped_message_key: this.seal(payloadKey, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id)]))
-          });
-          sharedKey.fill(0);
-        }
-        const output = JSON.stringify({ ...header, recipients: envelopes, encrypted_message: this.seal(input, payloadKey, aad) }, null, "	") + "\n";
-        payloadKey.fill(0);
-        const fileBytes = Buffer.byteLength(output);
-        if (fileBytes > MAX_DECODED_FILE_SIZE2) throw new Error("Encrypted file exceeds the 1 MiB display limit. Shorten your message.");
-        if (!this.running || this.session !== session) throw new Error("Qcord encryption was stopped.");
-        if (!inspect) return output;
-        const recovery = await this.decryptMessage(output, channelId, { inspect: true });
-        if (recovery.text !== text) throw new Error("Local decryption check failed.");
-        return { wire: output, packet: JSON.parse(output), trace, recovery, channelId, partnerId, scheme };
-      }
-      async decryptMessage(text, channelId, { inspect = false } = {}) {
-        if (typeof text !== "string" || !text.trimStart().startsWith("{")) return null;
-        if (Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE2) throw new Error("Encrypted file is too large.");
-        const session = this.session;
-        const file = JSON.parse(text.replace(/^\uFEFF/, ""));
-        if (file?.qcord_version !== 3) throw new Error("This file requires a different Qcord edition.");
-        const scheme = file.kem_algorithm;
-        const params = parameters2(scheme);
-        if (!/^\d+$/.test(channelId || "") || file.channel_id !== channelId || !Array.isArray(file.recipients) || !file.recipients.length || file.recipients.length > 2) throw new Error("Invalid encrypted file or wrong channel.");
-        const ids = file.recipients.map((recipient2) => recipient2?.public_key_fingerprint_sha256);
-        if (ids.some((id2) => typeof id2 !== "string" || !/^[a-f0-9]{64}$/.test(id2)) || new Set(ids).size !== ids.length) throw new Error("Invalid recipient list.");
-        const header = this.packetHeader(channelId, ids, scheme);
-        if (file.encryption_algorithm !== header.encryption_algorithm || file.key_derivation_algorithm !== header.key_derivation_algorithm || JSON.stringify(file.recipient_key_fingerprints_sha256) !== JSON.stringify(ids)) throw new Error("Invalid packet algorithms or fingerprints.");
-        if (!this.keyPairs.has(scheme) && !config2.load("key_pairs")?.[scheme]) throw new Error("No saved decapsulation key for this file.");
-        const keys = await this.generateKeys(scheme);
-        const id = this.keyId(keys.publicKey);
-        const recipient = file.recipients.find((entry) => entry.public_key_fingerprint_sha256 === id);
-        if (!recipient) throw new Error("This file is not addressed to your key.");
-        const aad = Buffer.from(JSON.stringify(header));
-        const ciphertext = this.decodeBytes(recipient.kem_ciphertext_base64, params.ciphertextBytes);
-        const sharedKey = await PQC.decapsulate(keys.privateKey, ciphertext);
-        let payloadKey;
+        const result = await PQC.encapsulate(PQC.createPublicKey(row.public_encaps), true);
         try {
-          payloadKey = this.openSealed(recipient.wrapped_message_key, this.wrappingKey(sharedKey), Buffer.concat([aad, Buffer.from(id)]));
-          if (payloadKey.length !== 32) throw new Error("Invalid payload key.");
-          const plaintext = this.openSealed(file.encrypted_message, payloadKey, aad);
-          const decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(plaintext);
-          plaintext.fill(0);
-          if (!this.running || this.session !== session) throw new Error("Qcord stopped.");
-          return inspect ? { text: decoded, ...require_learning().decapsulationTrace(keys.privateKey.bytes, ciphertext, scheme) } : decoded;
+          this.checkSession(session);
+          const file = packet.fromCiphertext(result.ciphertext, scheme);
+          return {
+            channelId,
+            scheme,
+            public_encaps: row.public_encaps,
+            packet: file,
+            wire: JSON.stringify(file, null, 2) + "\n",
+            trace: result.trace
+          };
+        } catch (error) {
+          require_mlkem().wipe(result.trace);
+          throw error;
+        } finally {
+          result.sharedKey.fill(0);
+          result.m.fill(0);
+        }
+      }
+      async saveDraft(draft) {
+        const session = this.session;
+        this.checkSession(session);
+        const partner = this.getDirectPartner(draft.channelId);
+        const rows = config2.load("recipients") || [];
+        const row = rows.find((r) => r.channel_id === draft.channelId && r.public_encaps === draft.public_encaps && r.user_id === partner.userId);
+        if (!row) throw new Error("The recipient key changed. Prepare a new draft.");
+        const { ciphertext, packet: file } = packet.parse(draft.wire);
+        if (file.parameter_set !== draft.scheme) throw new Error("Draft parameter set changed.");
+        const restored = await PQC.restoreEncapsulation(PQC.createPublicKey(row.public_encaps), draft.trace.m);
+        try {
+          this.checkSession(session);
+          if (!equalBytes2(restored.ciphertext, ciphertext)) throw new Error("Draft no longer matches its m value.");
+          const current = config2.load("recipients") || [];
+          const target = current.find((r) => r.channel_id === row.channel_id && r.public_encaps === row.public_encaps && r.user_id === row.user_id);
+          if (!target) throw new Error("The recipient key changed. Prepare a new draft.");
+          const m = Buffer.from(draft.trace.m).toString("base64");
+          target.encapsulations || (target.encapsulations = []);
+          if (!target.encapsulations.some((item) => item.m === m)) target.encapsulations.push({ m });
+          config2.save("recipients", current);
+        } finally {
+          restored.sharedKey.fill(0);
+        }
+      }
+      async decapsulateFile(text) {
+        const session = this.session;
+        this.checkSession(session);
+        const { packet: file, ciphertext } = packet.parse(text);
+        const scheme = file.parameter_set;
+        if (!this.keyPairs.has(scheme) && !config2.load("key_pairs")?.[scheme]) throw new Error("No saved decapsulation key for this parameter set.");
+        const keys = await this.generateKeys(scheme);
+        const sharedKey = await PQC.decapsulate(keys.privateKey, ciphertext);
+        try {
+          this.checkSession(session);
+          return { scheme, key: sharedKey.toString("hex") };
         } finally {
           sharedKey.fill(0);
-          payloadKey?.fill(0);
         }
+      }
+      async openFile(text, channelId) {
+        const session = this.session;
+        this.checkSession(session);
+        const { packet: file, ciphertext } = packet.parse(text);
+        for (const row of this.getRecipients(channelId, file.parameter_set)) {
+          const key = PQC.createPublicKey(row.public_encaps);
+          for (const record of row.encapsulations || []) {
+            const m = Buffer.from(record.m, "base64");
+            let restored;
+            try {
+              if (m.toString("base64") !== record.m || m.length !== 32) throw new Error("Invalid saved m.");
+              restored = await PQC.restoreEncapsulation(key, m);
+              this.checkSession(session);
+              if (equalBytes2(restored.ciphertext, ciphertext)) return { scheme: file.parameter_set, key: restored.sharedKey.toString("hex"), source: "Saved sender m" };
+            } finally {
+              m.fill(0);
+              restored?.sharedKey.fill(0);
+            }
+          }
+        }
+        return { ...await this.decapsulateFile(text), source: "Recipient dk" };
       }
     };
   }
@@ -4634,7 +2243,6 @@ var require_contacts = __commonJS({
           setRows(next);
           onChanged();
         };
-        const fingerprint = row ? plugin.keyId(PQC.createPublicKey(row.public_key_spki_base64)) : null;
         return h(
           "dialog",
           { ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": "Contacts and keys", onClose, onCancel: () => {
@@ -4687,31 +2295,28 @@ var require_contacts = __commonJS({
                   null,
                   h("div", { className: "qc-person" }, h(Avatar, { profile }), h("div", null, h("h3", null, profile.displayName), p(`${profile.username} \xB7 ${selectedContact.userId}`))),
                   h("div", { className: "qc-note" }, row ? `${params.label} public key saved` : `No ${params.label} key saved for this contact.`),
-                  fingerprint && h(
+                  row && h(
                     R.Fragment,
                     null,
-                    h("span", { className: "qc-label" }, "SHA-256 fingerprint"),
-                    code(fingerprint),
-                    h("div", { className: "qc-row" }, button("Copy contact public key", () => copy(row.public_key_spki_base64)), button("Remove this parameter key", () => {
+                    field("Saved public_encaps", h("textarea", { readOnly: true, rows: 3, value: row.public_encaps })),
+                    h("div", { className: "qc-row" }, button("Copy contact public key", () => copy(row.public_encaps)), button("Remove this parameter key", () => {
                       plugin.removePartner(selected, scheme);
                       refresh();
                     }, { disabled: busy }))
                   ),
                   field(`${params.label} public key`, h("textarea", { rows: 3, value: keyText, disabled: busy, placeholder: row ? "Paste a replacement public key" : "Paste the public key your contact shared", onChange: (e) => setKeyText(e.target.value) })),
-                  p("Compare fingerprints with your contact over a call or in person before relying on this key."),
+                  p("Raw key length detects the parameter set automatically: 800, 1184 or 1568 bytes. Verify the shared key with your contact over a trusted route."),
                   h(
                     "div",
                     { className: "qc-row" },
                     button(row ? "Replace public key" : "Save public key", () => run(async () => {
                       const imported = PQC.createPublicKey(keyText);
-                      if (imported.asymmetricKeyType !== scheme) throw new Error(`This is a ${imported.asymmetricKeyType.toUpperCase()} key. Select that parameter set in the composer first.`);
-                      const trial = await PQC.encapsulate(imported);
-                      trial.sharedKey.fill(0);
                       if (!alive.current) return;
-                      plugin.saveRecipients(selected, [{ user_id: selectedContact.userId, public_key_spki_base64: keyText }], scheme);
-                      refresh();
+                      plugin.saveRecipients(selected, [{ user_id: selectedContact.userId, public_encaps: keyText }], imported.asymmetricKeyType);
+                      setRows(plugin.getSavedPartners());
+                      onChanged(imported.asymmetricKeyType);
                       setKeyText("");
-                      setNotice("Contact key saved.");
+                      setNotice(`${imported.asymmetricKeyType.toUpperCase()} contact key saved.`);
                     }), { disabled: busy || !keyText.trim() }),
                     button("Use this recipient", () => {
                       onSelect(selected);
@@ -4725,9 +2330,9 @@ var require_contacts = __commonJS({
               "section",
               { className: "qc-key-page" },
               h("h3", null, "Your encapsulation key \xB7 ek"),
-              p(`Share this ${params.label} public key. The raw key is ${params.publicBytes} bytes; the text below includes DER framing and Base64.`),
-              field("Your public encapsulation key", h("textarea", { readOnly: true, rows: 5, value: keys?.publicKey.export({ type: "spki", format: "base64" }) || "Loading\u2026" })),
-              keys && h(R.Fragment, null, code(`SHA-256: ${plugin.keyId(keys.publicKey)}`), button("Copy my public key", () => copy(keys.publicKey.export({ type: "spki", format: "base64" })), { className: "qc-primary" })),
+              p(`Share this ${params.label} public_encaps. Base64 decodes directly to ${params.publicBytes} FIPS 203 key bytes.`),
+              field("Your public encapsulation key", h("textarea", { readOnly: true, rows: 5, value: keys ? Buffer.from(keys.publicKey.bytes).toString("base64") : "Loading\u2026" })),
+              keys && button("Copy my public key", () => copy(Buffer.from(keys.publicKey.bytes).toString("base64")), { className: "qc-primary" }),
               p("The corresponding private dk stays on this device. Changing the parameter set keeps your existing keys.")
             ),
             tab === "private" && h(
@@ -4735,7 +2340,7 @@ var require_contacts = __commonJS({
               { className: "qc-key-page" },
               h("h3", null, "Your decapsulation key \xB7 dk"),
               p(`Your ${params.label} private key is ${params.privateBytes} raw bytes. It is stored unencrypted in qcord.config.json. Never send it to a contact.`),
-              keys && button("Copy private key for backup", () => copy(keys.privateKey.export({ type: "pkcs8", format: "base64" }))),
+              keys && button("Copy private key for backup", () => copy(Buffer.from(keys.privateKey.bytes).toString("base64"))),
               field("Private decapsulation key to restore", h("textarea", { rows: 3, value: dkText, disabled: busy, onChange: (e) => {
                 setDkText(e.target.value);
                 setConfirmRestore(false);
@@ -4753,13 +2358,13 @@ var require_contacts = __commonJS({
                   if (!recovered.equals(trial.sharedKey)) throw new Error("The restored key failed its local check.");
                   recovered.fill(0);
                   trial.sharedKey.fill(0);
+                  trial.m.fill(0);
                   if (!alive.current || !plugin.running) return;
-                  config2.save("key_pairs", { ...config2.load("key_pairs"), [scheme]: { public_key_spki_base64: publicKey.export({ type: "spki", format: "base64" }), private_key_pkcs8_base64: privateKey.export({ type: "pkcs8", format: "base64" }), created_at: (/* @__PURE__ */ new Date()).toISOString() } });
+                  config2.save("key_pairs", { ...config2.load("key_pairs"), [scheme]: { public_encaps: Buffer.from(publicKey.bytes).toString("base64"), private_decaps: Buffer.from(privateKey.bytes).toString("base64") } });
                   plugin.session = {};
+                  plugin.keyPairs.get(scheme)?.privateKey.bytes.fill(0);
                   plugin.keyPairs.delete(scheme);
                   plugin.keyTasks.clear();
-                  plugin.clearDecoded();
-                  plugin.fileDecodes = /* @__PURE__ */ new WeakMap();
                   await plugin.generateKeys(scheme);
                   onChanged();
                   setDkText("");
@@ -4769,7 +2374,7 @@ var require_contacts = __commonJS({
               }, { disabled: busy || !dkText.trim() })
             ),
             h("div", { className: "qc-feedback" }, h("div", { role: "alert", className: "qc-error" }, error), h("div", { role: "status" }, busy ? "Working locally\u2026" : notice)),
-            h("footer", { className: "qc-source" }, "Lecture 6 \xB7 slides 34, 56, 64, 96 \xB7 Public keys identify key bytes; they do not prove identity.")
+            h("footer", { className: "qc-source" }, "FIPS 203 \xB7 Public keys identify key bytes; they do not prove identity.")
           )
         );
       };
@@ -4782,75 +2387,48 @@ var require_settings = __commonJS({
   "src/settings.js"(exports2, module2) {
     "use strict";
     var { PQC } = require_pqc();
+    var { sha3_256: sha3_2562, sha3_512: sha3_5122 } = (init_sha3(), __toCommonJS(sha3_exports));
     var { ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
     var { PARAMETER_SETS, parameters: parameters2 } = require_parameters();
-    var L = require_learning();
+    var M = require_mlkem();
     var createUI = require_ui();
     var createContacts = require_contacts();
     var hex = (bytes) => Buffer.from(bytes).toString("hex");
-    var stageNames = ["Write", "Encode", "Keys", "Encapsulate", "Attach"];
+    var stages = ["Recipient key", "Derive K", "Construct u, v", "Attach"];
     module2.exports = function getSettingsPanel2(plugin, { onClose } = {}) {
       const R = BdApi.React, ui = createUI(R);
       const { h, p, button, field, formula, code, Tabs, Avatar, Polynomial } = ui;
       const Contacts = createContacts(R, ui);
       const split2 = (left, right) => h("div", { className: "qc-split" }, h("section", { className: "qc-explanation" }, left), h("section", { className: "qc-visual" }, right));
-      const subscript = (n) => String(n).replace(/\d/g, (d) => "\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088\u2089"[Number(d)]);
-      function Compression({ params }) {
-        const [x, setX] = R.useState(1665), [d, setD] = R.useState(1);
-        const compressed = L.compress(x, d), restored = L.decompress(compressed, d);
-        return h(
-          R.Fragment,
-          null,
-          field(`Exercise coefficient x = ${x}`, h("input", { type: "range", min: 0, max: 3328, value: x, onChange: (e) => setX(Number(e.target.value)) })),
-          field("Bits d", h("select", { value: d, onChange: (e) => setD(Number(e.target.value)) }, [1, params.dv, params.du].map((n) => h("option", { key: n, value: n }, n)))),
-          formula(`Compress${subscript(d)}(${x}) = round(${2 ** d} \xD7 ${x} / 3329) mod ${2 ** d} = ${compressed}`),
-          formula(`Decompress${subscript(d)}(${compressed}) = round(3329 \xD7 ${compressed} / ${2 ** d}) = ${restored}`),
-          p("Exercise values update live. They do not change your keys or attachment.")
-        );
-      }
       function Panel() {
-        const [step, setStep] = R.useState(0), [enabled, setEnabled] = R.useState(plugin.enabled);
-        const [scheme, setScheme] = R.useState(plugin.scheme || ACTIVE_SCHEME2);
-        const [text, setText] = R.useState(() => plugin.composerText());
+        const [step, setStep] = R.useState(0), [scheme, setScheme] = R.useState(plugin.scheme || ACTIVE_SCHEME2);
         const [channel, setChannel] = R.useState(() => plugin.currentChannel() || "");
         const [partners, setPartners] = R.useState(() => plugin.getSavedPartners());
         const [keys, setKeys] = R.useState(null), [draft, setDraft] = R.useState(null);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
         const [contactsOpen, setContactsOpen] = R.useState(false), [attached, setAttached] = R.useState(false), [stopped, setStopped] = R.useState(!plugin.running);
-        const [encodeTab, setEncodeTab] = R.useState("bytes"), [keyTab, setKeyTab] = R.useState("matrix"), [kemTab, setKemTab] = R.useState("mu"), [reviewTab, setReviewTab] = R.useState("summary");
-        const [vectorIndex, setVectorIndex] = R.useState(0), [matrixCell, setMatrixCell] = R.useState(0), [bytePage, setBytePage] = R.useState(0), [noise, setNoise] = R.useState("r");
-        const [privateView, setPrivateView] = R.useState(null), [privateVariable, setPrivateVariable] = R.useState("s");
-        const [revision, setRevision] = R.useState(0);
-        const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null), secret = R.useRef(null);
+        const [keyTab, setKeyTab] = R.useState("shape"), [part, setPart] = R.useState("u");
+        const [vectorIndex, setVectorIndex] = R.useState(0), [matrixCell, setMatrixCell] = R.useState(0), [coefficient, setCoefficient] = R.useState(0);
+        const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null);
         const params = parameters2(scheme), indices = Array.from({ length: params.k }, (_, i) => i);
         const row = partners.find((r) => r.channel_id === channel && r.key_algorithm === scheme);
         const anyRow = partners.find((r) => r.channel_id === channel);
         const profile = anyRow ? plugin.getPartnerProfile(anyRow.user_id) : null;
-        const publicInfo = R.useMemo(() => {
-          try {
-            return row ? L.publicTrace(PQC.createPublicKey(row.public_key_spki_base64).bytes, scheme) : null;
-          } catch {
-            return null;
-          }
-        }, [row, scheme]);
+        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes, scheme) : null, [row, scheme]);
         R.useEffect(() => {
           const stop = () => {
             alive.current = false;
             ticket.current++;
-            L.wipe(preview.current);
-            L.wipe(secret.current);
+            M.wipe(preview.current);
             setDraft(null);
-            setPrivateView(null);
             setKeys(null);
-            setText("");
             setStopped(true);
           };
           plugin.panels.add(stop);
           return () => {
             alive.current = false;
             ticket.current++;
-            L.wipe(preview.current);
-            L.wipe(secret.current);
+            M.wipe(preview.current);
             plugin.panels.delete(stop);
           };
         }, []);
@@ -4865,30 +2443,23 @@ var require_settings = __commonJS({
           return () => {
             active = false;
           };
-        }, [scheme, revision]);
+        }, [scheme, partners]);
         function invalidate() {
           ticket.current++;
-          L.wipe(preview.current);
+          M.wipe(preview.current);
           preview.current = null;
           setDraft(null);
           setAttached(false);
           setError("");
           setNotice("");
         }
-        function clearPrivate() {
-          L.wipe(secret.current);
-          secret.current = null;
-          setPrivateView(null);
-        }
         function changeScheme(value) {
           invalidate();
-          clearPrivate();
           plugin.setScheme(value);
           setScheme(value);
-          setKeys(null);
           setVectorIndex(0);
           setMatrixCell(0);
-          setStep(Math.min(step, 2));
+          setStep(0);
         }
         async function run(task) {
           if (pending.current || !alive.current || !plugin.running) return;
@@ -4906,17 +2477,16 @@ var require_settings = __commonJS({
           }
         }
         async function prepare(target, fresh = false) {
-          if (!row) throw new Error(`Choose a contact with a saved ${params.label} public key.`);
-          if (!text.length) throw new Error("Write a message first.");
+          if (!row) throw new Error(`Choose a recipient with a saved ${params.label} public key.`);
           if (draft && !fresh) {
             setStep(target);
             return;
           }
-          if (fresh) invalidate();
+          invalidate();
           const request = ++ticket.current;
-          const result = await plugin.encryptMessage(channel, text, { inspect: true, scheme });
+          const result = await plugin.prepareEncapsulation(channel, scheme);
           if (!alive.current || request !== ticket.current) {
-            L.wipe(result);
+            M.wipe(result);
             return;
           }
           preview.current = result;
@@ -4924,235 +2494,182 @@ var require_settings = __commonJS({
           setStep(target);
         }
         const navigate = (value) => run(async () => {
-          if (value >= 3) await prepare(value);
+          if (value >= 1) await prepare(value);
           else setStep(value);
         });
-        const editText = (value) => {
+        const refreshed = (detected) => {
           invalidate();
-          setText(value);
-          setBytePage(0);
-        };
-        const refreshed = () => {
-          invalidate();
-          clearPrivate();
           setPartners(plugin.getSavedPartners());
-          setRevision((v) => v + 1);
+          if (detected) changeScheme(detected);
         };
-        const bytes = new TextEncoder().encode(text), block = bytes.slice(bytePage * 32, bytePage * 32 + 32);
-        const hasBOM = bytes.length >= 3 && bytes[0] === 239 && bytes[1] === 187 && bytes[2] === 191;
         const vectorSelector = field("Vector index", h("select", { value: vectorIndex, onChange: (e) => setVectorIndex(Number(e.target.value)) }, indices.map((i) => h("option", { key: i, value: i }, i))));
-        let content, pages, detail;
+        let content;
         if (step === 0) {
-          pages = "32\u201335, 56, 97";
           content = split2(
             h(
               R.Fragment,
               null,
-              h("h3", null, "Start with your words"),
-              field("Your message \xB7 stays local until you send", h("textarea", { className: "qc-message", rows: 6, maxLength: 64e3, value: text, disabled: busy, onChange: (e) => editText(e.target.value), placeholder: "Write a message\u2026" })),
-              h("div", { className: "qc-row" }, h("span", { className: "qc-muted" }, `${bytes.length} UTF-8 bytes${hasBOM ? " \xB7 leading BOM detected" : ""}`), button("Read Discord draft", () => editText(plugin.composerText()), { disabled: busy })),
-              p("Next shows your bytes and bits. Use the tabs to revisit any step.")
-            ),
-            h(
-              R.Fragment,
-              null,
-              h("h3", null, "One message. Two ways to compose."),
-              h("div", { className: "qc-option" }, h("h4", null, "Walk through the math"), p("Follow your text, the recipient's public key, and the actual polynomial values into the attachment.")),
+              h("h3", null, "Unpack the recipient's public_encaps"),
+              p("Start with the key your recipient shared. Its decoded byte length identifies the ML-KEM parameter set."),
+              formula(`ek = ByteEncode\u2081\u2082(t\u0302) \u2225 \u03C1`),
+              formula(`${params.publicBytes} = 384 \xD7 ${params.k} + 32 bytes`),
               h(
-                "div",
-                { className: "qc-option" },
-                h("h4", null, "Prepare it automatically"),
-                p("Skip the lesson and review the encrypted file. With Quantum conversations on, pressing Enter in Discord also stages a file."),
-                button("Make .qcord automatically", () => run(() => prepare(4)), { disabled: busy || !row || !text, className: "qc-primary" })
+                "table",
+                { className: "qc-parameters" },
+                h("thead", null, h("tr", null, ["Set", "ek bytes", "t\u0302", "\xC2"].map((s) => h("th", { key: s }, s)))),
+                h("tbody", null, Object.entries(PARAMETER_SETS).map(([s, v]) => h("tr", { key: s, "data-selected": s === scheme }, h("td", null, v.label), h("td", null, v.publicBytes), h("td", null, `${v.k} \xD7 1`), h("td", null, `${v.k} \xD7 ${v.k}`))))
               ),
-              h("div", { className: "qc-facts" }, code(`n = 256   q = 3329   k = ${params.k}`), code(`ek ${params.publicBytes} B \xB7 dk ${params.privateBytes} B \xB7 c ${params.ciphertextBytes} B`)),
-              !row && h("div", { className: "qc-note" }, `Open Contacts & keys to save a ${params.label} recipient key.`)
+              p("Every polynomial has 256 coefficients modulo 3329. 512, 768 and 1024 name parameter sets; their NIST security categories are 1, 3 and 5."),
+              p("The matrix is reconstructed from \u03C1, not sent as a full matrix in the key.")
+            ),
+            !publicInfo ? h("div", { className: "qc-empty-state" }, p("Save the public key supplied by your recipient."), button("Contacts & keys", () => setContactsOpen(true))) : h(
+              R.Fragment,
+              null,
+              h(Tabs, { label: "Public key views", items: [["shape", "Dimensions"], ["matrix", "Matrix \xC2"], ["vector", "Vector t\u0302"], ["saved", "Saved public_encaps"]], value: keyTab, onChange: setKeyTab }),
+              keyTab === "shape" ? h(
+                R.Fragment,
+                null,
+                h("h3", null, `${params.label} detected \xB7 ${params.publicBytes} raw bytes`),
+                h("div", { className: "qc-packet-bars" }, h("span", null, `Encoded t\u0302 \xB7 ${384 * params.k} bytes`), h("span", null, "\u03C1 \xB7 32 bytes")),
+                h(
+                  "div",
+                  { className: "qc-key-shapes" },
+                  h("div", null, p(`\xC2: ${params.k} \xD7 ${params.k} polynomials`), h("div", { className: "qc-matrix", "aria-label": "Matrix dimensions", style: { gridTemplateColumns: `repeat(${params.k}, 1fr)` } }, indices.flatMap((i) => indices.map((j) => h("span", { key: `${i}-${j}` }, `\xC2[${i},${j}]`))))),
+                  h("div", null, p(`t\u0302: ${params.k} polynomials`), h("div", { className: "qc-matrix", "aria-label": "Vector dimensions" }, indices.map((i) => h("span", { key: i }, `t\u0302[${i}]`))))
+                ),
+                code(`\u03C1 = ${hex(publicInfo.rho)}`),
+                p("Hats indicate NTT representation. A and t are the same public objects expressed as coefficient polynomials.")
+              ) : keyTab === "matrix" ? h(
+                R.Fragment,
+                null,
+                h("div", { className: "qc-matrix", style: { gridTemplateColumns: `repeat(${params.k}, 1fr)` }, "aria-label": "Public matrix A hat" }, indices.flatMap((i) => indices.map((j) => button(`\xC2[${i},${j}]`, () => setMatrixCell(i * params.k + j), { key: `${i}-${j}`, "aria-pressed": matrixCell === i * params.k + j })))),
+                h(Polynomial, { values: publicInfo.aHat[Math.floor(matrixCell / params.k)][matrixCell % params.k], name: "Selected \xC2 polynomial \xB7 NTT" }),
+                code("\xC2[i,j] = SampleNTT(\u03C1 \u2225 byte(j) \u2225 byte(i))")
+              ) : keyTab === "vector" ? h(R.Fragment, null, vectorSelector, h(Polynomial, { values: publicInfo.tHat[vectorIndex], name: `t\u0302[${vectorIndex}] \xB7 NTT` })) : h(R.Fragment, null, field("Saved public_encaps", h("textarea", { readOnly: true, rows: 7, value: row.public_encaps })), p(`Base64 decodes to ${params.publicBytes} raw bytes. The config stores this key once per recipient and parameter set.`))
             )
           );
         }
-        if (step === 1) {
-          pages = "10, 57\u201359, 65\u201368, 86, 97";
+        if (step === 1 && draft) {
+          const digest = sha3_2562(PQC.createPublicKey(draft.public_encaps).bytes);
+          const kr = sha3_5122(Uint8Array.from([...draft.trace.m, ...digest]));
+          const kHex = hex(kr.slice(0, 32)), rHex = hex(kr.slice(32));
+          kr.fill(0);
           content = split2(
             h(
               R.Fragment,
               null,
-              h("h3", null, "Text becomes bytes, then bits"),
-              field("Edit your message", h("textarea", { rows: 3, value: text, maxLength: 64e3, onChange: (e) => editText(e.target.value) })),
-              p("UTF-8 encodes your characters. BytesToBits below reads the least-significant bit first, matching the slides."),
-              formula("\u03BC\u1D62 = Decompress\u2081(b\u1D62)"),
-              formula("0 \u2192 0     1 \u2192 1665"),
-              h("div", { className: "qc-note" }, "Text mapping is an exercise. Actual ML-KEM uses a random 32-byte m; your complete text goes to AES-GCM.")
+              h("h3", null, "Sample m, then derive K and r"),
+              p("The sender samples a fresh random 32-byte m for this recipient's encapsulation."),
+              formula("(K, r) = G(m \u2225 H(ek))"),
+              formula("H = SHA3-256; G = SHA3-512"),
+              p("H hashes the whole raw public key. G returns 64 bytes: the first 32 are K, the last 32 are the encryption seed r."),
+              p("FIPS 203 calls the ephemeral noise vector y. If your course calls it r\u20D7, that vector is distinct from the 32-byte seed r."),
+              button("Sample fresh m", () => run(() => prepare(1, true)), { disabled: busy })
             ),
             h(
               R.Fragment,
               null,
-              h(Tabs, { label: "Encoding views", items: [["bytes", "Bytes & bits"], ["polynomial", "Polynomial"], ["bom", "UTF-8 BOM"]], value: encodeTab, onChange: setEncodeTab }),
-              encodeTab === "bytes" && h("div", { className: "qc-byte-grid" }, Array.from(block).map((b, i) => h("div", { key: i, className: hasBOM && bytePage === 0 && i < 3 ? "qc-bom-byte" : "" }, h("small", null, `byte ${bytePage * 32 + i}`), h("strong", null, b), code(L.bits([b]).join(""))))),
-              encodeTab === "polynomial" && h(Polynomial, { values: L.bits(block).map((b) => L.decompress(b, 1)), name: "Text mapping exercise \u03BC" }),
-              encodeTab === "bom" && h(
-                "div",
-                { className: "qc-bom-view" },
-                h("h3", null, hasBOM ? "Leading BOM detected and preserved" : "No leading BOM in this message"),
-                formula("U+FEFF \u2192 EF BB BF"),
-                p("BOM means Byte Order Mark. In UTF-8 it can mark the start of a text stream; UTF-8 has no byte-order choice."),
-                p("If pasted text starts with U+FEFF, Qcord encrypts and recovers it unchanged. The byte preview highlights its three bytes."),
-                p("Generated .qcord JSON and plugin source use UTF-8 without an added BOM. An optional BOM on an imported JSON file is accepted.")
-              ),
-              encodeTab !== "bom" && h("div", { className: "qc-row qc-pagination" }, button("Previous 32 bytes", () => setBytePage(bytePage - 1), { disabled: bytePage === 0 }), h("span", null, `${bytes.length ? bytePage * 32 + 1 : 0}\u2013${Math.min(bytes.length, (bytePage + 1) * 32)} / ${bytes.length} bytes`), button("Next 32 bytes", () => setBytePage(bytePage + 1), { disabled: (bytePage + 1) * 32 >= bytes.length }))
+              code(`m (32 bytes, local secret)
+${hex(draft.trace.m)}`),
+              code(`K = G(m \u2225 H(ek))[0:32]
+${kHex}`),
+              code(`r = G(m \u2225 H(ek))[32:64]
+${rHex}`),
+              formula("\u03BC = Decompress\u2081(ByteDecode\u2081(m))"),
+              h(Polynomial, { values: draft.trace.mu, name: "\u03BC \xB7 bit 0 \u2192 0, bit 1 \u2192 1665" }),
+              p("m is retained locally when you attach. A new draft always samples fresh m; saved m reproduces only its original K and ciphertext.")
             )
           );
         }
-        if (step === 2) {
-          pages = "34, 56, 64, 72\u201375, 82, 96";
-          detail = "Final FIPS 203: (\u03C1, \u03C3) = G(d \u2225 byte(k)); \xC2[i,j] = SampleNTT(\u03C1 \u2225 byte(j) \u2225 byte(i)). Slide 74 uses older details.";
+        if (step === 2 && draft) {
+          const t = draft.trace, i = vectorIndex, j = coefficient;
+          const values = part === "u" ? t.u[i] : t.v;
+          const product = part === "u" ? M.mod(values[j] - t.e1[i][j]) : M.mod(values[j] - t.e2[j] - t.mu[j]);
           content = split2(
             h(
               R.Fragment,
               null,
-              h("h3", null, "A public key built from polynomials"),
-              p(`${params.label} uses a ${params.k} \xD7 ${params.k} matrix \xC2. Each square is a polynomial with 256 coefficients modulo 3329.`),
-              formula("t\u0302 = \xC2 \u2218 \u015D + \xEA"),
-              formula("ek = ByteEncode\u2081\u2082(t\u0302) \u2225 \u03C1"),
-              p("A hat marks an NTT representation. The \u2218 operation multiplies polynomials in that representation."),
-              h("div", { className: "qc-facts" }, code(`k = ${params.k} \xB7 \u03B7\u2081 = ${params.eta1} \xB7 \u03B7\u2082 = ${params.eta2}`)),
-              p("Your contact keeps s and e private. Only your own saved secret vectors can be revealed here.")
+              h("h3", null, "Construct the ciphertext pair"),
+              formula("u = A\u1D40y + e\u2081"),
+              formula("v = t\u1D40y + \u03BC + e\u2082"),
+              p("These are polynomial products and sums modulo 3329 in Rq = \u2124q[X]/(X\xB2\u2075\u2076 + 1). In row-vector notation: u\u1D40 = y\u1D40A + e\u2081\u1D40, as in your course's rA + e\u2081."),
+              code("u = NTT\u207B\xB9(\xC2\u1D40 \u2218 \u0177) + e\u2081\nv = NTT\u207B\xB9(t\u0302\u1D40 \u2218 \u0177) + \u03BC + e\u2082"),
+              p(`Sample y from CBD\u03B7\u2081 (\u03B7\u2081=${params.eta1}); e\u2081 and e\u2082 from CBD\u03B7\u2082 (\u03B7\u2082=${params.eta2}), using PRF(r, N) with successive nonces N=0\u2026${2 * params.k}.`),
+              h("details", null, h("summary", null, "See sampled noise"), code(`y[${i}] first 16: ${t.rVector[i].slice(0, 16).join(", ")}
+e\u2081[${i}] first 16: ${t.e1[i].slice(0, 16).join(", ")}
+e\u2082 first 16: ${t.e2.slice(0, 16).join(", ")}`)),
+              p("The independently reconstructed, compressed ciphertext matches the bundled ML-KEM implementation byte for byte.")
             ),
             h(
               R.Fragment,
               null,
-              h(Tabs, { label: "Key views", items: [["matrix", "Public matrix"], ["vector", "Public vector"], ["secret", "My secret"], ["format", "Key format"]], value: keyTab, onChange: setKeyTab }),
-              !publicInfo && keyTab !== "secret" && keyTab !== "format" ? h("div", { className: "qc-empty-state" }, p(`Select a contact with a ${params.label} public key.`), button("Choose contact", () => setContactsOpen(true))) : keyTab === "matrix" ? h(
-                R.Fragment,
-                null,
-                h("div", { className: "qc-matrix", style: { gridTemplateColumns: `repeat(${params.k}, 1fr)` }, "aria-label": "Public matrix A hat" }, publicInfo.aHat.flatMap((r, i) => r.map((_, j) => button(`\xC2[${i}, ${j}]`, () => setMatrixCell(i * params.k + j), { key: i * params.k + j, "aria-pressed": matrixCell === i * params.k + j })))),
-                h(Polynomial, { values: publicInfo.aHat[Math.floor(matrixCell / params.k)][matrixCell % params.k], name: `\xC2[${Math.floor(matrixCell / params.k)}, ${matrixCell % params.k}] \xB7 NTT` })
-              ) : keyTab === "vector" ? h(R.Fragment, null, vectorSelector, h(Polynomial, { values: publicInfo.tHat[vectorIndex], name: `t\u0302[${vectorIndex}] \xB7 NTT` }), code(`\u03C1 = ${hex(publicInfo.rho)}`)) : keyTab === "secret" ? h(
-                R.Fragment,
-                null,
-                button(privateView ? "Hide my secret vectors" : "Reveal my local s and e", () => {
-                  if (privateView) clearPrivate();
-                  else if (keys) {
-                    const value = L.privateTrace(keys.publicKey.bytes, keys.privateKey.bytes, scheme);
-                    secret.current = value;
-                    setPrivateView(value);
-                  }
-                }, { disabled: !keys }),
-                privateView ? h(
-                  R.Fragment,
-                  null,
-                  h("div", { className: "qc-row" }, vectorSelector, field("Private vector", h("select", { value: privateVariable, onChange: (e) => setPrivateVariable(e.target.value) }, h("option", { value: "s" }, "Secret s"), h("option", { value: "e" }, "Noise e")))),
-                  h(Polynomial, { values: privateView[privateVariable][vectorIndex], name: `My ${privateVariable}[${vectorIndex}]`, signed: true }),
-                  p("Private values from your own saved key. Do not share screenshots.")
-                ) : p("Reveal is optional. Your contact's secret values are never available here.")
-              ) : h(R.Fragment, null, h("h3", null, "Public and private parts"), formula("dk = dkPKE \u2225 ek \u2225 H(ek) \u2225 z"), code(`ek: ${params.publicBytes} bytes
-dk: ${params.privateBytes} bytes
-Shared secret K: 32 bytes`), p("\u03C1 reconstructs the public matrix. z is a private fallback used when decapsulation implicitly rejects a ciphertext."), button("Open Contacts & keys", () => setContactsOpen(true)))
+              h(Tabs, { label: "Ciphertext components", items: [["u", "Compute u"], ["v", "Compute v"]], value: part, onChange: setPart }),
+              part === "u" ? vectorSelector : p("v is one polynomial, with 256 coefficients."),
+              h(Polynomial, { values, name: part === "u" ? `u[${i}] \xB7 before compression` : "v \xB7 before compression" }),
+              field("Construction coefficient", h("input", { type: "range", min: 0, max: 255, value: j, onChange: (e) => setCoefficient(Number(e.target.value)) })),
+              code(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
+              formula(`Compress${part === "u" ? params.du : params.dv}(${values[j]}) = ${M.compress(values[j], part === "u" ? params.du : params.dv)}`),
+              p("The file's u and v arrays hold compressed coefficients. Uncompressed values remain in this local draft.")
             )
           );
         }
         if (step === 3 && draft) {
-          pages = "53\u201360, 84\u201390, 97";
-          detail = "Scalar r is a 32-byte seed; r\u20D7 is a vector of noise polynomials. H = SHA3-256; G = SHA3-512. This trace matches the actual library ciphertext.";
-          const t = draft.trace;
-          const vector = kemTab === "noise" ? noise === "r" ? t.rVector[vectorIndex] : noise === "e1" ? t.e1[vectorIndex] : t.e2 : kemTab === "u" ? t.u[vectorIndex] : kemTab === "v" ? t.v : t.mu;
-          const label = kemTab === "noise" ? `${noise}[${noise === "e2" ? "" : vectorIndex}]` : kemTab === "u" ? `u[${vectorIndex}]` : kemTab === "v" ? "v" : "\u03BC \xB7 random m";
           content = split2(
             h(
               R.Fragment,
               null,
-              h("h3", null, "Encapsulate for your contact"),
-              formula("(K, r) = G(m \u2225 H(ek))"),
-              kemTab === "u" ? formula("u = NTT\u207B\xB9(\xC2\u1D40 \u2218 r\u0302) + e\u2081") : kemTab === "v" ? formula("v = NTT\u207B\xB9(t\u0302\u1D40 \u2218 r\u0302) + e\u2082 + \u03BC") : kemTab === "compress" ? formula(`c = Encode${subscript(params.du)}(Compress${subscript(params.du)}(u)) \u2225 Encode${subscript(params.dv)}(Compress${subscript(params.dv)}(v))`) : formula("\u03BC = Decompress\u2081(ByteDecode\u2081(m))"),
-              p("These are real values from the selected recipient's envelope. Fresh randomness changes them while your text stays the same."),
-              h("div", { className: "qc-packet-bars" }, h("span", null, `c\u2081 \xB7 ${32 * params.du * params.k} B`), h("span", null, `c\u2082 \xB7 ${32 * params.dv} B`)),
-              code(`c: first 16 / ${params.ciphertextBytes} bytes
-${hex(t.ciphertext.slice(0, 16))}`),
-              button("Sample fresh randomness", () => run(() => prepare(3, true)), { disabled: busy })
+              h("h3", null, "Send one encapsulation to the recipient"),
+              formula("c = ByteEncode(u) \u2225 ByteEncode(v)"),
+              p(`The JSON stores ${params.k} compressed u polynomials at ${params.du} bits per coefficient and one v polynomial at ${params.dv} bits. Packing them reconstructs the ${params.ciphertextBytes}-byte FIPS 203 ciphertext exactly.`),
+              code(`.qcord: qcord_version, parameter_set, u, v
+Local config: recipient public_encaps + each encapsulation's m`),
+              p("The recipient uses their private dk and c to obtain K through ML-KEM.Decaps. The sender can reproduce K from saved m and the saved recipient public key."),
+              p("The config contains private material, including m; keep it local. m retention is for this course walkthrough, outside the standard's ephemeral-randomness lifecycle."),
+              p("Decapsulation returns a key even for a modified ciphertext or a different recipient. ML-KEM does not provide a public success flag or sender authentication.")
             ),
-            h(
-              R.Fragment,
-              null,
-              h(Tabs, { label: "Encapsulation views", items: [["mu", "Encode m"], ["noise", "Noise"], ["u", "Compute u"], ["v", "Compute v"], ["compress", "Compress"]], value: kemTab, onChange: setKemTab }),
-              kemTab === "compress" ? h(Compression, { params, key: scheme }) : h(
-                R.Fragment,
-                null,
-                (kemTab === "noise" || kemTab === "u") && h("div", { className: "qc-row" }, vectorSelector, kemTab === "noise" && field("Noise vector", h("select", { value: noise, onChange: (e) => setNoise(e.target.value) }, h("option", { value: "r" }, "r\u20D7"), h("option", { value: "e1" }, "e\u2081"), h("option", { value: "e2" }, "e\u2082")))),
-                h(Polynomial, { values: vector, name: label, signed: kemTab === "noise" }),
-                kemTab === "mu" && p("m is uniformly random, not your typed text. Each 1 bit becomes a coefficient of 1665.")
-              )
-            )
+            h(R.Fragment, null, h("h3", null, "Exact .qcord attachment"), h("pre", { className: "qc-json" }, draft.wire))
           );
         }
-        if (step === 4 && draft) {
-          pages = "35, 91\u201393, 97\u201398";
-          detail = "HKDF-SHA256 and AES-256-GCM are Qcord's application layer. FIPS 204/205 signatures and PKI are deferred.";
-          content = split2(
-            h(
-              R.Fragment,
-              null,
-              h("h3", null, "Review before attaching"),
-              h("div", { className: "qc-success" }, "Local decryption passed \xB7 exact UTF-8 text recovered"),
-              p("A fresh AES key encrypts your text. Each participant's ML-KEM shared secret derives a wrapping key for that AES key."),
-              h("dl", { className: "qc-stats" }, h("dt", null, "Recipient"), h("dd", null, profile?.username || channel), h("dt", null, "Parameter set"), h("dd", null, params.label), h("dt", null, "File"), h("dd", null, `${Buffer.byteLength(draft.wire)} bytes`), h("dt", null, "KEM ciphertext"), h("dd", null, `${params.ciphertextBytes} bytes / envelope`)),
-              p("The file includes your envelope too, so your saved dk can read your sent message."),
-              h("div", { className: "qc-note" }, "Open the selected DM and clear any plaintext in the Discord composer before attaching. This preview keeps your message.")
-            ),
-            h(
-              R.Fragment,
-              null,
-              h(Tabs, { label: "Review views", items: [["summary", "Recovered text"], ["decaps", "Decapsulation"], ["file", "Exact file"]], value: reviewTab, onChange: setReviewTab }),
-              reviewTab === "summary" ? h(
-                R.Fragment,
-                null,
-                h("blockquote", { className: "qc-plaintext" }, draft.recovery.text),
-                p(hasBOM ? "A leading UTF-8 BOM is preserved in the recovered message." : "No BOM was added to your message."),
-                h("div", { className: "qc-flow" }, h("span", null, "ML-KEM \u2192 K"), h("span", null, "HKDF \u2192 wrapping key"), h("span", null, "AES-GCM \u2192 text")),
-                p("The attachment contains ciphertext and public metadata. It contains no private keys, random m, or unwrapped symmetric keys. It does not authenticate the sender.")
-              ) : reviewTab === "decaps" ? h(
-                R.Fragment,
-                null,
-                formula("w = v\u2032 \u2212 NTT\u207B\xB9(\u015D\u1D40 \u2218 NTT(u\u2032))"),
-                h(Polynomial, { values: draft.recovery.w, name: "My envelope's w" }),
-                p("Compress\u2081(w) recovers m\u2032. ML-KEM re-encrypts and compares c\u2032 with c; a mismatch selects J(z \u2225 c), causing AES authentication to fail.")
-              ) : h(R.Fragment, null, p("Exact attachment \xB7 UTF-8 JSON without a BOM"), h("pre", { className: "qc-json" }, draft.wire))
-            )
-          );
-        }
-        if (stopped) return h("div", { className: "qc-panel" }, h("h2", null, "Qcord is stopped"), p("Enable the plugin and reopen the composer."));
+        if (stopped) return h("div", { className: "qc-panel" }, h("h2", null, "Qcord is stopped"), p("Enable the plugin and reopen the panel."));
         return h(
           "div",
           { className: "qc-panel qc-composer" },
           h(
             "header",
             { className: "qc-header" },
-            h("div", null, h("span", { className: "qc-eyebrow" }, "QCORD / LEARNING EDITION"), h("h2", null, "A message, made private")),
-            h("div", { className: "qc-row" }, h("label", { className: "qc-toggle" }, h("input", { type: "checkbox", role: "switch", checked: enabled, disabled: busy, onChange: (e) => {
-              plugin.setEnabled(e.target.checked);
-              setEnabled(plugin.enabled);
-            } }), h("span", null, "Quantum conversations", h("small", null, enabled ? "Automatic encryption + decryption on" : "Automatic encryption + decryption off"))), onClose && button("Close", onClose, { "aria-label": "Close Qcord composer" }))
+            h("div", null, h("span", { className: "qc-eyebrow" }, "QCORD / FIPS 203"), h("h2", null, "From recipient key to u, v")),
+            h("div", { className: "qc-row" }, field("Open .qcord locally", h("input", { type: "file", accept: ".qcord,application/json", disabled: busy, onChange: (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) run(async () => {
+                if (file.size > 1024 * 1024) throw new Error("Qcord file is too large.");
+                const result = await plugin.openFile(await file.text(), channel);
+                if (alive.current) setNotice(`${result.source} \xB7 ${result.scheme.toUpperCase()} \xB7 K (local): ${result.key}. This does not authenticate the sender. Recipient decapsulation does not confirm ciphertext validity.`);
+              });
+            } })), onClose && button("Close", onClose))
           ),
           h(
             "div",
             { className: "qc-toolbar" },
             field("ML-KEM parameter set", h("select", { value: scheme, disabled: busy, onChange: (e) => changeScheme(e.target.value) }, Object.entries(PARAMETER_SETS).map(([s, v]) => h("option", { key: s, value: s }, v.label)))),
-            h("div", { className: "qc-level", "aria-live": "polite" }, h("span", null, "NIST security level"), h("strong", null, `Level ${params.category}`)),
-            button(h(R.Fragment, null, profile && h(Avatar, { profile }), h("span", null, h("strong", null, profile?.displayName || "Choose a recipient"), h("small", null, row ? `${profile.username} \xB7 ${params.label} key saved` : `${params.label} key needed`))), () => setContactsOpen(true), { className: "qc-recipient", disabled: busy, "aria-haspopup": "dialog", "aria-label": "Choose recipient" }),
-            button("Contacts & keys", () => setContactsOpen(true), { disabled: busy, "aria-haspopup": "dialog" })
+            h("div", { className: "qc-level" }, h("span", null, "NIST category"), h("strong", null, params.category)),
+            button(h(R.Fragment, null, profile && h(Avatar, { profile }), h("span", null, h("strong", null, profile?.displayName || "Choose a recipient"), h("small", null, row ? `${params.publicBytes} bytes \xB7 ${params.label}` : "Public key needed"))), () => setContactsOpen(true), { className: "qc-recipient", disabled: busy, "aria-label": "Choose recipient" }),
+            button("Contacts & keys", () => setContactsOpen(true), { disabled: busy })
           ),
-          h(Tabs, { label: "Composition steps", items: stageNames.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy }),
-          h("main", { className: "qc-main", role: "tabpanel", "aria-label": `${stageNames[step]} stage`, "aria-busy": busy }, content),
-          h("aside", { className: "qc-source" }, `Lecture 6 \xB7 slides ${pages} \xB7 PQC_Lecture_6_ML-KEM_v3.pdf`, detail && h("span", null, detail)),
+          h(Tabs, { label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy }),
+          h("main", { className: "qc-main", role: "tabpanel", "aria-label": `${stages[step]} stage`, "aria-busy": busy }, content),
+          h("aside", { className: "qc-source" }, "FIPS 203 \xB7 Algorithms 14, 17, 20, 21 \xB7 Tables 2, 3 \xB7 Course tool; not a FIPS-validated module."),
           h("div", { className: "qc-feedback" }, h("div", { role: "alert", className: "qc-error" }, error), h("div", { role: "status" }, busy ? "Working locally\u2026" : notice)),
           h(
             "footer",
             { className: "qc-footer" },
             button("Back", () => navigate(step - 1), { disabled: busy || step === 0 }),
-            h("span", { className: "qc-muted" }, attached ? "Attached \xB7 review it in Discord" : `Step ${step + 1} of 5 \xB7 ${params.label}`),
-            step < 4 ? button("Next", () => navigate(step + 1), { className: "qc-primary", disabled: busy || !text || step >= 2 && !row }) : button(attached ? "Attached" : "Attach .qcord to composer", () => run(async () => {
-              await plugin.stageLearningDraft(draft);
+            h("span", { className: "qc-muted" }, `Step ${step + 1} of 4 \xB7 ${params.label}`),
+            step < 3 ? button("Next", () => navigate(step + 1), { className: "qc-primary", disabled: busy || !row }) : button(attached ? "Attached" : "Attach .qcord to composer", () => run(async () => {
+              await plugin.stageDraft(draft);
               if (alive.current) {
                 setAttached(true);
-                setNotice("Attached. Close this panel and press Send in Discord.");
+                setNotice("m saved locally. Review the attachment in Discord and press Send.");
               }
             }), { className: "qc-primary", disabled: busy || attached || !draft })
           ),
@@ -5171,7 +2688,7 @@ ${hex(t.ciphertext.slice(0, 16))}`),
 // src/button.svg
 var require_button = __commonJS({
   "src/button.svg"(exports2, module2) {
-    module2.exports = '<svg xmlns="http://www.w3.org/2000/svg"\r\n     viewBox="2 0 98 87"\r\n     preserveAspectRatio="xMidYMid meet">\r\n    <path d="m15.617 41.047c-4.4844 2.9961-7.9922 6.2266-10.262 9.4727-2.4922 3.5664-3.4531 7.1211-2.4922 10.34 1.5938 5.3516 8.1562 9.1289 17.465 10.895 1.6055 0.30469 3.2852 0.54688 5.0586 0.73047 5.2578 0.53906 11.09 0.50391 17.242-0.14453-2.4609-1.3672-4.7148-3.0977-6.5703-5.1445-3.1367-3.4648-5.1484-7.8203-5.1484-12.875v-16.355c0.007813-0.89062 0.55469-1.7266 1.4414-2.0469 2.8828-1.0508 5.7656-2.2617 8.5703-3.6211 2.707-1.3086 5.3555-2.7656 7.8867-4.3398 0.6875-0.44531 1.5977-0.48047 2.3359-0.019531 2.543 1.5859 5.207 3.0508 7.9258 4.3633 2.7539 1.332 5.582 2.5273 8.4102 3.5625 0.92188 0.25781 1.5977 1.1016 1.5977 2.1055v18.602c-0.003906 0.19531-0.03125 0.39063-0.085937 0.58984l-0.60156 2.1211c-0.96484 3.4141-2.8516 6.3672-5.293 8.8008 6.2422-1.9531 11.902-4.3711 16.773-7.0859l0.14453-0.082032c3.6016-2.0195 6.7461-4.1953 9.3555-6.4531 5.9961-5.1953 9.0391-10.723 7.8789-15.562l-0.12891-0.46484c-0.87109-2.9102-3.2461-5.3711-6.7422-7.293-1.75-0.96094-3.7695-1.7852-6.0156-2.4609v21.949c0 1.207-0.97656 2.1836-2.1836 2.1836-1.207 0-2.1836-0.98047-2.1836-2.1836v-22.402c-1.7109-0.39844-3.4375-0.87109-5.1641-1.4141-0.09375-0.023438-0.18359-0.050781-0.27344-0.085938-3.7578-1.1914-7.5-2.6953-11.051-4.4336-5.0586-2.4766-9.7383-5.4414-13.52-8.6719-3.7812 3.2305-8.4609 6.1953-13.52 8.6719-5.2695 2.582-10.965 4.6445-16.488 5.9297v26.098c0 1.4258 0.097656 2.8086 0.28906 4.1719 0.19922 1.3945 0.48828 2.7266 0.86328 4.0039 0.33594 1.1523-0.33203 2.3633-1.4844 2.6953-1.1523 0.33594-2.3633-0.33203-2.6953-1.4844-0.4375-1.4922-0.7695-3.0195-1-4.6016-0.22656-1.6016-0.34375-3.1914-0.34375-4.7852v-13.27zm61.309 26.348c-4.2383 1.9961-8.9023 3.7773-13.891 5.2656-1.8242 0.54297-3.7695 1.0664-5.8359 1.5625-9.3398 2.2461-18.453 3.1836-26.578 2.957 1.9766 1.7656 4.1797 3.3281 6.5547 4.6641 3.8906 2.1875 8.2344 3.7461 12.82 4.5391 6.9492-1.2031 13.328-4.1484 18.398-8.3594 3.5781-2.9688 6.5078-6.5703 8.5312-10.629z"/>\r\n</svg>\r\n';
+    module2.exports = '<svg xmlns="http://www.w3.org/2000/svg"\r\n     viewBox="2 0 98 87"\r\n     preserveAspectRatio="xMidYMid meet">\r\n    <path d="m15.617 41.047c-4.4844 2.9961-7.9922 6.2266-10.262 9.4727-2.4922 3.5664-3.4531 7.1211-2.4922 10.34 1.5938 5.3516 8.1562 9.1289 17.465 10.895 1.6055 0.30469 3.2852 0.54688 5.0586 0.73047 5.2578 0.53906 11.09 0.50391 17.242-0.14453-2.4609-1.3672-4.7148-3.0977-6.5703-5.1445-3.1367-3.4648-5.1484-7.8203-5.1484-12.875v-16.355c0.007813-0.89062 0.55469-1.7266 1.4414-2.0469 2.8828-1.0508 5.7656-2.2617 8.5703-3.6211 2.707-1.3086 5.3555-2.7656 7.8867-4.3398 0.6875-0.44531 1.5977-0.48047 2.3359-0.019531 2.543 1.5859 5.207 3.0508 7.9258 4.3633 2.7539 1.332 5.582 2.5273 8.4102 3.5625 0.92188 0.25781 1.5977 1.1016 1.5977 2.1055v18.602c-0.003906 0.19531-0.03125 0.39063-0.085937 0.58984l-0.60156 2.1211c-0.96484 3.4141-2.8516 6.3672-5.293 8.8008 6.2422-1.9531 11.902-4.3711 16.773-7.0859l0.14453-0.082032c3.6016-2.0195 6.7461-4.1953 9.3555-6.4531 5.9961-5.1953 9.0391-10.723 7.8789-15.562l-0.12891-0.46484c-0.87109-2.9102-3.2461-5.3711-6.7422-7.293-1.75-0.96094-3.7695-1.7852-6.0156-2.4609v21.949c0 1.207-0.97656 2.1836-2.1836 2.1836-1.207 0-2.1836-0.98047-2.1836-2.1836v-22.402c-1.7109-0.39844-3.4375-0.87109-5.1641-1.4141-0.09375-0.023438-0.18359-0.050781-0.27344-0.085938-3.7578-1.1914-7.5-2.6953-11.051-4.4336-5.0586-2.4766-9.7383-5.4414-13.52-8.6719-3.7812 3.2305-8.4609 6.1953-13.52 8.6719-5.2695 2.582-10.965 4.6445-16.488 5.9297v26.098c0 1.4258 0.097656 2.8086 0.28906 4.1719 0.19922 1.3945 0.48828 2.7266 0.86328 4.0039 0.33594 1.1523-0.33203 2.3633-1.4844 2.6953-1.1523 0.33594-2.3633-0.33203-2.6953-1.4844-0.4375-1.4922-0.7695-3.0195-1-4.6016-0.22656-1.6016-0.34375-3.1914-0.34375-4.7852v-13.27zm61.309 26.348c-4.2383 1.9961-8.9023 3.7773-13.891 5.2656-1.8242 0.54297-3.7695 1.0664-5.8359 1.5625-9.3398 2.2461-18.453 3.1836-26.578 2.957 1.9766 1.7656 4.1797 3.3281 6.5547 4.6641 3.8906 2.1875 8.2344 3.7461 12.82 4.5391 6.9492-1.2031 13.328-4.1484 18.398-8.3594 3.5781-2.9688 6.5078-6.5703 8.5312-10.629z"/>\r\n</svg>\n';
   }
 });
 
@@ -5213,9 +2730,6 @@ var require_styles = __commonJS({
 .qc-header p { margin-top: 4px; color: var(--qc-muted); font-size: 13px; }\r
 .qc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }\r
 .qc-row > .qc-field { flex: 1; min-width: 110px; }\r
-.qc-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; }\r
-.qc-toggle small { display: block; font-size: 11px; color: var(--qc-muted); }\r
-.qc-toggle input { accent-color: var(--qc-accent); width: 20px; height: 20px; margin: 0; }\r
 .qc-toolbar { display: grid; grid-template-columns: 250px 130px minmax(200px, 1fr) auto; gap: 14px; align-items: end; flex: 0 0 auto; }\r
 .qc-level { display: flex; flex-direction: column; gap: 5px; }\r
 .qc-level > span:first-child { font-size: 12px; color: var(--qc-muted); }\r
@@ -5229,7 +2743,6 @@ var require_styles = __commonJS({
 .qc-panel select { height: 42px; }\r
 .qc-panel textarea { min-height: 64px; resize: none; line-height: 1.6; }\r
 .qc-panel textarea::placeholder, .qc-panel input::placeholder { color: var(--qc-muted); opacity: .85; }\r
-.qc-panel .qc-message { height: clamp(150px, 23vh, 230px); font-size: 17px; }\r
 .qc-panel button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--qc-line); border-radius: 5px; padding: 8px 14px; background: var(--qc-surface); color: var(--qc-text); font: inherit; font-size: 13px; line-height: 1.4; min-height: 38px; cursor: pointer; }\r
 .qc-panel button:hover:not(:disabled) { background: var(--qc-empty); border-color: var(--qc-accent); }\r
 .qc-panel button:disabled { opacity: .45; cursor: default; }\r
@@ -5243,7 +2756,7 @@ var require_styles = __commonJS({
 .qc-recipient small { font-size: 11px; color: var(--qc-muted); margin-top: 2px; }\r
 .qc-avatar { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; object-fit: cover; display: block; }\r
 .qc-avatar-fallback { display: flex; align-items: center; justify-content: center; background: #43494b; color: #fff; font-size: 17px; }\r
-.qc-tabs { display: flex; flex: 0 0 auto; gap: 4px; border-bottom: 1px solid var(--qc-line); }\r
+.qc-tabs { display: flex; flex: 0 0 auto; gap: 4px; border-bottom: 1px solid var(--qc-line); overflow-x: auto; }\r
 .qc-tabs > button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 9px 12px; min-height: 40px; color: var(--qc-muted); white-space: nowrap; }\r
 .qc-composer > .qc-tabs > button { flex: 1; font-size: 14px; }\r
 .qc-tabs > button[aria-selected="true"] { color: var(--qc-text); border-bottom-color: var(--qc-accent); }\r
@@ -5254,20 +2767,16 @@ var require_styles = __commonJS({
 .qc-visual { border-left: 1px solid var(--qc-line); padding-left: 26px; }\r
 .qc-equation { flex: 0 0 auto; font: 24px/1.45 "Cambria Math", "STIX Two Math", ui-monospace, monospace; padding: 12px 14px; border-left: 2px solid var(--qc-accent); border-radius: 0 4px 4px 0; background: var(--qc-surface); overflow-wrap: anywhere; }\r
 .qc-code { display: block; font: 12px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }\r
-.qc-muted, .qc-label { color: var(--qc-muted); font-size: 12px; }\r
-.qc-note, .qc-success { padding: 10px 12px; background: var(--qc-surface); border-left: 2px solid var(--qc-line); font-size: 13px; }\r
-.qc-success { border-left-color: var(--qc-accent); }\r
-.qc-option { display: flex; flex-direction: column; gap: 9px; padding: 14px; border: 1px solid var(--qc-line); border-radius: 6px; }\r
-.qc-option button { align-self: start; }\r
-.qc-facts { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding: 10px 0; }\r
-.qc-byte-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }\r
-.qc-byte-grid > div { padding: 6px 5px; border: 1px solid var(--qc-line); border-radius: 4px; background: var(--qc-surface); }\r
-.qc-byte-grid small { display: block; font-size: 9px; color: var(--qc-muted); }\r
-.qc-byte-grid strong { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }\r
-.qc-byte-grid .qc-code { font-size: 10px; letter-spacing: -.3px; }\r
-.qc-byte-grid .qc-bom-byte { border-color: var(--qc-accent); }\r
-.qc-pagination { justify-content: space-between; font-size: 12px; margin-top: auto; }\r
-.qc-pagination button { padding: 7px 9px; font-size: 11px; }\r
+.qc-parameters { width: 100%; border-collapse: collapse; font-size: 13px; }\r
+.qc-parameters th, .qc-parameters td { text-align: left; padding: 7px; border-bottom: 1px solid var(--qc-line); }\r
+.qc-parameters tr[data-selected="true"] { color: var(--qc-accent); background: var(--qc-surface); }\r
+.qc-key-shapes { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }\r
+.qc-key-shapes p { margin-bottom: 10px; }\r
+.qc-matrix > span { padding: 6px; text-align: center; background: var(--qc-surface); color: var(--qc-accent); font: 13px ui-monospace, monospace; }\r
+.qc-header input[type="file"] { max-width: 230px; font-size: 11px; }\r
+.qc-feedback { overflow-wrap: anywhere; }\r
+.qc-muted { color: var(--qc-muted); font-size: 12px; }\r
+.qc-note { padding: 10px 12px; background: var(--qc-surface); border-left: 2px solid var(--qc-line); font-size: 13px; }\r
 .qc-polynomial { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 6px; }\r
 .qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }\r
 .qc-polynomial figcaption span { color: var(--qc-muted); font-size: 11px; }\r
@@ -5277,14 +2786,9 @@ var require_styles = __commonJS({
 .qc-matrix { display: grid; width: min(100%, 390px); align-self: center; gap: 4px; border-left: 2px solid var(--qc-muted); border-right: 2px solid var(--qc-muted); padding: 5px; }\r
 .qc-matrix button { min-height: 28px; padding: 3px 7px; font-size: 12px; }\r
 .qc-matrix button[aria-pressed="true"] { border-color: var(--qc-accent); color: var(--qc-accent); }\r
-.qc-bom-view { display: flex; flex-direction: column; gap: 16px; }\r
-.qc-packet-bars, .qc-flow { display: flex; flex-wrap: wrap; gap: 6px; }\r
-.qc-packet-bars span, .qc-flow span { flex: 1; padding: 10px; border: 1px solid var(--qc-line); border-radius: 4px; font-size: 12px; }\r
+.qc-packet-bars { display: flex; flex-wrap: wrap; gap: 6px; }\r
+.qc-packet-bars span { flex: 1; padding: 10px; border: 1px solid var(--qc-line); border-radius: 4px; font-size: 12px; }\r
 .qc-packet-bars span:first-child { flex: 4; }\r
-.qc-stats { display: grid; grid-template-columns: 140px 1fr; gap: 10px; margin: 0; font-size: 14px; }\r
-.qc-stats dt { color: var(--qc-muted); }\r
-.qc-stats dd { margin: 0; }\r
-.qc-plaintext { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 220px; padding: 18px; background: var(--qc-surface); border-left: 2px solid var(--qc-accent); font-size: 17px; }\r
 .qc-json { flex: 1; min-height: 0; margin: 0; padding: 12px; overflow: auto; font: 11px/1.55 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--qc-empty); border-radius: 4px; }\r
 .qc-source { flex: 0 0 auto; padding-top: 9px; border-top: 1px solid var(--qc-line); color: var(--qc-muted); font-size: 11px; }\r
 .qc-source span { display: block; margin-top: 3px; }\r
@@ -5313,25 +2817,18 @@ var require_styles = __commonJS({
 .qc-person p { font-size: 12px; color: var(--qc-muted); }\r
 .qcord-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; background: transparent; color: var(--interactive-normal, #b5bac1); cursor: pointer; }\r
 .qcord-button svg { width: 22px; height: 22px; fill: currentColor; }\r
-.qcord-button[data-enabled="true"] { color: #a3e635; }\r
 .qcord-button:focus-visible { outline: 2px solid #a3e635; outline-offset: 2px; border-radius: 4px; }\r
-[class*="channelTextArea"]:has(.qcord-button[data-enabled="true"]) { box-shadow: inset 3px 0 #a3e635; }\r
-.qcord-file-hidden { display: none !important; }\r
-.qcord-file-plain { white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 0; }\r
 @media (max-height: 800px) and (min-width: 901px) {\r
     .qc-panel { gap: 9px; padding: 16px 24px; }\r
     .qc-polynomial svg { height: 85px; }\r
     .qc-explanation, .qc-visual { gap: 9px; }\r
     .qc-equation { padding: 9px 12px; font-size: 22px; }\r
-    .qc-option { padding: 10px; gap: 6px; }\r
-    .qc-panel .qc-message { height: 160px; }\r
 }\r
 @media (max-width: 1100px) {\r
     .qc-toolbar { grid-template-columns: 210px 110px minmax(150px, 1fr) auto; gap: 9px; }\r
     .qc-split { gap: 18px; }\r
     .qc-visual { padding-left: 18px; }\r
     .qc-tabs > button { font-size: 11px; padding: 8px; }\r
-    .qc-byte-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }\r
 }\r
 @media (max-width: 900px) {\r
     .qc-panel { padding: 16px; gap: 10px; }\r
@@ -5343,15 +2840,12 @@ var require_styles = __commonJS({
     .qc-visual { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--qc-line); }\r
     .qc-contact-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }\r
     .qc-header > .qc-row { gap: 6px; }\r
-    .qc-toggle small { display: none; }\r
     .qc-contacts-dialog { max-height: 95dvh; }\r
 }\r
 @media (max-width: 600px) {\r
     .qcord-dialog { width: 98vw; height: 96dvh; max-width: 98vw; max-height: 96dvh; }\r
     .qc-header { align-items: start; gap: 10px; }\r
     .qc-header > .qc-row { flex-direction: column-reverse; align-items: end; }\r
-    .qc-toggle { font-size: 10px; }\r
-    .qc-toggle input { width: 16px; height: 16px; }\r
     .qc-header h2 { font-size: 19px; }\r
     .qc-composer > .qc-tabs > button { font-size: 10px; padding: 8px 3px; }\r
     .qc-equation { font-size: 21px; }\r
@@ -5368,189 +2862,69 @@ var require_styles = __commonJS({
 });
 
 // src/plugin.js
-var MessageCrypto = require_messaging();
+var Encapsulation = require_messaging();
 var config = require_config();
 var getSettingsPanel = require_settings();
 var BUTTON_SVG = require_button();
 var PLUGIN_CSS = require_styles();
 var { parameters } = require_parameters();
-var { NAME, ACTIVE_SCHEME, BUTTON_SELECTOR, DECODED_SELECTOR, FILE_NAME_RE, MAX_DECODED_FILE_SIZE } = require_constants();
-module.exports = class Qcord extends MessageCrypto {
+var { NAME, ACTIVE_SCHEME, BUTTON_SELECTOR } = require_constants();
+module.exports = class Qcord extends Encapsulation {
   start() {
     config.initialize();
-    this.enabled = config.load("quantum_conversations") === true;
-    this.pendingSends = /* @__PURE__ */ new Map();
     this.panels = /* @__PURE__ */ new Set();
     this.dialogs = /* @__PURE__ */ new Set();
-    this.conversationEpoch = {};
-    this.running = false;
-    this.frame = null;
-    this.session = {};
-    this.fileDecodes = /* @__PURE__ */ new WeakMap();
-    this.renderedMessages = /* @__PURE__ */ new Map();
-    this.markdown = BdApi.Webpack.getByKeys("parse", "reactParserFor");
-    this.markupClass = BdApi.Webpack.getByKeys("markup")?.markup || "";
-    this.keys = null;
     this.keyPairs = /* @__PURE__ */ new Map();
     this.keyTasks = /* @__PURE__ */ new Map();
+    this.session = {};
+    this.frame = null;
     this.scheme = config.load("parameter_set") || ACTIVE_SCHEME;
     parameters(this.scheme);
-    const actions = BdApi.Webpack.getByKeys("sendMessage", "editMessage");
-    if (!actions || typeof actions.sendMessage !== "function") {
-      BdApi.UI.showToast("Qcord could not find Discord's send function. Encryption is unavailable.", { type: "error" });
-      return;
-    }
-    const unpatch = BdApi.Patcher.instead(NAME, actions, "sendMessage", (context, args, original) => {
-      if (!this.enabled) return original.apply(context, args);
-      try {
-        const message = args[1];
-        if (!message || typeof message.content !== "string") {
-          return this.blockSend("Qcord blocked sending: unrecognized message format.");
-        }
-        if (message.content) {
-          return this.prepareMessageFile(args[0], message.content);
-        }
-      } catch {
-        return this.blockSend("Qcord blocked sending because encryption failed.");
-      }
-      return original.apply(context, args);
-    });
-    if (typeof unpatch !== "function") {
-      BdApi.UI.showToast("Qcord could not install its send hook. Encryption is unavailable.", { type: "error" });
-      return;
-    }
     this.running = true;
     BdApi.DOM.addStyle(NAME, PLUGIN_CSS);
-    if (!this.markdown) {
-      BdApi.UI.showToast("Qcord could not find Discord's Markdown renderer. Decoded messages will display as plain text.", { type: "warning" });
-    }
     this.mountButtons();
-    this.scanMessages();
-    BdApi.UI.showToast("Qcord ready - open the shield to compose or learn.", { type: "success" });
-  }
-  blockSend(reason) {
-    BdApi.UI.showToast(reason, { type: "error" });
-    return Promise.resolve({ shouldClear: false, shouldRefocus: true });
-  }
-  async prepareMessageFile(channelId, text) {
-    if (this.pendingSends.has(channelId)) return this.blockSend("Qcord is already preparing this attachment.");
-    const session = this.session, epoch = this.conversationEpoch;
-    this.pendingSends.set(channelId, true);
-    try {
-      const content = await this.encryptMessage(channelId, text);
-      if (!this.running || !this.enabled || this.session !== session || this.conversationEpoch !== epoch) throw new Error("Qcord encryption was stopped.");
-      return await this.stageMessageFile(channelId, content);
-    } catch (error) {
-      return this.blockSend(`Qcord did not send your message: ${error.message}`);
-    } finally {
-      this.pendingSends.delete(channelId);
-    }
-  }
-  async stageMessageFile(channelId, content) {
-    try {
-      const attachments = BdApi.Webpack.getByKeys("addFiles");
-      if (typeof attachments?.addFiles !== "function") {
-        return this.blockSend("Qcord could not find attachment staging. Your message was not sent.");
-      }
-      const now = /* @__PURE__ */ new Date();
-      const parts = [now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()].map((value) => String(value).padStart(2, "0"));
-      const filename = `${parts.slice(0, 3).join("-")}_${parts.slice(3).join("-")}.qcord`;
-      const file = new File([content], filename, { type: "application/json" });
-      await attachments.addFiles({
-        channelId,
-        draftType: 0,
-        showLargeMessageDialog: false,
-        files: [{ file, platform: 1, isThumbnail: false }]
-      });
-      BdApi.UI.showToast("Qcord attached your encrypted message. Press Send.", { type: "success" });
-      return { shouldClear: true, shouldRefocus: true };
-    } catch {
-      return this.blockSend("Qcord could not prepare the message attachment. Your message was not sent.");
-    }
-  }
-  setEnabled(enabled) {
-    if (!this.running || this.resetting) return;
-    config.save("quantum_conversations", Boolean(enabled));
-    this.enabled = Boolean(enabled);
-    this.conversationEpoch = {};
-    this.clearDecoded();
-    this.fileDecodes = /* @__PURE__ */ new WeakMap();
-    for (const button of document.querySelectorAll(BUTTON_SELECTOR)) this.updateButton(button);
-    this.scanMessages();
+    BdApi.UI.showToast("Qcord ready \u2014 inspect a recipient key to begin.", { type: "success" });
   }
   setScheme(scheme) {
     parameters(scheme);
     if (!this.running) throw new Error("Enable Qcord first.");
     config.save("parameter_set", scheme);
     this.scheme = scheme;
-    this.conversationEpoch = {};
   }
   currentChannel() {
     return BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId();
   }
-  composerText(channelId = this.currentChannel()) {
-    const saved = BdApi.Webpack.getStore?.("DraftStore")?.getDraft?.(channelId, 0);
-    const editor = channelId === this.currentChannel() ? document.querySelector('[class*="channelTextArea"] [role="textbox"][contenteditable="true"]') : null;
-    return typeof saved === "string" && saved || editor?.innerText?.replace(/\n$/, "") || "";
-  }
-  async stageLearningDraft(draft) {
+  async stageDraft(draft) {
     if (!this.running) throw new Error("Enable Qcord first.");
     if (this.currentChannel() !== draft.channelId) throw new Error("Open the selected recipient's DM before attaching.");
-    const partner = this.getDirectPartner(draft.channelId);
-    const rows = this.getRecipients(draft.channelId, draft.scheme || ACTIVE_SCHEME);
-    const { PQC } = require_pqc();
-    if (rows.length !== 1 || rows[0].user_id !== partner.userId || this.keyId(PQC.createPublicKey(rows[0].public_key_spki_base64)) !== draft.partnerId)
-      throw new Error("The recipient key changed. Go back and prepare a new preview.");
-    if (this.composerText(draft.channelId).trim()) throw new Error("Clear the Discord composer before attaching. Your message is kept in this walkthrough.");
-    const result = await this.stageMessageFile(draft.channelId, draft.wire);
-    if (!result.shouldClear) throw new Error("Attachment staging failed. Your preview is still here.");
-    return result;
-  }
-  clearDecoded() {
-    for (const span of this.renderedMessages.keys()) this.removeDecoded(span);
-    for (const span of document.querySelectorAll(DECODED_SELECTOR)) this.removeDecoded(span);
-    for (const element of document.querySelectorAll(".qcord-file-hidden")) element.classList.remove("qcord-file-hidden");
-  }
-  renderDecoded(element, text) {
-    const previous = this.renderedMessages.get(element);
-    if (previous?.text === text) return;
-    let root = previous?.root;
-    try {
-      if (this.markdown) {
-        const content = this.markdown.parse(text, true, { allowLinks: true });
-        root || (root = BdApi.ReactDOM.createRoot(element));
-        root.render(content);
-      } else element.textContent = text;
-    } catch (error) {
-      root?.unmount();
-      root = null;
-      element.textContent = text;
-      BdApi.Logger.warn(NAME, "Could not format a decoded message.", error);
-    }
-    this.renderedMessages.set(element, { root, text });
-  }
-  removeDecoded(element) {
-    this.renderedMessages.get(element)?.root?.unmount();
-    this.renderedMessages.delete(element);
-    element.remove();
-  }
-  updateButton(button) {
-    button.setAttribute("data-enabled", String(this.enabled));
-    button.title = `Qcord - Quantum conversations ${this.enabled ? "on" : "off"} - Open walkthrough`;
-    button.setAttribute("aria-label", button.title);
+    const attachments = BdApi.Webpack.getByKeys("addFiles");
+    if (typeof attachments?.addFiles !== "function") throw new Error("Qcord could not find Discord's attachment staging.");
+    const session = this.session;
+    await this.saveDraft(draft);
+    this.checkSession(session);
+    if (this.currentChannel() !== draft.channelId) throw new Error("Open the selected recipient's DM before attaching.");
+    const file = new File([draft.wire], `${Date.now()}.qcord`, { type: "application/json" });
+    await attachments.addFiles({
+      channelId: draft.channelId,
+      draftType: 0,
+      showLargeMessageDialog: false,
+      files: [{ file, platform: 1, isThumbnail: false }]
+    });
+    BdApi.UI.showToast("Qcord attached the encapsulation. Review it and press Send.", { type: "success" });
   }
   mountButtons() {
-    if (!this.running || this.resetting) return;
+    if (!this.running) return;
     for (const editor of document.querySelectorAll('[role="textbox"][contenteditable="true"]')) {
       const composer = editor.closest('[class*="channelTextArea"]');
-      if (!composer) continue;
-      const controls = composer.querySelector('[class*="buttons_"]');
+      const controls = composer?.querySelector('[class*="buttons_"]');
       if (!controls) continue;
       let button = composer.querySelector(BUTTON_SELECTOR);
       if (!button) {
         button = document.createElement("button");
         button.type = "button";
         button.className = "qcord-button";
+        button.title = "Qcord \u2014 ML-KEM encapsulation";
+        button.setAttribute("aria-label", button.title);
         button.setAttribute("aria-haspopup", "dialog");
         button.innerHTML = BUTTON_SVG;
         button.addEventListener("mousedown", (event) => event.preventDefault());
@@ -5560,75 +2934,8 @@ module.exports = class Qcord extends MessageCrypto {
           this.openComposer();
         });
       }
-      this.updateButton(button);
       if (controls.firstElementChild !== button) controls.prepend(button);
     }
-  }
-  // Decrypt visible .qcord attachments.
-  // Idempotent: safe to run on every DOM mutation. The original React-owned
-  // nodes are hidden, never edited; Discord's Markdown renderer owns our nodes.
-  scanMessages() {
-    if (!this.running || this.resetting) return;
-    if (!this.enabled) {
-      this.clearDecoded();
-      return;
-    }
-    for (const element of this.renderedMessages.keys()) {
-      if (!element.isConnected) this.removeDecoded(element);
-    }
-    for (const link of document.querySelectorAll('[id^="chat-messages-"] a[href]')) {
-      this.decodeFile(link);
-    }
-  }
-  async decodeFile(link) {
-    if (!this.running || !this.enabled) return;
-    let url;
-    try {
-      url = new URL(link.href);
-    } catch {
-      return;
-    }
-    if (url.protocol !== "https:" || url.port || url.username || url.password || !["cdn.discordapp.com", "media.discordapp.net"].includes(url.hostname) || !/^\/attachments\/\d+\/\d+\//.test(url.pathname)) return;
-    if (!FILE_NAME_RE.test(url.pathname.split("/").pop())) return;
-    const card = link.closest('[class*="mosaicItem_"]') || link.closest(
-      '[class*="textContainer_"], [class*="fileWrapper_"], [class*="file_"], [class*="attachment_"]'
-    );
-    if (!card) return;
-    let state = this.fileDecodes.get(card);
-    if (state && state.url !== url.href) {
-      if (state.span) this.removeDecoded(state.span);
-      card.classList.remove("qcord-file-hidden");
-      this.fileDecodes.delete(card);
-      state = null;
-    }
-    if (!state) {
-      state = { url: url.href, decoded: null, pending: true };
-      this.fileDecodes.set(card, state);
-      const session = this.session;
-      try {
-        const response = await BdApi.Net.fetch(url.href, { timeout: 1e4, redirect: "error", maxRedirects: 0 });
-        if (!response.ok) return;
-        if (Number(response.headers.get("content-length")) > MAX_DECODED_FILE_SIZE) return;
-        const text = await response.text();
-        if (text.length > MAX_DECODED_FILE_SIZE || this.session !== session) return;
-        const channelId = link.closest('[id^="chat-messages-"]')?.id?.match(/^chat-messages-(\d+)-\d+$/)?.[1];
-        state.decoded = await this.decryptMessage(text, channelId);
-        if (this.session !== session) return;
-      } catch (error) {
-        BdApi.Logger.warn(NAME, "Could not decode a Qcord attachment.", error);
-      } finally {
-        state.pending = false;
-      }
-    }
-    if (state.pending || state.decoded === null || !this.running || !this.enabled || !card.isConnected || link.href !== state.url || this.fileDecodes.get(card) !== state) return;
-    if (!state.span?.isConnected) {
-      state.span = document.createElement("div");
-      state.span.className = `qcord-plain qcord-file-plain ${this.markupClass}`;
-      state.span.title = "Decrypted locally by Qcord (ML-KEM + AES-256-GCM)";
-      card.after(state.span);
-      this.renderDecoded(state.span, state.decoded);
-    }
-    card.classList.add("qcord-file-hidden");
   }
   getSettingsPanel() {
     return getSettingsPanel(this);
@@ -5640,7 +2947,7 @@ module.exports = class Qcord extends MessageCrypto {
     }
     const dialog = document.createElement("dialog");
     dialog.className = "qcord-dialog";
-    dialog.setAttribute("aria-label", "Qcord message composer");
+    dialog.setAttribute("aria-label", "Qcord encapsulation");
     document.body.append(dialog);
     const root = BdApi.ReactDOM.createRoot(dialog);
     const close = () => dialog.close();
@@ -5655,7 +2962,6 @@ module.exports = class Qcord extends MessageCrypto {
     root.render(getSettingsPanel(this, { onClose: close }));
     dialog.showModal();
   }
-  // BetterDiscord's lifecycle supplies DOM mutations and navigation events.
   observer() {
     this.scheduleMount();
   }
@@ -5667,24 +2973,20 @@ module.exports = class Qcord extends MessageCrypto {
     this.frame = requestAnimationFrame(() => {
       this.frame = null;
       this.mountButtons();
-      this.scanMessages();
     });
   }
   stop() {
     this.running = false;
-    this.resetting = false;
+    this.session = null;
     for (const close of this.dialogs || []) close();
     for (const close of this.panels || []) close();
     this.panels?.clear();
-    this.keys = null;
-    this.keyPairs.clear();
-    this.keyTasks.clear();
-    this.session = null;
+    for (const pair of this.keyPairs?.values() || []) pair.privateKey.bytes.fill(0);
+    this.keyPairs?.clear();
+    this.keyTasks?.clear();
     if (this.frame !== null && this.frame !== void 0) cancelAnimationFrame(this.frame);
     this.frame = null;
-    BdApi.Patcher.unpatchAll(NAME);
     BdApi.DOM.removeStyle(NAME);
     for (const button of document.querySelectorAll(BUTTON_SELECTOR)) button.remove();
-    this.clearDecoded();
   }
 };
