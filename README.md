@@ -1,25 +1,17 @@
 # Qcord
 
-A BetterDiscord course tool for **FIPS 203 ML-KEM**. Inspect a recipient's public key, derive a shared key, construct the ciphertext pair `u, v`, and attach one `.qcord` file. Install the generated **qcord.plugin.js** in BetterDiscord's Plugins folder.
+A BetterDiscord course tool using **ML-KEM-768 only**. Inspect the recipient's public key, derive K, construct `u, v`, then encrypt a message with K. Install the generated **qcord.plugin.js** in BetterDiscord's Plugins folder.
 
-The walkthrough has four steps:
+The walkthrough starts with the recipient's key:
 
-1. **Recipient key** — save the recipient's `public_encaps`, detect ML-KEM-512 / 768 / 1024 from raw key length, and inspect the public matrix and vector.
-2. **Derive K** — sample fresh 32-byte `m` and show `(K, r) = SHA3-512(m ∥ SHA3-256(ek))`. The first 32 output bytes are `K`; the last 32 are seed `r`.
-3. **Construct u, v** — inspect actual polynomial values, noise, coefficient sums, and compression. The trace must reproduce the library ciphertext byte for byte before display.
-4. **Attach** — review the exact JSON, save `m` locally for that recipient's original encapsulation, and stage the file in their DM. Press Send in Discord to share it.
+1. **Recipient key** — save `public_encaps` and inspect `t̂` and `Â`. The 1184-byte key contains 1152 bytes of encoded `t̂` plus the 32-byte seed `ρ`. `t̂` has 3 polynomials; `Â` has 3 × 3. Each polynomial has 256 coefficients modulo 3329.
+2. **Derive K** — sample fresh 32-byte `m`, then compute `(K, r) = SHA3-512(m ∥ SHA3-256(ek))`. The first 32 output bytes are K; the last 32 are the encryption seed r.
+3. **Construct u, v** — inspect actual noise and coefficient calculations. The independent polynomial trace must reproduce the library's 1088-byte ciphertext exactly.
+4. **Message & attach** — enter the message, encrypt it with AES-256-GCM using K, and review the exact JSON attachment. Attaching saves m locally. Press Send in Discord to share the file.
 
-Open **Contacts & keys → My public key** to share your own encapsulation key. Paste a recipient's key into Contacts; its length selects the parameter set automatically. Public and private keys use raw Base64. Existing DER keys remain importable. The first step shows exactly the `public_encaps` saved in your config.
+Open **Contacts & keys → My public key** to share your encapsulation key. Only ML-KEM-768 keys are accepted; there is no parameter selector. Keys are raw Base64, with existing ML-KEM-768 DER keys still importable.
 
-| Parameter set | Raw ek | k | t̂ | Â | du / dv | Packed c |
-| --- | --- | --- | --- | --- | --- | --- |
-| ML-KEM-512 | 800 B | 2 | 2 polynomials | 2 × 2 | 10 / 4 | 768 B |
-| ML-KEM-768 | 1184 B | 3 | 3 polynomials | 3 × 3 | 10 / 4 | 1088 B |
-| ML-KEM-1024 | 1568 B | 4 | 4 polynomials | 4 × 4 | 11 / 5 | 1568 B |
-
-Every polynomial has 256 coefficients modulo 3329. The key contains `ByteEncode₁₂(t̂) ∥ ρ`, where `ρ` is a 32-byte seed used to reconstruct `Â`. Thus `len(ek) = 384k + 32`. Hats mark NTT representations. The parameter names are not public-key bit lengths; NIST security categories are 1, 3, and 5 respectively.
-
-Using column vectors and coefficient polynomials:
+The polynomial equations use column vectors:
 
 ```text
 u = Aᵀy + e₁
@@ -27,21 +19,44 @@ v = tᵀy + μ + e₂
 μ = Decompress₁(ByteDecode₁(m))
 ```
 
-FIPS 203 calls the ephemeral vector `y`; a course may call it `r⃗`. It is sampled using the 32-byte seed `r`, and is distinct from that seed. With row vectors the first equation is `uᵀ = yᵀA + e₁ᵀ`, matching the course's `rA + e₁`. Products occur in `ℤ₃₃₂₉[X]/(X²⁵⁶ + 1)`; the implementation uses NTT arithmetic as specified in Algorithm 14.
+FIPS 203 calls the ephemeral vector y; a course may call it r⃗. It is distinct from the 32-byte seed r. In row notation the first equation is `uᵀ = yᵀA + e₁ᵀ`, matching the course's `rA + e₁`. Products occur in `ℤ₃₃₂₉[X]/(X²⁵⁶ + 1)`; implementation and displayed traces use the NTT arithmetic of Algorithm 14.
 
-The shared file contains only `qcord_version`, `parameter_set`, compressed `u` arrays and compressed `v` coefficients. `u` is a vector of k polynomials; `v` is one polynomial. Packing these arrays with FIPS 203 ByteEncode reconstructs ciphertext `c` exactly. JSON is a readable Qcord transport format, larger than packed `c`.
+The version-5 `.qcord` file has four fields:
 
-See [schemas/README.md](schemas/README.md) for the JSON Schemas, [complete example attachment](schemas/example.qcord), [sender config](schemas/example.qcord.config.json), and [matching recipient config](schemas/example.recipient.config.json). Example secrets are public demonstration data. Regenerate them with `npm run examples`.
+```json
+{
+  "qcord_version": 5,
+  "u": ["three arrays of 256 compressed coefficients"],
+  "v": ["256 compressed coefficients"],
+  "encrypted_message": {
+    "nonce_base64": "12 fresh random bytes in Base64",
+    "ciphertext_base64": "encrypted UTF-8 message in Base64",
+    "authentication_tag_base64": "16-byte GCM tag in Base64"
+  }
+}
+```
 
-The local config saves each recipient public key once and a separate `m` for every attached encapsulation. It stores no extra key hashes, ciphertext copies, or `K`. Saved `m` plus that recipient's public key reproduces the original `K` and ciphertext; every new draft samples fresh randomness. Replacing or removing a contact key removes its saved encapsulations.
+This abbreviated illustration uses placeholders. See [schemas/README.md](schemas/README.md) for the schemas and complete, valid [example attachment](schemas/example.qcord), [sender config](schemas/example.qcord.config.json), and [recipient config](schemas/example.recipient.config.json).
 
-Select **Open .qcord locally** to obtain `K`. For a sender's previously attached file, Qcord matches the selected recipient's saved `m` by reproducing its ciphertext. For an incoming file, it uses the saved private key and the library's full ML-KEM.Decaps, including re-encryption and implicit rejection. A modified file or wrong private key also produces a key; decapsulation exposes no success flag. ML-KEM alone does not authenticate a sender.
+The file stores compressed u (3 × 256 coefficients, 10 bits each) and v (one polynomial, 4 bits per coefficient). Each u polynomial occupies one bracketed row, and v occupies one bracketed row. The preview scrolls horizontally for long rows. This formatting changes no coefficients or authentication data. FIPS 203 ByteEncode reconstructs the packed ML-KEM ciphertext exactly. AES-GCM encrypts the full text directly with K, using a fresh 12-byte nonce and a 16-byte tag. The version and u/v are authenticated as canonical JSON additional data. There are no wrapping keys, sender ciphertext copies, or recipient key hashes.
 
-This version establishes keys only. Discord chat text sends normally. It has no text-encryption lesson, automatic send interception, AES wrapper, or sender ciphertext copy. Version-3 encrypted-chat files are not handled. Existing saved key pairs and contact bindings migrate once to config version 2 and plain field names.
+With Qcord enabled, `.qcord` attachments in visible one-to-one DMs are detected and decrypted automatically for both parties:
 
-**Course tool, not a FIPS-validated module.** The config stores private keys and `m` unencrypted; keep it local. Retaining `m` for the course deviates from FIPS 203's ephemeral intermediate-data destruction requirements and permits recovery of that encapsulation's `K`. JavaScript cannot guarantee memory erasure. The code uses bundled `@noble/post-quantum`; it does not claim module validation.
+- The sender reproduces K from the selected recipient's saved public key and the original saved m, matching its u/v to the file.
+- The recipient calls ML-KEM.Decaps with their private dk and the packed u/v ciphertext. Internally it recovers m′, derives K, and performs re-encryption and implicit rejection.
+- Both use K with the file's nonce, ciphertext and tag. Wrong keys or modified files fail AES-GCM authentication. This does not authenticate the sender's identity.
 
-Reference: [FIPS 203, Algorithms 14, 17, 18, 20, 21 and Tables 2–3](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf).
+Successfully decrypted attachments display as white text with Discord Markdown, including bold, lists, links and code blocks. A **Download .qcord** link preserves access to the file. Discord's renderer supplies Markdown support; if it is unavailable or fails, Qcord displays safe plain text. Manual **Open .qcord locally** uses the same renderer.
+
+Failed or unsupported files stay visible as their original attachments. Automatic downloads accept HTTPS Discord CDN attachment URLs, and parsing is limited to 1 MiB; BetterDiscord's native fetch buffers downloads before the size check. Repeated scans reuse pending or completed results. Stopping Qcord, resetting config, or replacing keys clears displayed plaintext and restores the original attachments.
+
+The local config has only `config_version`, `public_encaps`, `private_decaps`, and `recipients`. Each recipient stores their public key once and `{ "m": "…" }` per attached encapsulation. New drafts always sample fresh m. The config stores neither K nor plaintext.
+
+**Clear config & reset key** deletes saved contacts, saved m values, and the current key pair, then generates a new ML-KEM-768 pair. Share the new public key with contacts. Older files need the old private-key/config backup. Installing and enabling this version also cleans stale `learning_*` fields, multi-set `key_pairs`, old toggles, and redundant parameter settings, including configurations already marked version 2.
+
+This is a course tool, not a FIPS-validated module. [FIPS 203](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf) defines ML-KEM; AES-GCM is the application message layer. Retaining m for course replay differs from the standard's ephemeral-data lifecycle. The config contains unencrypted private material; keep it local. JavaScript cannot guarantee memory erasure. Version-3 encrypted-chat files and version-4 KEM-only files are not loaded. Ordinary Discord text sending is unaffected.
+
+Each new `.qcord` file still gets a fresh encapsulation and m. This walkthrough does not introduce shared conversation sessions or signature schemes.
 
 For development, use Node 20.19 or later:
 

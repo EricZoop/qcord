@@ -1,18 +1,16 @@
 "use strict";
 
-const {ml_kem512, ml_kem768, ml_kem1024} = require("@noble/post-quantum/ml-kem.js");
+const {ml_kem768} = require("@noble/post-quantum/ml-kem.js");
 const {equalBytes} = require("@noble/post-quantum/utils.js");
 const {pack, unpack, readKeyData} = require("./der");
 
 // NIST identifiers for ML-KEM SPKI / PKCS#8 keys.
 const algorithms = {
-    "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"},
-    "ml-kem-768": {impl: ml_kem768, oid: "608648016503040402"},
-    "ml-kem-1024": {impl: ml_kem1024, oid: "608648016503040403"}
+    "ml-kem-768": {impl: ml_kem768, oid: "608648016503040402"}
 };
 
 function algorithm(scheme) {
-    if (!Object.hasOwn(algorithms, scheme)) throw new Error("Unsupported PQC algorithm.");
+    if (!Object.hasOwn(algorithms, scheme)) throw new Error("Qcord supports ML-KEM-768 only.");
     return algorithms[scheme];
 }
 

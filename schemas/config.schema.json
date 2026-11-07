@@ -1,39 +1,28 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Qcord local config",
-  "description": "Private local state. Keys are raw FIPS 203 bytes in canonical Base64. Each saved m belongs to one original encapsulation, never a new exchange. Retaining m is a course feature, outside FIPS 203's ephemeral randomness lifecycle.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["config_version", "parameter_set", "key_pairs", "recipients"],
+  "title": "Qcord ML-KEM-768 local config",
+  "description": "One local key pair and recipients. Raw Base64 keys. Each secret m belongs to one original encapsulation; never reuse it for a new exchange.",
+  "type": "object", "additionalProperties": false,
+  "required": ["config_version", "recipients"],
+  "dependentRequired": {"public_encaps": ["private_decaps"], "private_decaps": ["public_encaps"]},
   "properties": {
-    "config_version": {"const": 2},
-    "parameter_set": {"enum": ["ml-kem-512", "ml-kem-768", "ml-kem-1024"]},
-    "key_pairs": {
-      "type": "object", "additionalProperties": false,
-      "properties": {
-        "ml-kem-512": {"$ref": "#/$defs/pair", "properties": {"public_encaps": {"$ref": "#/$defs/ek512"}, "private_decaps": {"type": "string", "minLength": 2176, "maxLength": 2176, "pattern": "^[A-Za-z0-9+/]+$"}}},
-        "ml-kem-768": {"$ref": "#/$defs/pair", "properties": {"public_encaps": {"$ref": "#/$defs/ek768"}, "private_decaps": {"type": "string", "minLength": 3200, "maxLength": 3200, "pattern": "^[A-Za-z0-9+/]+$"}}},
-        "ml-kem-1024": {"$ref": "#/$defs/pair", "properties": {"public_encaps": {"$ref": "#/$defs/ek1024"}, "private_decaps": {"type": "string", "minLength": 4224, "maxLength": 4224, "pattern": "^[A-Za-z0-9+/]+$"}}}
-      }
-    },
+    "config_version": {"const": 3},
+    "public_encaps": {"$ref": "#/$defs/ek"},
+    "private_decaps": {"type": "string", "minLength": 3200, "maxLength": 3200, "pattern": "^[A-Za-z0-9+/]{3200}$"},
     "recipients": {"type": "array", "items": {
       "type": "object", "additionalProperties": false,
       "required": ["channel_id", "user_id", "public_encaps", "encapsulations"],
       "properties": {
-        "channel_id": {"$ref": "#/$defs/id"}, "user_id": {"$ref": "#/$defs/id"},
-        "public_encaps": {"oneOf": [{"$ref": "#/$defs/ek512"}, {"$ref": "#/$defs/ek768"}, {"$ref": "#/$defs/ek1024"}]},
+        "channel_id": {"$ref": "#/$defs/id"}, "user_id": {"$ref": "#/$defs/id"}, "public_encaps": {"$ref": "#/$defs/ek"},
         "encapsulations": {"type": "array", "uniqueItems": true, "items": {
           "type": "object", "additionalProperties": false, "required": ["m"],
-          "properties": {"m": {"type": "string", "minLength": 44, "maxLength": 44, "pattern": "^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$", "description": "32 secret random bytes for this original encapsulation."}}
+          "properties": {"m": {"type": "string", "minLength": 44, "maxLength": 44, "pattern": "^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$"}}
         }}
       }
     }}
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[0-9]{1,20}$"},
-    "ek512": {"type": "string", "minLength": 1068, "maxLength": 1068, "pattern": "^[A-Za-z0-9+/]{1066}[AEIMQUYcgkosw048]=$"},
-    "ek768": {"type": "string", "minLength": 1580, "maxLength": 1580, "pattern": "^[A-Za-z0-9+/]{1578}[AEIMQUYcgkosw048]=$"},
-    "ek1024": {"type": "string", "minLength": 2092, "maxLength": 2092, "pattern": "^[A-Za-z0-9+/]{2090}[AEIMQUYcgkosw048]=$"},
-    "pair": {"type": "object", "additionalProperties": false, "required": ["public_encaps", "private_decaps"], "properties": {"public_encaps": {"type": "string"}, "private_decaps": {"type": "string"}}}
+    "ek": {"type": "string", "minLength": 1580, "maxLength": 1580, "pattern": "^[A-Za-z0-9+/]{1578}[AEIMQUYcgkosw048]=$"}
   }
 }

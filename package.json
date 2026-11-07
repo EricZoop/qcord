@@ -1,8 +1,8 @@
 {
   "name": "qcord",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "private": true,
-  "description": "Qcord: a FIPS 203 ML-KEM walkthrough for BetterDiscord",
+  "description": "Qcord: ML-KEM-768 keys and encrypted message attachments for BetterDiscord",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node scripts/test.cjs",
@@ -10,6 +10,7 @@
     "examples": "node scripts/generate-examples.cjs"
   },
   "dependencies": {
+    "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@noble/post-quantum": "0.7.1"
   },

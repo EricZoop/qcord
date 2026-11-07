@@ -77,6 +77,8 @@
 .qc-key-shapes p { margin-bottom: 10px; }
 .qc-matrix > span { padding: 6px; text-align: center; background: var(--qc-surface); color: var(--qc-accent); font: 13px ui-monospace, monospace; }
 .qc-header input[type="file"] { max-width: 230px; font-size: 11px; }
+.qc-opened-dialog { width: min(800px, 94vw); height: min(600px, 90dvh); }
+.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; padding: 16px; background: var(--qc-empty); }
 .qc-feedback { overflow-wrap: anywhere; }
 .qc-muted { color: var(--qc-muted); font-size: 12px; }
 .qc-note { padding: 10px 12px; background: var(--qc-surface); border-left: 2px solid var(--qc-line); font-size: 13px; }
@@ -92,7 +94,7 @@
 .qc-packet-bars { display: flex; flex-wrap: wrap; gap: 6px; }
 .qc-packet-bars span { flex: 1; padding: 10px; border: 1px solid var(--qc-line); border-radius: 4px; font-size: 12px; }
 .qc-packet-bars span:first-child { flex: 4; }
-.qc-json { flex: 1; min-height: 0; margin: 0; padding: 12px; overflow: auto; font: 11px/1.55 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--qc-empty); border-radius: 4px; }
+.qc-json { flex: 1; min-height: 0; margin: 0; padding: 12px; overflow: auto; font: 11px/1.55 ui-monospace, Consolas, monospace; white-space: pre; background: var(--qc-empty); border-radius: 4px; }
 .qc-source { flex: 0 0 auto; padding-top: 9px; border-top: 1px solid var(--qc-line); color: var(--qc-muted); font-size: 11px; }
 .qc-source span { display: block; margin-top: 3px; }
 .qc-feedback { flex: 0 0 auto; min-height: 22px; font-size: 13px; }
@@ -121,6 +123,13 @@
 .qcord-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; background: transparent; color: var(--interactive-normal, #b5bac1); cursor: pointer; }
 .qcord-button svg { width: 22px; height: 22px; fill: currentColor; }
 .qcord-button:focus-visible { outline: 2px solid #a3e635; outline-offset: 2px; border-radius: 4px; }
+.qcord-file-hidden { display: none !important; }
+.qcord-decrypted { min-width: 0; padding: 4px 0; }
+.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; white-space: pre-wrap; overflow-wrap: anywhere; }
+.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }
+.qcord-message a { color: var(--text-link, #8ab4f8); }
+.qcord-message pre { max-width: 100%; overflow-x: auto; }
+.qcord-download { display: inline-block; margin-top: 6px; color: var(--text-link, #8ab4f8); font-size: 11px; }
 @media (max-height: 800px) and (min-width: 901px) {
     .qc-panel { gap: 9px; padding: 16px 24px; }
     .qc-polynomial svg { height: 85px; }

@@ -2,8 +2,8 @@
   "name": "Qcord",
   "author": "Eric, Arsh, Yasser",
   "authorId": "215269534540496896",
-  "version": "2.0.0",
-  "description": "Inspect recipient keys and construct ML-KEM u, v encapsulations with a FIPS 203 walkthrough.",
+  "version": "2.2.0",
+  "description": "Inspect ML-KEM-768 keys, share encrypted attachments, and automatically display decrypted messages with Discord Markdown.",
   "invite": "GSdMfMBW5g",
   "source": "https://github.com/EricZoop/qcord"
 }

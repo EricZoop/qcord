@@ -5,6 +5,7 @@ const config = require("./config");
 const getSettingsPanel = require("./settings");
 const BUTTON_SVG = require("./button.svg");
 const PLUGIN_CSS = require("./styles.css");
+const AttachmentDecoder = require("./attachments");
 const {parameters} = require("./parameters");
 const {NAME, ACTIVE_SCHEME, BUTTON_SELECTOR} = require("./constants");
 
@@ -13,26 +14,32 @@ module.exports = class Qcord extends Encapsulation {
         config.initialize();
         this.panels = new Set();
         this.dialogs = new Set();
+        this.resets = new Set();
         this.keyPairs = new Map();
         this.keyTasks = new Map();
         this.session = {};
         this.frame = null;
-        this.scheme = config.load("parameter_set") || ACTIVE_SCHEME;
+        this.scheme = ACTIVE_SCHEME;
         parameters(this.scheme);
+        this.markdown = BdApi.Webpack.getByKeys("parse", "reactParserFor");
+        this.markupClass = BdApi.Webpack.getByKeys("markup")?.markup || "";
+        this.attachments = new AttachmentDecoder(this);
         this.running = true;
         BdApi.DOM.addStyle(NAME, PLUGIN_CSS);
         this.mountButtons();
+        this.attachments.scan();
         BdApi.UI.showToast("Qcord ready — inspect a recipient key to begin.", {type: "success"});
     }
 
-    setScheme(scheme) {
-        parameters(scheme);
-        if (!this.running) throw new Error("Enable Qcord first.");
-        config.save("parameter_set", scheme);
-        this.scheme = scheme;
-    }
-
     currentChannel() { return BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId(); }
+
+    messageContent(text, channelId) {
+        try {
+            if (this.markdown) return this.markdown.parse(text, true, {allowLinks: true, channelId});
+        } catch (error) { BdApi.Logger.warn(NAME, "Discord Markdown rendering failed; displaying plain text.", error); }
+        // React renders this string as text, never HTML.
+        return text;
+    }
 
     async stageDraft(draft) {
         if (!this.running) throw new Error("Enable Qcord first.");
@@ -92,18 +99,20 @@ module.exports = class Qcord extends Encapsulation {
     }
 
     observer() { this.scheduleMount(); }
-    onSwitch() { this.scheduleMount(); }
+    onSwitch() { this.attachments?.retry(); this.scheduleMount(); }
     scheduleMount() {
         if (!this.running || this.frame !== null) return;
-        this.frame = requestAnimationFrame(() => { this.frame = null; this.mountButtons(); });
+        this.frame = requestAnimationFrame(() => { this.frame = null; this.mountButtons(); this.attachments?.scan(); });
     }
 
     stop() {
         this.running = false;
         this.session = null;
+        this.attachments?.clear();
         for (const close of this.dialogs || []) close();
         for (const close of this.panels || []) close();
         this.panels?.clear();
+        this.resets?.clear();
         for (const pair of this.keyPairs?.values() || []) pair.privateKey.bytes.fill(0);
         this.keyPairs?.clear();
         this.keyTasks?.clear();

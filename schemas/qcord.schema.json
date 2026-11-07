@@ -1,25 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Qcord ML-KEM encapsulation",
-  "description": "JSON transport of a FIPS 203 ciphertext. u and v contain compressed coefficients, not uncompressed ring elements. No secrets or recipient key copies are sent.",
+  "title": "Qcord ML-KEM-768 encrypted message",
+  "description": "One ML-KEM-768 ciphertext (compressed u/v) and one AES-256-GCM message encrypted with its K. Qcord transport format; AES-GCM is outside FIPS 203.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["qcord_version", "parameter_set", "u", "v"],
+  "required": ["qcord_version", "u", "v", "encrypted_message"],
   "properties": {
-    "qcord_version": {"const": 4},
-    "parameter_set": {"enum": ["ml-kem-512", "ml-kem-768", "ml-kem-1024"]},
-    "u": {"type": "array"},
-    "v": {"type": "array"}
-  },
-  "$defs": {
-    "poly10": {"type": "array", "minItems": 256, "maxItems": 256, "items": {"type": "integer", "minimum": 0, "maximum": 1023}},
-    "poly11": {"type": "array", "minItems": 256, "maxItems": 256, "items": {"type": "integer", "minimum": 0, "maximum": 2047}},
-    "poly4": {"type": "array", "minItems": 256, "maxItems": 256, "items": {"type": "integer", "minimum": 0, "maximum": 15}},
-    "poly5": {"type": "array", "minItems": 256, "maxItems": 256, "items": {"type": "integer", "minimum": 0, "maximum": 31}}
-  },
-  "oneOf": [
-    {"properties": {"parameter_set": {"const": "ml-kem-512"}, "u": {"minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/poly10"}}, "v": {"$ref": "#/$defs/poly4"}}},
-    {"properties": {"parameter_set": {"const": "ml-kem-768"}, "u": {"minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/poly10"}}, "v": {"$ref": "#/$defs/poly4"}}},
-    {"properties": {"parameter_set": {"const": "ml-kem-1024"}, "u": {"minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/poly11"}}, "v": {"$ref": "#/$defs/poly5"}}}
-  ]
+    "qcord_version": {"const": 5},
+    "u": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "array", "minItems": 256, "maxItems": 256, "items": {"type": "integer", "minimum": 0, "maximum": 1023}}},
+    "v": {"type": "array", "minItems": 256, "maxItems": 256, "items": {"type": "integer", "minimum": 0, "maximum": 15}},
+    "encrypted_message": {
+      "type": "object", "additionalProperties": false,
+      "required": ["nonce_base64", "ciphertext_base64", "authentication_tag_base64"],
+      "properties": {
+        "nonce_base64": {"type": "string", "minLength": 16, "maxLength": 16, "pattern": "^[A-Za-z0-9+/]{16}$"},
+        "ciphertext_base64": {"type": "string", "maxLength": 1048576, "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$"},
+        "authentication_tag_base64": {"type": "string", "minLength": 24, "maxLength": 24, "pattern": "^[A-Za-z0-9+/]{21}[AQgw]==$"}
+      }
+    }
+  }
 }
