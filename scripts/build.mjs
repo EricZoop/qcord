@@ -7,7 +7,7 @@ const metadata = JSON.parse(await readFile(new URL("../src/metadata.json", impor
 const header = "/**\n" + Object.entries(metadata).map(([key, value]) => ` * @${key} ${value}`).join("\n") + "\n */";
 const licenses = await Promise.all(["post-quantum", "hashes", "ciphers"].map(async name =>
     `@noble/${name}\n\n` + await readFile(new URL(`../node_modules/@noble/${name}/LICENSE`, import.meta.url), "utf8")));
-const notices = licenses.join("\n\n");
+const notices = [...licenses, await readFile(new URL("../src/icon-notices.txt", import.meta.url), "utf8")].join("\n\n");
 await build({
     absWorkingDir: root,
     entryPoints: ["src/plugin.js"],

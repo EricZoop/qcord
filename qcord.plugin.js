@@ -2,7 +2,7 @@
  * @name Qcord
  * @author Eric, Arsh, Yasser
  * @authorId 215269534540496896
- * @version 2.3.0
+ * @version 2.4.0
  * @description ML-KEM-768 encrypted messages with independent automatic modes, Discord Markdown, and a compact visual walkthrough.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
@@ -82,6 +82,49 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+Font Awesome Free 7.3.1 icons: key and address-card
+Copyright 2026 Fonticons, Inc. https://fontawesome.com
+SVG paths supplied by the user; rendered using currentColor.
+Icons licensed under Creative Commons Attribution 4.0 International:
+https://creativecommons.org/licenses/by/4.0/
+https://fontawesome.com/license/free
+
+Lucide line controls
+ISC License
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Feather-derived close icon
+The MIT License (MIT)
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 */
 "use strict";
 var __defProp = Object.defineProperty;
@@ -3824,10 +3867,24 @@ var require_messaging = __commonJS({
   }
 });
 
+// src/icons.js
+var require_icons = __commonJS({
+  "src/icons.js"(exports2, module2) {
+    "use strict";
+    var filled = {
+      keys: { viewBox: "0 0 512 512", path: "M336 352c97.2 0 176-78.8 176-176S433.2 0 336 0 160 78.8 160 176c0 18.7 2.9 36.8 8.3 53.7L7 391c-4.5 4.5-7 10.6-7 17l0 80c0 13.3 10.7 24 24 24l80 0c13.3 0 24-10.7 24-24l0-40 40 0c13.3 0 24-10.7 24-24l0-40 40 0c6.4 0 12.5-2.5 17-7l33.3-33.3c16.9 5.4 35 8.3 53.7 8.3zM376 96a40 40 0 1 1 0 80 40 40 0 1 1 0-80z" },
+      contacts: { viewBox: "0 0 576 512", path: "M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l448 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zm80 256l64 0c44.2 0 80 35.8 80 80 0 8.8-7.2 16-16 16L80 384c-8.8 0-16-7.2-16-16 0-44.2 35.8-80 80-80zm-24-96a56 56 0 1 1 112 0 56 56 0 1 1-112 0zm240-48l112 0c13.3 0 24 10.7 24 24s-10.7 24-24 24l-112 0c-13.3 0-24-10.7-24-24s10.7-24 24-24zm0 96l112 0c13.3 0 24 10.7 24 24s-10.7 24-24 24l-112 0c-13.3 0-24-10.7-24-24s10.7-24 24-24z" }
+    };
+    var lines = { close: ["M18 6 6 18", "m6 6 12 12"], refresh: ["M3 11a9 9 0 1 1 2.5 6.3L3 15", "M3 3v8h8"], file: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6", "M8 13h8", "m12 9 4 4-4 4"] };
+    module2.exports = { filled, lines };
+  }
+});
+
 // src/ui.js
 var require_ui = __commonJS({
   "src/ui.js"(exports2, module2) {
     "use strict";
+    var { filled, lines } = require_icons();
     module2.exports = function createUI(R) {
       const h = R.createElement;
       const button = (label, onClick, props = {}) => h("button", { type: "button", onClick, ...props }, label);
@@ -3836,8 +3893,8 @@ var require_ui = __commonJS({
       const code = (text) => h("code", { className: "qc-code" }, text);
       const p = (text) => h("p", null, text);
       function Icon({ name }) {
-        const paths = { close: "M6 6l12 12M18 6L6 18", keys: "M14 4a6 6 0 1 0 6 6 6 6 0 0 0-6-6ZM9 14l-6 6m3-3 3 3m-1-5 3 3", file: "M6 3h8l4 4v14H6V3Zm8 0v5h5M9 12h6m-6 4h6", chevron: "m9 6 6 6-6 6" };
-        return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, h("path", { d: paths[name] || paths.file }));
+        if (filled[name]) return h("svg", { viewBox: filled[name].viewBox, width: 18, height: 18, fill: "currentColor", "aria-hidden": true }, h("path", { d: filled[name].path }));
+        return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, (lines[name] || lines.file).map((d, i) => h("path", { key: i, d })));
       }
       function Tabs({ items, value, onChange, label, disabled = false }) {
         const id = R.useId();
@@ -3880,34 +3937,67 @@ var require_ui = __commonJS({
       }
       function Polynomial({ values, name, signed = false, index, onIndexChange }) {
         const [localIndex, setLocalIndex] = R.useState(0);
+        const dragging = R.useRef(false);
         const i = Math.min(index ?? localIndex, Math.max(0, values.length - 1));
         const choose = (value) => {
           setLocalIndex(value);
           onIndexChange?.(value);
         };
-        const scale = signed ? Math.max(1, ...values.map(Math.abs)) : 3328;
         const baseline = signed ? 58 : 110;
+        const bars = R.useMemo(() => {
+          const scale = signed ? Math.max(1, ...values.map(Math.abs)) : 3328;
+          return values.map((v, j) => {
+            const height = Math.max(1, Math.abs(v) / scale * (signed ? 50 : 100));
+            return h("rect", { key: j, x: j * 2.5, y: signed && v < 0 ? baseline : baseline - height, width: 1.8, height, fill: "var(--qc-graph)", opacity: 0.7 }, h("title", null, `${name}[${j}] = ${v}`));
+          });
+        }, [values, signed, name]);
+        const scrub = (event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          choose(Math.max(0, Math.min(values.length - 1, Math.floor((event.clientX - rect.left) / rect.width * values.length))));
+        };
         return h(
           "figure",
           { className: "qc-polynomial" },
           h("figcaption", null, h("strong", null, name), h("span", null, `${values.length} coefficients`)),
           h(
             "svg",
-            { viewBox: "0 0 640 120", role: "img", "aria-label": `${name}. Scrub to inspect coefficients.`, onPointerMove: (event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              choose(Math.max(0, Math.min(values.length - 1, Math.floor((event.clientX - rect.left) / rect.width * values.length))));
-            } },
+            {
+              viewBox: "0 0 640 120",
+              role: "img",
+              "aria-label": `${name}. Click or drag to inspect coefficients.`,
+              onPointerDown: (event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                dragging.current = true;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                scrub(event);
+              },
+              onPointerMove: (event) => {
+                if (dragging.current) scrub(event);
+              },
+              onPointerUp: (event) => {
+                if (dragging.current) {
+                  scrub(event);
+                  dragging.current = false;
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+              },
+              onPointerCancel: () => {
+                dragging.current = false;
+              },
+              onLostPointerCapture: () => {
+                dragging.current = false;
+              }
+            },
             h("line", { x1: 0, x2: 640, y1: baseline, y2: baseline, stroke: "currentColor", opacity: 0.15 }),
-            values.map((v, j) => {
-              const height = Math.max(1, Math.abs(v) / scale * (signed ? 50 : 100));
-              return h("rect", { key: j, x: j * 2.5, y: signed && v < 0 ? baseline : baseline - height, width: 1.8, height, fill: j === i ? "var(--qc-text)" : "var(--qc-graph)", opacity: j === i ? 1 : 0.7 }, h("title", null, `${name}[${j}] = ${v}`));
-            })
+            bars,
+            h("line", { x1: i * 2.5 + 0.9, x2: i * 2.5 + 0.9, y1: 5, y2: 113, stroke: "var(--qc-text)", strokeWidth: 1.2, opacity: 0.8, pointerEvents: "none" })
           ),
           h("div", { className: "qc-scrubber" }, field("Coefficient index", h("input", { type: "range", min: 0, max: values.length - 1, value: i, onChange: (e) => choose(Number(e.target.value)) })), h("output", { "aria-live": "polite" }, `[${i}] = ${values[i] ?? 0}`)),
           h("div", { className: "qc-coefficient-strip", "aria-label": "Nearby coefficients" }, Array.from({ length: 7 }, (_, j) => Math.max(0, Math.min(values.length - 7, i - 3)) + j).filter((j) => j < values.length).map((j) => button(h(R.Fragment, null, h("small", null, j), values[j]), () => choose(j), { key: j, "aria-pressed": j === i, title: `Coefficient ${j}` })))
         );
       }
-      return { h, button, field, formula, code, p, Icon, Tabs, Switch, Avatar, Variables, Sparkline, KeyParts, Polynomial };
+      return { h, button, field, formula, code, p, Icon, Tabs, Switch, Avatar, Variables, Sparkline: R.memo(Sparkline), KeyParts, Polynomial: R.memo(Polynomial) };
     };
   }
 });
@@ -3917,6 +4007,8 @@ var require_dialog = __commonJS({
   "src/dialog.js"(exports2, module2) {
     "use strict";
     module2.exports = function dismissOnBackdrop2(dialog, dismiss) {
+      const parent = dialog.parentElement?.closest("dialog.qcord-dialog");
+      if (parent) parent.setAttribute("data-covered", "true");
       const outside = (event) => {
         const rect = dialog.getBoundingClientRect();
         return event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom);
@@ -3934,6 +4026,7 @@ var require_dialog = __commonJS({
       return () => {
         dialog.removeEventListener("pointerdown", down);
         dialog.removeEventListener("pointerup", up);
+        parent?.removeAttribute("data-covered");
       };
     };
   }
@@ -3949,9 +4042,9 @@ var require_contacts = __commonJS({
     var dismissOnBackdrop2 = require_dialog();
     var raw = (key) => Buffer.from(key.bytes).toString("base64");
     module2.exports = function createContacts(R, ui) {
-      const { h, button, field, code, p, Icon, Tabs, Avatar, KeyParts } = ui;
-      return function Contacts({ plugin, channel, keys, initialTab = "contacts", onSelect, onChanged, onClose }) {
-        const [tab, setTab] = R.useState(initialTab), [query, setQuery] = R.useState("");
+      const { h, button, field, code, p, Icon, Avatar, KeyParts } = ui;
+      return function Contacts({ plugin, channel, keys, view = "contacts", onSelect, onChanged, onClose }) {
+        const tab = view, [query, setQuery] = R.useState("");
         const [rows, setRows] = R.useState(() => plugin.getSavedPartners()), [selected, setSelected] = R.useState(channel || plugin.currentChannel());
         const [keyText, setKeyText] = R.useState(""), [dkText, setDkText] = R.useState("");
         const [revealed, setRevealed] = R.useState(false), [confirmReset, setConfirmReset] = R.useState(false), [confirmRestore, setConfirmRestore] = R.useState(false);
@@ -4004,16 +4097,11 @@ var require_contacts = __commonJS({
         });
         return h(
           "dialog",
-          { ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": "Contacts and keys", onClose },
+          { ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": tab === "keys" ? "Your keys" : "Contacts", onClose },
           h(
             "div",
             { className: "qc-panel qc-contacts" },
-            h("header", { className: "qc-contact-header" }, h(Tabs, { label: "Key manager", items: [["keys", "My keys"], ["contacts", "Contacts"]], value: tab, onChange: (value) => {
-              setTab(value);
-              setRevealed(false);
-              setError("");
-              setNotice("");
-            }, disabled: busy }), button(h(Icon, { name: "close" }), () => dialog.current.close(), { className: "qc-icon-button", "aria-label": "Close contacts" })),
+            h("header", { className: "qc-contact-header" }, h("h3", { className: "qc-panel-title" }, h(Icon, { name: tab === "keys" ? "keys" : "contacts" }), tab === "keys" ? "Your keys" : "Contacts"), button(h(Icon, { name: "close" }), () => dialog.current.close(), { className: "qc-icon-button", "aria-label": tab === "keys" ? "Close keys" : "Close contacts" })),
             tab === "contacts" ? h(
               "div",
               { className: "qc-contact-layout" },
@@ -4192,7 +4280,16 @@ var require_settings = __commonJS({
         const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null), filePicker = R.useRef(null);
         const indices = [0, 1, 2], row = partners.find((r) => r.channel_id === channel);
         const profile = row ? plugin.getPartnerProfile(row.user_id) : null;
-        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes) : null, [row]);
+        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes) : null, [row?.public_encaps]);
+        const derived = R.useMemo(() => {
+          if (!draft) return null;
+          const kr = sha3_5122(Uint8Array.from([...draft.trace.m, ...sha3_2562(PQC.createPublicKey(draft.public_encaps).bytes)]));
+          try {
+            return { k: hex(kr.slice(0, 32)), r: hex(kr.slice(32)) };
+          } finally {
+            kr.fill(0);
+          }
+        }, [draft?.trace.m, draft?.public_encaps]);
         R.useEffect(() => {
           const stop = () => {
             alive.current = false;
@@ -4282,10 +4379,14 @@ var require_settings = __commonJS({
           setMessageReady(text.length > 0);
           setStep(target);
         }
-        const navigate = (value) => run(async () => {
-          if (value >= 1) await prepare(value);
-          else setStep(value);
-        });
+        const navigate = (value) => {
+          if (value === step) return;
+          if (value === 0 || draft) {
+            setStep(value);
+            return;
+          }
+          run(() => prepare(value));
+        };
         const refreshed = () => {
           invalidate();
           setPartners(plugin.getSavedPartners());
@@ -4335,9 +4436,6 @@ var require_settings = __commonJS({
           );
         }
         if (step === 1 && draft) {
-          const kr = sha3_5122(Uint8Array.from([...draft.trace.m, ...sha3_2562(PQC.createPublicKey(draft.public_encaps).bytes)]));
-          const kHex = hex(kr.slice(0, 32)), rHex = hex(kr.slice(32));
-          kr.fill(0);
           content = split2(
             h(
               R.Fragment,
@@ -4348,9 +4446,9 @@ var require_settings = __commonJS({
               p("Hash the entire public key. Split G's 64-byte output: the first 32 bytes are K; the last 32 are the noise seed r."),
               formula("\u03BC = Decompress\u2081(ByteDecode\u2081(m))"),
               p("\u03BC encodes m as 256 coefficients: a 0 bit becomes 0, a 1 bit becomes 1665."),
-              button("Sample fresh m", () => run(() => prepare(1, true)), { disabled: busy, className: "qc-quiet" })
+              button(h(R.Fragment, null, h(Icon, { name: "refresh" }), "Sample fresh m"), () => run(() => prepare(1, true)), { disabled: busy, className: "qc-action", title: "Generate fresh randomness and rebuild this encapsulation" })
             ),
-            h(R.Fragment, null, h("div", { className: "qc-secret-values" }, code(`m \xB7 ${hex(draft.trace.m)}`), code(`K \xB7 ${kHex}`), code(`r \xB7 ${rHex}`)), h(Polynomial, { values: draft.trace.mu, name: "\u03BC \xB7 encoded m" }))
+            h(R.Fragment, null, h("div", { className: "qc-secret-values" }, code(`m \xB7 ${hex(draft.trace.m)}`), code(`K \xB7 ${derived.k}`), code(`r \xB7 ${derived.r}`)), h(Polynomial, { values: draft.trace.mu, name: "\u03BC \xB7 encoded m" }))
           );
         }
         if (step === 2 && draft) {
@@ -4360,16 +4458,14 @@ var require_settings = __commonJS({
             h(
               R.Fragment,
               null,
-              h(Variables, { items: [["A / t", "recipient public polynomials"], ["y", "3 noise polynomials \xB7 course r\u20D7"], ["e\u2081 / e\u2082", "noise vector / polynomial"], ["\u03BC", "encoded random m"]] }),
+              h(Variables, { items: [["\xC2 / t\u0302", "recipient public polynomials in NTT form"], ["\u0177 = NTT(y)", "3 noise polynomials in NTT form"], ["e\u2081 / e\u2082", "noise vector / polynomial"], ["\u03BC", "encoded random m"]] }),
               h("h3", null, "Construct u and v"),
-              formula("u = A\u1D40y + e\u2081"),
-              formula("v = t\u1D40y + \u03BC + e\u2082"),
-              p("Polynomial arithmetic modulo 3329. With row vectors, u\u1D40 = y\u1D40A + e\u2081\u1D40 \u2014 the course's rA + e\u2081."),
+              formula("u = NTT\u207B\xB9(\xC2\u1D40 \u2218 \u0177) + e\u2081"),
+              formula("v = NTT\u207B\xB9(t\u0302\u1D40 \u2218 \u0177) + \u03BC + e\u2082"),
+              p("\u2218 multiplies polynomials in the NTT domain. NTT\u207B\xB9 returns coefficients modulo 3329 before adding noise."),
               code(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
               h("div", { className: "qc-compression" }, h("span", null, "Compressed for the file"), h("strong", null, `${values[j]} \u2192 ${M.compress(values[j], part === "u" ? 10 : 4)}`), h("small", null, part === "u" ? "10 bits" : "4 bits")),
-              h("details", null, h("summary", null, "Noise and NTT details"), code(`y/e\u2081/e\u2082 use CBD\u2082 with successive PRF(r, N) nonces.
-u = NTT\u207B\xB9(\xC2\u1D40 \u2218 \u0177) + e\u2081
-v = NTT\u207B\xB9(t\u0302\u1D40 \u2218 \u0177) + \u03BC + e\u2082
+              h("details", null, h("summary", null, "Sampled noise"), code(`y/e\u2081/e\u2082 use CBD\u2082 with successive PRF(r, N) nonces.
 y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} \u2026`))
             ),
             h(
@@ -4411,7 +4507,8 @@ y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} \u2026`))
               h(Switch, { label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: (value) => run(async () => plugin.setAutomatic("encrypt", value)) }),
               h(Switch, { label: "Auto decrypt", checked: autoDecrypt, onChange: (value) => run(async () => plugin.setAutomatic("decrypt", value)) })
             ),
-            button(h(R.Fragment, null, h(Icon, { name: "keys" }), "Keys & contacts"), () => setContactsTab("keys"), { className: "qc-key-button" }),
+            button(h(R.Fragment, null, h(Icon, { name: "keys" }), "Your keys"), () => setContactsTab("keys"), { className: "qc-panel-button", "aria-label": "Your keys" }),
+            button(h(R.Fragment, null, h(Icon, { name: "contacts" }), "Contacts"), () => setContactsTab("contacts"), { className: "qc-panel-button", "aria-label": "Contacts" }),
             onClose && button(h(Icon, { name: "close" }), onClose, { className: "qc-icon-button", "aria-label": "Close" })
           ),
           h(Tabs, { label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy }),
@@ -4440,7 +4537,7 @@ y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} \u2026`))
             }), { className: "qc-primary", disabled: busy || attached || !draft || !messageReady })
           ),
           opened && h(OpenedMessage, { result: opened, onDismiss: () => setOpened(null) }),
-          contactsTab && h(Contacts, { plugin, channel, keys, initialTab: contactsTab, onClose: () => setContactsTab(null), onChanged: refreshed, onSelect: (id) => {
+          contactsTab && h(Contacts, { key: contactsTab, plugin, channel, keys, view: contactsTab, onClose: () => setContactsTab(null), onChanged: refreshed, onSelect: (id) => {
             invalidate();
             setChannel(id);
             setPartners(plugin.getSavedPartners());
@@ -4456,14 +4553,14 @@ y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} \u2026`))
 // src/button.svg
 var require_button = __commonJS({
   "src/button.svg"(exports2, module2) {
-    module2.exports = '<svg xmlns="http://www.w3.org/2000/svg"\r\n     viewBox="2 0 98 87"\r\n     preserveAspectRatio="xMidYMid meet">\r\n    <path d="m15.617 41.047c-4.4844 2.9961-7.9922 6.2266-10.262 9.4727-2.4922 3.5664-3.4531 7.1211-2.4922 10.34 1.5938 5.3516 8.1562 9.1289 17.465 10.895 1.6055 0.30469 3.2852 0.54688 5.0586 0.73047 5.2578 0.53906 11.09 0.50391 17.242-0.14453-2.4609-1.3672-4.7148-3.0977-6.5703-5.1445-3.1367-3.4648-5.1484-7.8203-5.1484-12.875v-16.355c0.007813-0.89062 0.55469-1.7266 1.4414-2.0469 2.8828-1.0508 5.7656-2.2617 8.5703-3.6211 2.707-1.3086 5.3555-2.7656 7.8867-4.3398 0.6875-0.44531 1.5977-0.48047 2.3359-0.019531 2.543 1.5859 5.207 3.0508 7.9258 4.3633 2.7539 1.332 5.582 2.5273 8.4102 3.5625 0.92188 0.25781 1.5977 1.1016 1.5977 2.1055v18.602c-0.003906 0.19531-0.03125 0.39063-0.085937 0.58984l-0.60156 2.1211c-0.96484 3.4141-2.8516 6.3672-5.293 8.8008 6.2422-1.9531 11.902-4.3711 16.773-7.0859l0.14453-0.082032c3.6016-2.0195 6.7461-4.1953 9.3555-6.4531 5.9961-5.1953 9.0391-10.723 7.8789-15.562l-0.12891-0.46484c-0.87109-2.9102-3.2461-5.3711-6.7422-7.293-1.75-0.96094-3.7695-1.7852-6.0156-2.4609v21.949c0 1.207-0.97656 2.1836-2.1836 2.1836-1.207 0-2.1836-0.98047-2.1836-2.1836v-22.402c-1.7109-0.39844-3.4375-0.87109-5.1641-1.4141-0.09375-0.023438-0.18359-0.050781-0.27344-0.085938-3.7578-1.1914-7.5-2.6953-11.051-4.4336-5.0586-2.4766-9.7383-5.4414-13.52-8.6719-3.7812 3.2305-8.4609 6.1953-13.52 8.6719-5.2695 2.582-10.965 4.6445-16.488 5.9297v26.098c0 1.4258 0.097656 2.8086 0.28906 4.1719 0.19922 1.3945 0.48828 2.7266 0.86328 4.0039 0.33594 1.1523-0.33203 2.3633-1.4844 2.6953-1.1523 0.33594-2.3633-0.33203-2.6953-1.4844-0.4375-1.4922-0.7695-3.0195-1-4.6016-0.22656-1.6016-0.34375-3.1914-0.34375-4.7852v-13.27zm61.309 26.348c-4.2383 1.9961-8.9023 3.7773-13.891 5.2656-1.8242 0.54297-3.7695 1.0664-5.8359 1.5625-9.3398 2.2461-18.453 3.1836-26.578 2.957 1.9766 1.7656 4.1797 3.3281 6.5547 4.6641 3.8906 2.1875 8.2344 3.7461 12.82 4.5391 6.9492-1.2031 13.328-4.1484 18.398-8.3594 3.5781-2.9688 6.5078-6.5703 8.5312-10.629z"/>\r\n</svg>\n';
+    module2.exports = '<svg viewBox="2.027027027027027 7.550000000000001 96.47972972972973 87.46326" version="1.1" xmlns="http://www.w3.org/2000/svg" style="max-height: 500px" width="96.47972972972973" height="87.46326">\n <path d="m15.617 41.047c-4.4844 2.9961-7.9922 6.2266-10.262 9.4727-2.4922 3.5664-3.4531 7.1211-2.4922 10.34 1.5938 5.3516 8.1562 9.1289 17.465 10.895 1.6055 0.30469 3.2852 0.54688 5.0586 0.73047 5.2578 0.53906 11.09 0.50391 17.242-0.14453-2.4609-1.3672-4.7148-3.0977-6.5703-5.1445-3.1367-3.4648-5.1484-7.8203-5.1484-12.875v-16.355c0.007813-0.89062 0.55469-1.7266 1.4414-2.0469 2.8828-1.0508 5.7656-2.2617 8.5703-3.6211 2.707-1.3086 5.3555-2.7656 7.8867-4.3398 0.6875-0.44531 1.5977-0.48047 2.3359-0.019531 2.543 1.5859 5.207 3.0508 7.9258 4.3633 2.7539 1.332 5.582 2.5273 8.4102 3.5625 0.92188 0.25781 1.5977 1.1016 1.5977 2.1055v18.602c-0.003906 0.19531-0.03125 0.39063-0.085937 0.58984l-0.60156 2.1211c-0.96484 3.4141-2.8516 6.3672-5.293 8.8008 6.2422-1.9531 11.902-4.3711 16.773-7.0859l0.14453-0.082032c3.6016-2.0195 6.7461-4.1953 9.3555-6.4531 5.9961-5.1953 9.0391-10.723 7.8789-15.562l-0.12891-0.46484c-0.87109-2.9102-3.2461-5.3711-6.7422-7.293-1.75-0.96094-3.7695-1.7852-6.0156-2.4609v21.949c0 1.207-0.97656 2.1836-2.1836 2.1836-1.207 0-2.1836-0.98047-2.1836-2.1836v-22.402c-1.7109-0.39844-3.4375-0.87109-5.1641-1.4141-0.09375-0.023438-0.18359-0.050781-0.27344-0.085938-3.7578-1.1914-7.5-2.6953-11.051-4.4336-5.0586-2.4766-9.7383-5.4414-13.52-8.6719-3.7812 3.2305-8.4609 6.1953-13.52 8.6719-5.2695 2.582-10.965 4.6445-16.488 5.9297v26.098c0 1.4258 0.097656 2.8086 0.28906 4.1719 0.19922 1.3945 0.48828 2.7266 0.86328 4.0039 0.33594 1.1523-0.33203 2.3633-1.4844 2.6953-1.1523 0.33594-2.3633-0.33203-2.6953-1.4844-0.4375-1.4922-0.76953-3.0195-1-4.6016-0.22656-1.6016-0.34375-3.1914-0.34375-4.7852v-13.27zm61.309 26.348c-4.2383 1.9961-8.9023 3.7773-13.891 5.2656-1.8242 0.54297-3.7695 1.0664-5.8359 1.5625-9.3398 2.2461-18.453 3.1836-26.578 2.957 1.9766 1.7656 4.1797 3.3281 6.5547 4.6641 3.8906 2.1875 8.2344 3.7461 12.82 4.5391 6.9492-1.2031 13.328-4.1484 18.398-8.3594 3.5781-2.9688 6.5078-6.5703 8.5312-10.629z"/>\n</svg>';
   }
 });
 
 // src/styles.css
 var require_styles = __commonJS({
   "src/styles.css"(exports2, module2) {
-    module2.exports = '/* Quiet surfaces, consistent controls, no animated glow or decorative motion. */\n.qcord-dialog {\n    width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;\n    padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;\n    color: #f1f3f5; color-scheme: dark; background: #202226ed; backdrop-filter: blur(14px);\n    box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;\n}\n.qcord-dialog::backdrop { background: #080a0e65; backdrop-filter: blur(3px); }\n.qc-panel {\n    --qc-text: var(--text-normal, #f1f3f5); --qc-muted: var(--text-muted, #a4aab4);\n    --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #10121665;\n    --qc-accent: #9ac8a7; --qc-graph: #86b997;\n    display: flex; flex-direction: column; gap: 18px; width: 100%; height: 100%; min-height: 0;\n    padding: 22px; box-sizing: border-box; color: var(--qc-text); background: transparent;\n    font: 14px/1.5 var(--font-primary, system-ui, sans-serif); text-align: left;\n}\n.qc-composer { min-height: min(640px, 90dvh); }\n.qcord-dialog > .qc-composer { min-height: 0; }\n.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\n.qc-panel h2, .qc-panel h3, .qc-panel p, .qc-panel figure, .qc-panel dl { margin: 0; }\n.qc-panel h3 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em; }\n.qc-panel p { font-size: 13px; line-height: 1.65; color: var(--qc-muted); text-wrap: pretty; }\n.qc-panel small, .qc-muted { font-size: 11px; color: var(--qc-muted); }\n.qc-panel button {\n    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px;\n    padding: 8px 13px; border: 1px solid var(--qc-line); border-radius: 7px;\n    background: #ffffff06; color: var(--qc-text); font: inherit; font-size: 12px; line-height: 1.3;\n    cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, border-color 140ms ease;\n}\n.qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }\n.qc-panel button:disabled { opacity: .38; cursor: default; }\n.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\n.qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }\n.qc-panel .qc-primary { background: #9ac8a7; border-color: #9ac8a7; color: #13261b; font-weight: 600; }\n.qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }\n.qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }\n.qc-panel .qc-icon-button { width: 38px; height: 38px; padding: 8px; flex: 0 0 38px; background: transparent; border-color: transparent; }\n.qc-toolbar { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }\n.qc-toolbar > button, .qc-mode-controls { height: 44px; }\n.qc-panel .qc-recipient { justify-content: flex-start; text-align: left; min-width: 180px; flex: 1; height: 44px; padding: 5px 10px; }\n.qc-recipient > span, .qc-contact-card > span { min-width: 0; }\n.qc-recipient strong, .qc-recipient small, .qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\n.qc-recipient strong { font-size: 12px; font-weight: 500; }\n.qc-recipient small { font-size: 10px; margin-top: 2px; }\n.qc-avatar { display: block; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; object-fit: cover; }\n.qc-avatar-fallback { display: flex; justify-content: center; align-items: center; background: #375443; color: #dbeee0; }\n.qc-mode-controls { display: flex; align-items: stretch; gap: 3px; padding: 3px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\n.qc-panel .qc-switch { min-height: 36px; padding: 6px 9px; border: 0; background: transparent; font-size: 11px; color: var(--qc-muted); }\n.qc-switch[aria-checked="true"] { color: var(--qc-text); }\n.qc-switch-track { position: relative; display: block; width: 26px; height: 15px; flex: 0 0 26px; border-radius: 9px; background: #ffffff20; }\n.qc-switch-track > span { position: absolute; left: 3px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #b1b6bd; transition: transform 150ms cubic-bezier(.23,1,.32,1); }\n.qc-switch[aria-checked="true"] .qc-switch-track { background: #528064; }\n.qc-switch[aria-checked="true"] .qc-switch-track > span { transform: translateX(11px); background: #e4f6e9; }\n.qc-tabs { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--qc-line); }\n.qc-tabs > button { min-width: 0; border: 0; background: transparent; color: var(--qc-muted); white-space: nowrap; font-size: 12px; }\n.qc-tabs > button[aria-selected="true"] { background: #ffffff09; color: var(--qc-text); }\n.qc-composer > .qc-tabs > button { flex: 1; }\n.qc-main { flex: 1 1 0; min-height: 0; }\n.qc-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 28px; height: 100%; min-height: 0; }\n.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 15px; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; }\n.qc-visual { padding-left: 24px; border-left: 1px solid var(--qc-line); }\n.qc-visual > .qc-tabs { padding-bottom: 7px; }\n.qc-visual .qc-tabs > button { font-size: 11px; min-height: 32px; padding: 7px 10px; }\n.qc-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 8px; background: #00000012; flex: 0 0 auto; }\n.qc-variables > div { min-width: 0; }\n.qc-variables dt { font: 16px/1.4 "Cambria Math", ui-monospace, monospace; color: #dce9df; }\n.qc-variables dd { margin: 2px 0 0; color: var(--qc-muted); font-size: 10px; }\n.qc-equation { font: 23px/1.4 "Cambria Math", "STIX Two Math", serif; color: #edf3ef; padding: 4px 0; overflow-wrap: anywhere; flex: 0 0 auto; }\n.qc-code { display: block; font: 11px/1.7 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: #ccd8d0; }\n.qc-secret-values { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\n.qc-keyparts { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; flex: 0 0 auto; }\n.qc-keyparts > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; background: #83ae9514; border-top: 2px solid #8db99b; border-radius: 0 0 5px 5px; }\n.qc-keyparts > div + div { background: #a5b8d610; border-color: #9aaec3; }\n.qc-keyparts strong { font-size: 11px; font-weight: 500; }\n.qc-keyparts span { font-size: 9px; color: var(--qc-muted); }\n.qc-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; flex: 0 0 auto; }\n.qc-matrix button, .qc-vector-tiles button { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 43px; padding: 6px 9px; color: #84af94; background: #88ae9510; }\n.qc-matrix button > span, .qc-vector-tiles button > span { text-align: left; font: 10px ui-monospace, Consolas, monospace; }\n.qc-matrix svg, .qc-vector-tiles svg { width: 100%; height: 20px; }\n.qc-matrix button[aria-pressed="true"], .qc-vector-tiles button[aria-pressed="true"] { color: #b9dec6; border-color: #96c3a275; background: #8ab89c1c; }\n.qc-vector-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 0 0 auto; }\n.qc-vector-tiles button { min-height: 64px; }\n.qc-vector-summary { display: flex; align-items: center; gap: 15px; min-height: 64px; }\n.qc-awaiting { padding: 20px 4px; display: flex; flex-direction: column; gap: 8px; }\n.qc-polynomial { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 9px; background: #00000010; flex: 0 0 auto; }\n.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\n.qc-polynomial figcaption strong { font-weight: 500; }\n.qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }\n.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: pan-y; }\n.qc-scrubber { display: flex; align-items: center; gap: 12px; }\n.qc-scrubber > label { flex: 1; }\n.qc-scrubber output { font: 12px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; min-width: 95px; text-align: right; }\n.qc-coefficient-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }\n.qc-coefficient-strip > button { display: flex; flex-direction: column; gap: 3px; min-height: 42px; padding: 3px; font: 11px ui-monospace, monospace; background: transparent; border-color: transparent; }\n.qc-coefficient-strip small { font-size: 9px; }\n.qc-coefficient-strip button[aria-pressed="true"] { background: #87aa921c; color: #c7e7d1; border-color: #8bb9993b; }\n.qc-panel input[type="range"] { display: block; width: 100%; margin: 4px 0 0; accent-color: #8cb89a; }\n.qc-compression { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 7px; font-size: 11px; color: var(--qc-muted); }\n.qc-compression strong { margin-left: auto; color: #d3e6d9; font: 15px ui-monospace, monospace; }\n.qc-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--qc-muted); min-width: 0; }\n.qc-panel textarea, .qc-panel input[type="search"], .qc-panel input[type="text"] { width: 100%; padding: 10px 12px; color: var(--qc-text); background: var(--qc-empty); border: 1px solid var(--qc-line); border-radius: 7px; font: 11px/1.65 ui-monospace, Consolas, monospace; }\n.qc-panel textarea { resize: none; min-height: 60px; }\n.qc-panel textarea[readonly] { color: #bdc9c0; }\n.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: #7b838f; }\n.qc-panel input[type="search"] { font-family: inherit; }\n.qc-panel .qc-message-input { font: 14px/1.6 var(--font-primary, system-ui, sans-serif); min-height: 145px; }\n.qc-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.qc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\n.qc-json { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 14px; border-radius: 8px; border: 1px solid var(--qc-line); background: var(--qc-empty); color: #cad5ce; white-space: pre; font: 11px/1.85 ui-monospace, Consolas, monospace; }\n.qc-footer { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 13px; border-top: 1px solid var(--qc-line); }\n.qc-feedback { flex: 1; min-width: 0; font-size: 11px; color: var(--qc-muted); overflow-wrap: anywhere; }\n.qc-error { color: #f1a5ac; }\n.qc-panel details { font-size: 11px; color: var(--qc-muted); }\n.qc-panel summary { cursor: pointer; }\n.qc-panel details > .qc-code, .qc-panel details > .qc-field { margin-top: 12px; }\n.qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }\n.qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }\n.qc-contact-header > .qc-tabs { flex: 1; }\n.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }\n.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }\n.qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }\n.qc-panel .qc-contact-card { min-height: 48px; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 7px; }\n.qc-contact-card[aria-pressed="true"] { background: #9ab2a012; border-color: #9ab2a026; }\n.qc-contact-card strong { font-size: 12px; font-weight: 500; }\n.qc-contact-card small { margin-top: 2px; font-size: 10px; }\n.qc-contact-detail { display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding-top: 4px; min-width: 0; }\n.qc-person { display: flex; align-items: center; gap: 10px; }\n.qc-person h3 { font-size: 15px; }\n.qc-person p { font-size: 11px; }\n.qc-my-keys { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 3px; }\n.qc-my-keys h3 { font-size: 14px; }\n.qc-my-keys p { font-size: 11px; line-height: 1.6; }\n.qc-secret { border: 1px solid var(--qc-line); background: #00000010; border-radius: 8px; padding: 10px 12px; }\n.qc-secret .qc-label-row > strong { font-size: 12px; font-weight: 500; }\n.qc-panel .qc-spoiler { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 10px 2px; gap: 5px; border: 0; background: transparent; }\n.qc-secret-mask { filter: blur(3px); color: #9ea8b4; user-select: none; letter-spacing: 3px; font: 16px ui-monospace, monospace; }\n.qc-reset-area { padding-top: 10px; border-top: 1px solid var(--qc-line); }\n.qc-reset-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #bb546450; border-radius: 8px; background: #83344115; font-size: 12px; }\n.qc-opened-dialog { width: min(700px, 92vw); height: min(490px, 86dvh); }\n.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #0002; border: 1px solid var(--qc-line); border-radius: 8px; }\n.qcord-button { display: inline-flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: transparent; border: 0; padding: 6px; border-radius: 7px; color: var(--interactive-normal, #a4aab4); cursor: pointer; }\n.qcord-button svg { width: 21px; height: 21px; fill: currentColor; }\n.qcord-button.qcord-decrypt-enabled { color: #a1d6b1; background: #8aba9e0d; filter: drop-shadow(0 0 3px #6aa78025); }\n.qcord-button:focus-visible { outline: 2px solid #8fbd9c; outline-offset: 2px; }\n[class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); box-shadow: inset 0 0 0 1px #87c79c48, 0 0 14px #5f9b7320; }\n[class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); }\n.qcord-file-hidden, .qcord-empty-content { display: none !important; }\n.qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }\n.qcord-decrypted { position: relative; width: fit-content; max-width: 100%; min-width: 0; padding: 9px 34px 9px 12px; border: 1px solid #8fba9d28; border-radius: 8px; background: #829a8910; }\n.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; white-space: pre-wrap; overflow-wrap: anywhere; }\n.qcord-message > :first-child { margin-top: 0; }\n.qcord-message > :last-child { margin-bottom: 0; }\n.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\n.qcord-message a { color: var(--text-link, #a2c5ef); }\n.qcord-message pre { max-width: 100%; overflow-x: auto; }\n.qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #97a4a0); font-size: 15px; }\n@media (hover: hover) and (pointer: fine) {\n    .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #ffffff0b; }\n    .qc-panel .qc-primary:hover:not(:disabled) { background: #aed4b8; border-color: #aed4b8; }\n    .qc-panel .qc-danger:hover:not(:disabled) { background: #b53f4d; }\n    .qcord-download:hover { background: #ffffff0b; color: #d4e5da; }\n}\n@media (max-height: 780px) and (min-width: 901px) {\n    .qc-panel { padding: 18px; gap: 13px; }\n    .qc-explanation, .qc-visual { gap: 11px; }\n    .qc-polynomial > svg { height: 90px; }\n    .qc-polynomial { gap: 9px; }\n    .qc-my-keys { gap: 8px; }\n    .qc-variables { padding: 10px; gap: 8px 12px; }\n}\n@media (max-width: 950px) {\n    .qc-toolbar { gap: 7px; }\n    .qc-toolbar .qc-key-button { font-size: 0; width: 40px; padding: 8px; }\n    .qc-recipient { min-width: 140px; }\n    .qc-split { gap: 18px; }\n    .qc-visual { padding-left: 18px; }\n}\n@media (max-width: 760px) {\n    .qcord-dialog { width: 96vw; height: 92dvh; }\n    .qc-panel { padding: 15px; gap: 12px; }\n    .qc-toolbar { flex-wrap: wrap; }\n    .qc-toolbar .qc-recipient { order: 0; flex: 1; }\n    .qc-mode-controls { order: 3; width: 100%; }\n    .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }\n    .qc-toolbar .qc-key-button { order: 1; }\n    .qc-toolbar .qc-icon-button { order: 2; }\n    .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }\n    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }\n    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\n    .qc-visual { border-left: 0; padding: 16px 0 0; border-top: 1px solid var(--qc-line); }\n    .qc-contact-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 15px; }\n    .qc-contact-sidebar { padding-right: 12px; }\n    .qc-footer { gap: 5px; }\n    .qc-footer .qc-open-file { font-size: 0; padding: 8px; }\n    .qc-contact-header { gap: 10px; }\n}\n@media (max-width: 520px) {\n    .qc-contact-layout { display: flex; flex-direction: column; overflow: auto; }\n    .qc-contact-sidebar { border-right: 0; padding-right: 0; flex: 0 0 auto; }\n    .qc-contact-list { flex-direction: row; max-height: 55px; overflow-x: auto; }\n    .qc-contact-list > button { flex: 0 0 auto; }\n    .qc-contact-detail { gap: 13px; }\n    .qc-keyparts { grid-template-columns: 1.5fr 1fr; }\n    .qc-secret-mask { letter-spacing: 1px; }\n}\n@media (prefers-reduced-motion: reduce) {\n    .qc-panel button, .qc-switch-track > span { transition: none; }\n    .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: none; }\n}\n';
+    module2.exports = '/* Quiet surfaces, consistent controls, no animated glow or decorative motion. */\n.qcord-dialog {\n    width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;\n    padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;\n    color: #f1f3f5; color-scheme: dark; background: #202226fa;\n    box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;\n}\n.qcord-dialog::backdrop { background: #080a0e65; }\n.qcord-dialog[data-covered="true"] { background: transparent; border-color: transparent; box-shadow: none; }\n.qcord-dialog[data-covered="true"]::backdrop { background: transparent; }\n.qcord-dialog[data-covered="true"] > .qc-panel > :not(dialog) { visibility: hidden; }\n.qc-panel {\n    --qc-text: var(--text-normal, #f1f3f5); --qc-muted: var(--text-muted, #a4aab4);\n    --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #10121665;\n    --qc-accent: #9ac8a7; --qc-graph: #86b997;\n    display: flex; flex-direction: column; gap: 18px; width: 100%; height: 100%; min-height: 0;\n    padding: 22px; box-sizing: border-box; color: var(--qc-text); background: transparent;\n    font: 14px/1.5 var(--font-primary, system-ui, sans-serif); text-align: left;\n}\n.qc-composer { min-height: min(640px, 90dvh); }\n.qcord-dialog > .qc-composer { min-height: 0; }\n.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\n.qc-panel h2, .qc-panel h3, .qc-panel p, .qc-panel figure, .qc-panel dl { margin: 0; }\n.qc-panel h3 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em; }\n.qc-panel p { font-size: 13px; line-height: 1.65; color: var(--qc-muted); text-wrap: pretty; }\n.qc-panel small, .qc-muted { font-size: 11px; color: var(--qc-muted); }\n.qc-panel button {\n    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px;\n    padding: 8px 13px; border: 1px solid var(--qc-line); border-radius: 7px;\n    background: #ffffff06; color: var(--qc-text); font: inherit; font-size: 12px; line-height: 1.3;\n    cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, border-color 140ms ease;\n}\n.qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }\n.qc-panel button:disabled { opacity: .38; cursor: default; }\n.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\n.qc-panel textarea:focus, .qc-panel input[type="search"]:focus { border-color: #a0c8ac; outline: 2px solid #8fbd9c65; outline-offset: 2px; }\n.qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }\n.qc-panel .qc-primary { background: #9ac8a7; border-color: #9ac8a7; color: #13261b; font-weight: 600; }\n.qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }\n.qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }\n.qc-panel .qc-action { align-self: flex-start; color: #dcefe2; background: #8fbd9c20; border-color: #8fbd9c75; padding: 10px 14px; font-weight: 500; }\n.qc-panel .qc-icon-button { width: 38px; height: 38px; padding: 8px; flex: 0 0 38px; background: transparent; border-color: transparent; }\n.qc-toolbar { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }\n.qc-toolbar > button, .qc-mode-controls { height: 44px; }\n.qc-panel .qc-recipient { justify-content: flex-start; text-align: left; min-width: 180px; flex: 1; height: 44px; padding: 5px 10px; }\n.qc-recipient > span, .qc-contact-card > span { min-width: 0; }\n.qc-recipient strong, .qc-recipient small, .qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\n.qc-recipient strong { font-size: 12px; font-weight: 500; }\n.qc-recipient small { font-size: 10px; margin-top: 2px; }\n.qc-avatar { display: block; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; object-fit: cover; }\n.qc-avatar-fallback { display: flex; justify-content: center; align-items: center; background: #375443; color: #dbeee0; }\n.qc-mode-controls { display: flex; align-items: stretch; gap: 3px; padding: 3px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\n.qc-panel .qc-switch { min-height: 36px; padding: 6px 9px; border: 0; background: transparent; font-size: 11px; color: var(--qc-muted); }\n.qc-switch[aria-checked="true"] { color: var(--qc-text); }\n.qc-switch-track { position: relative; display: block; width: 26px; height: 15px; flex: 0 0 26px; border-radius: 9px; background: #ffffff20; }\n.qc-switch-track > span { position: absolute; left: 3px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #b1b6bd; transition: transform 150ms cubic-bezier(.23,1,.32,1); }\n.qc-switch[aria-checked="true"] .qc-switch-track { background: #528064; }\n.qc-switch[aria-checked="true"] .qc-switch-track > span { transform: translateX(11px); background: #e4f6e9; }\n.qc-tabs { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--qc-line); }\n.qc-tabs > button { min-width: 0; border: 0; background: transparent; color: var(--qc-muted); white-space: nowrap; font-size: 12px; }\n.qc-tabs > button[aria-selected="true"] { background: #ffffff09; color: var(--qc-text); }\n.qc-composer > .qc-tabs > button { flex: 1; }\n.qc-main { flex: 1 1 0; min-height: 0; }\n.qc-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 28px; height: 100%; min-height: 0; }\n.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 15px; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; }\n.qc-visual { padding-left: 24px; border-left: 1px solid var(--qc-line); }\n.qc-visual > .qc-tabs { padding-bottom: 7px; }\n.qc-visual .qc-tabs > button { font-size: 11px; min-height: 32px; padding: 7px 10px; }\n.qc-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 8px; background: #00000012; flex: 0 0 auto; }\n.qc-variables > div { min-width: 0; }\n.qc-variables dt { font: 16px/1.4 "Cambria Math", ui-monospace, monospace; color: #dce9df; }\n.qc-variables dd { margin: 2px 0 0; color: var(--qc-muted); font-size: 10px; }\n.qc-equation { font: 23px/1.4 "Cambria Math", "STIX Two Math", serif; color: #edf3ef; padding: 4px 0; overflow-wrap: anywhere; flex: 0 0 auto; }\n.qc-code { display: block; font: 11px/1.7 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: #ccd8d0; }\n.qc-secret-values { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\n.qc-keyparts { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; flex: 0 0 auto; }\n.qc-keyparts > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; background: #83ae9514; border-top: 2px solid #8db99b; border-radius: 0 0 5px 5px; }\n.qc-keyparts > div + div { background: #a5b8d610; border-color: #9aaec3; }\n.qc-keyparts strong { font-size: 11px; font-weight: 500; }\n.qc-keyparts span { font-size: 9px; color: var(--qc-muted); }\n.qc-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; flex: 0 0 auto; }\n.qc-matrix button, .qc-vector-tiles button { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 43px; padding: 6px 9px; color: #84af94; background: #88ae9510; }\n.qc-matrix button > span, .qc-vector-tiles button > span { text-align: left; font: 10px ui-monospace, Consolas, monospace; }\n.qc-matrix svg, .qc-vector-tiles svg { width: 100%; height: 20px; }\n.qc-matrix button[aria-pressed="true"], .qc-vector-tiles button[aria-pressed="true"] { color: #b9dec6; border-color: #96c3a275; background: #8ab89c1c; }\n.qc-vector-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 0 0 auto; }\n.qc-vector-tiles button { min-height: 64px; }\n.qc-vector-summary { display: flex; align-items: center; gap: 15px; min-height: 64px; }\n.qc-awaiting { padding: 20px 4px; display: flex; flex-direction: column; gap: 8px; }\n.qc-polynomial { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 9px; background: #00000010; flex: 0 0 auto; }\n.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\n.qc-polynomial figcaption strong { font-weight: 500; }\n.qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }\n.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: none; cursor: crosshair; }\n.qc-scrubber { display: flex; align-items: center; gap: 12px; }\n.qc-scrubber > label { flex: 1; }\n.qc-scrubber output { font: 12px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; min-width: 95px; text-align: right; }\n.qc-coefficient-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }\n.qc-coefficient-strip > button { display: flex; flex-direction: column; gap: 3px; min-height: 42px; padding: 3px; font: 11px ui-monospace, monospace; background: transparent; border-color: transparent; }\n.qc-coefficient-strip small { font-size: 9px; }\n.qc-coefficient-strip button[aria-pressed="true"] { background: #87aa921c; color: #c7e7d1; border-color: #8bb9993b; }\n.qc-panel input[type="range"] { display: block; width: 100%; margin: 4px 0 0; accent-color: #8cb89a; }\n.qc-compression { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 7px; font-size: 11px; color: var(--qc-muted); }\n.qc-compression strong { margin-left: auto; color: #d3e6d9; font: 15px ui-monospace, monospace; }\n.qc-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--qc-muted); min-width: 0; }\n.qc-panel textarea, .qc-panel input[type="search"], .qc-panel input[type="text"] { width: 100%; padding: 10px 12px; color: var(--qc-text); background: var(--qc-empty); border: 1px solid var(--qc-line); border-radius: 7px; font: 11px/1.65 ui-monospace, Consolas, monospace; }\n.qc-panel textarea { resize: none; min-height: 60px; }\n.qc-panel textarea[readonly] { color: #bdc9c0; }\n.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: #7b838f; }\n.qc-panel input[type="search"] { font-family: inherit; }\n.qc-panel .qc-message-input { font: 14px/1.6 var(--font-primary, system-ui, sans-serif); min-height: 145px; }\n.qc-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.qc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\n.qc-json { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 14px; border-radius: 8px; border: 1px solid var(--qc-line); background: var(--qc-empty); color: #cad5ce; white-space: pre; font: 11px/1.85 ui-monospace, Consolas, monospace; }\n.qc-footer { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 13px; border-top: 1px solid var(--qc-line); }\n.qc-feedback { flex: 1; min-width: 0; font-size: 11px; color: var(--qc-muted); overflow-wrap: anywhere; }\n.qc-error { color: #f1a5ac; }\n.qc-panel details { font-size: 11px; color: var(--qc-muted); }\n.qc-panel summary { cursor: pointer; }\n.qc-panel details > .qc-code, .qc-panel details > .qc-field { margin-top: 12px; }\n.qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }\n.qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }\n.qc-contact-header > .qc-tabs { flex: 1; }\n.qc-panel-title { display: flex; align-items: center; gap: 10px; }\n.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }\n.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }\n.qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }\n.qc-panel .qc-contact-card { min-height: 48px; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 7px; }\n.qc-contact-card[aria-pressed="true"] { background: #9ab2a012; border-color: #9ab2a026; }\n.qc-contact-card strong { font-size: 12px; font-weight: 500; }\n.qc-contact-card small { margin-top: 2px; font-size: 10px; }\n.qc-contact-detail { display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding-top: 4px; min-width: 0; }\n.qc-person { display: flex; align-items: center; gap: 10px; }\n.qc-person h3 { font-size: 15px; }\n.qc-person p { font-size: 11px; }\n.qc-my-keys { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 3px; }\n.qc-my-keys h3 { font-size: 14px; }\n.qc-my-keys p { font-size: 11px; line-height: 1.6; }\n.qc-secret { border: 1px solid var(--qc-line); background: #00000010; border-radius: 8px; padding: 10px 12px; }\n.qc-secret .qc-label-row > strong { font-size: 12px; font-weight: 500; }\n.qc-panel .qc-spoiler { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 10px 2px; gap: 5px; border: 0; background: transparent; }\n.qc-secret-mask { filter: blur(3px); color: #9ea8b4; user-select: none; letter-spacing: 3px; font: 16px ui-monospace, monospace; }\n.qc-reset-area { padding-top: 10px; border-top: 1px solid var(--qc-line); }\n.qc-reset-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #bb546450; border-radius: 8px; background: #83344115; font-size: 12px; }\n.qc-opened-dialog { width: min(700px, 92vw); height: min(490px, 86dvh); }\n.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #0002; border: 1px solid var(--qc-line); border-radius: 8px; }\n.qcord-button { display: inline-flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: transparent; border: 0; padding: 6px; border-radius: 7px; color: var(--interactive-normal, #a4aab4); cursor: pointer; }\n.qcord-button svg { width: 21px; height: 21px; fill: currentColor; }\n.qcord-button.qcord-decrypt-enabled { color: #a1d6b1; background: #8aba9e0d; filter: drop-shadow(0 0 3px #6aa78025); }\n.qcord-button:focus-visible { outline: 2px solid #8fbd9c; outline-offset: 2px; }\n[class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); box-shadow: inset 0 0 0 1px #87c79c48, 0 0 14px #5f9b7320; }\n[class*="channelTextArea"].qcord-encrypt-enabled { outline: 1px solid #87c79c75; outline-offset: -1px; }\n[class*="channelTextArea"].qcord-encrypt-enabled:focus-within { outline: 2px solid #9ad0ad; outline-offset: -2px; box-shadow: inset 0 0 0 2px #87c79c48, 0 0 14px #5f9b7320; }\n[class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); }\n.qcord-file-hidden, .qcord-empty-content { display: none !important; }\n.qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }\n.qcord-decrypted { position: relative; width: fit-content; max-width: 100%; min-width: 0; padding: 9px 34px 9px 12px; border: 1px solid #8fba9d28; border-radius: 8px; background: #829a8910; }\n.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; white-space: pre-wrap; overflow-wrap: anywhere; }\n.qcord-message > :first-child { margin-top: 0; }\n.qcord-message > :last-child { margin-bottom: 0; }\n.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\n.qcord-message a { color: var(--text-link, #a2c5ef); }\n.qcord-message pre { max-width: 100%; overflow-x: auto; }\n.qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #97a4a0); font-size: 15px; }\n.qcord-download svg { width: 18px; height: 18px; fill: currentColor; }\n@media (hover: hover) and (pointer: fine) {\n    .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #ffffff0b; }\n    .qc-panel .qc-primary:hover:not(:disabled) { background: #aed4b8; border-color: #aed4b8; }\n    .qc-panel .qc-danger:hover:not(:disabled) { background: #b53f4d; }\n    .qcord-download:hover { background: #ffffff0b; color: #d4e5da; }\n}\n@media (max-height: 780px) and (min-width: 901px) {\n    .qc-panel { padding: 18px; gap: 13px; }\n    .qc-explanation, .qc-visual { gap: 11px; }\n    .qc-polynomial > svg { height: 90px; }\n    .qc-polynomial { gap: 9px; }\n    .qc-my-keys { gap: 8px; }\n    .qc-variables { padding: 10px; gap: 8px 12px; }\n}\n@media (max-width: 950px) {\n    .qc-toolbar { gap: 7px; }\n    .qc-toolbar .qc-panel-button { font-size: 0; width: 40px; padding: 8px; }\n    .qc-recipient { min-width: 140px; }\n    .qc-split { gap: 18px; }\n    .qc-visual { padding-left: 18px; }\n}\n@media (max-width: 760px) {\n    .qcord-dialog { width: 96vw; height: 92dvh; }\n    .qc-panel { padding: 15px; gap: 12px; }\n    .qc-toolbar { flex-wrap: wrap; }\n    .qc-toolbar .qc-recipient { order: 0; flex: 1; }\n    .qc-mode-controls { order: 3; width: 100%; }\n    .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }\n    .qc-toolbar .qc-panel-button { order: 1; }\n    .qc-toolbar .qc-icon-button { order: 2; }\n    .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }\n    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }\n    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\n    .qc-visual { border-left: 0; padding: 16px 0 0; border-top: 1px solid var(--qc-line); }\n    .qc-contact-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 15px; }\n    .qc-contact-sidebar { padding-right: 12px; }\n    .qc-footer { gap: 5px; }\n    .qc-footer .qc-open-file { font-size: 0; padding: 8px; }\n    .qc-contact-header { gap: 10px; }\n}\n@media (max-width: 520px) {\n    .qc-contact-layout { display: flex; flex-direction: column; overflow: auto; }\n    .qc-contact-sidebar { border-right: 0; padding-right: 0; flex: 0 0 auto; }\n    .qc-contact-list { flex-direction: row; max-height: 55px; overflow-x: auto; }\n    .qc-contact-list > button { flex: 0 0 auto; }\n    .qc-contact-detail { gap: 13px; }\n    .qc-keyparts { grid-template-columns: 1.5fr 1fr; }\n    .qc-secret-mask { letter-spacing: 1px; }\n}\n@media (prefers-reduced-motion: reduce) {\n    .qc-panel button, .qc-switch-track > span { transition: none; }\n    .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: none; }\n}\n';
   }
 });
 
@@ -4472,6 +4569,7 @@ var require_attachments = __commonJS({
   "src/attachments.js"(exports2, module2) {
     "use strict";
     var { MAX_DECODED_FILE_SIZE, NAME: NAME2 } = require_constants();
+    var LOGO = require_button();
     module2.exports = class AttachmentDecoder {
       constructor(plugin) {
         this.plugin = plugin;
@@ -4538,7 +4636,7 @@ var require_attachments = __commonJS({
           const download = document.createElement("a");
           download.className = "qcord-download";
           download.href = entry.url;
-          download.textContent = "\u2193";
+          download.innerHTML = LOGO;
           download.title = "Download .qcord";
           download.setAttribute("aria-label", "Download .qcord");
           element.append(download);
@@ -4614,7 +4712,7 @@ module.exports = class Qcord extends Encapsulation {
     BdApi.DOM.addStyle(NAME, PLUGIN_CSS);
     this.mountButtons();
     this.attachments.scan();
-    BdApi.UI.showToast("Qcord ready \u2014 inspect a recipient key to begin.", { type: "success" });
+    BdApi.UI.showToast("Qcord ready. Inspect a recipient key to begin.", { type: "success" });
   }
   currentChannel() {
     return BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId();
@@ -4711,14 +4809,12 @@ module.exports = class Qcord extends Encapsulation {
       const composer = editor.closest('[class*="channelTextArea"]');
       const controls = composer?.querySelector('[class*="buttons_"]');
       if (!controls) continue;
-      composer.classList.toggle("qcord-encrypt-enabled", this.autoEncrypt);
+      if (composer.classList.contains("qcord-encrypt-enabled") !== this.autoEncrypt) composer.classList.toggle("qcord-encrypt-enabled", this.autoEncrypt);
       let button = composer.querySelector(BUTTON_SELECTOR);
       if (!button) {
         button = document.createElement("button");
         button.type = "button";
         button.className = "qcord-button";
-        button.title = "Qcord \u2014 ML-KEM encapsulation";
-        button.setAttribute("aria-label", button.title);
         button.setAttribute("aria-haspopup", "dialog");
         button.innerHTML = BUTTON_SVG;
         button.addEventListener("mousedown", (event) => event.preventDefault());
@@ -4728,9 +4824,10 @@ module.exports = class Qcord extends Encapsulation {
           this.openComposer();
         });
       }
-      button.classList.toggle("qcord-decrypt-enabled", this.autoDecrypt);
-      button.title = `Qcord \xB7 Auto-encrypt ${this.autoEncrypt ? "on" : "off"} \xB7 Auto-decrypt ${this.autoDecrypt ? "on" : "off"}`;
-      button.setAttribute("aria-label", button.title);
+      if (button.classList.contains("qcord-decrypt-enabled") !== this.autoDecrypt) button.classList.toggle("qcord-decrypt-enabled", this.autoDecrypt);
+      const title = `Qcord \xB7 Auto-encrypt ${this.autoEncrypt ? "on" : "off"} \xB7 Auto-decrypt ${this.autoDecrypt ? "on" : "off"}`;
+      if (button.title !== title) button.title = title;
+      if (button.getAttribute("aria-label") !== title) button.setAttribute("aria-label", title);
       if (controls.firstElementChild !== button) controls.prepend(button);
     }
   }
@@ -4764,7 +4861,9 @@ module.exports = class Qcord extends Encapsulation {
     root.render(getSettingsPanel(this, { onClose: close }));
     dialog.showModal();
   }
-  observer() {
+  observer(mutation) {
+    const target = mutation?.target?.nodeType === 1 ? mutation.target : mutation?.target?.parentElement;
+    if (target?.closest(".qcord-dialog, .qcord-decrypted, .qcord-button")) return;
     this.scheduleMount();
   }
   onSwitch() {

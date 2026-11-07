@@ -2,10 +2,13 @@
 .qcord-dialog {
     width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;
     padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;
-    color: #f1f3f5; color-scheme: dark; background: #202226ed; backdrop-filter: blur(14px);
+    color: #f1f3f5; color-scheme: dark; background: #202226fa;
     box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;
 }
-.qcord-dialog::backdrop { background: #080a0e65; backdrop-filter: blur(3px); }
+.qcord-dialog::backdrop { background: #080a0e65; }
+.qcord-dialog[data-covered="true"] { background: transparent; border-color: transparent; box-shadow: none; }
+.qcord-dialog[data-covered="true"]::backdrop { background: transparent; }
+.qcord-dialog[data-covered="true"] > .qc-panel > :not(dialog) { visibility: hidden; }
 .qc-panel {
     --qc-text: var(--text-normal, #f1f3f5); --qc-muted: var(--text-muted, #a4aab4);
     --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #10121665;
@@ -30,10 +33,12 @@
 .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }
 .qc-panel button:disabled { opacity: .38; cursor: default; }
 .qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }
+.qc-panel textarea:focus, .qc-panel input[type="search"]:focus { border-color: #a0c8ac; outline: 2px solid #8fbd9c65; outline-offset: 2px; }
 .qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }
 .qc-panel .qc-primary { background: #9ac8a7; border-color: #9ac8a7; color: #13261b; font-weight: 600; }
 .qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }
 .qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }
+.qc-panel .qc-action { align-self: flex-start; color: #dcefe2; background: #8fbd9c20; border-color: #8fbd9c75; padding: 10px 14px; font-weight: 500; }
 .qc-panel .qc-icon-button { width: 38px; height: 38px; padding: 8px; flex: 0 0 38px; background: transparent; border-color: transparent; }
 .qc-toolbar { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 .qc-toolbar > button, .qc-mode-controls { height: 44px; }
@@ -86,7 +91,7 @@
 .qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
 .qc-polynomial figcaption strong { font-weight: 500; }
 .qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }
-.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: pan-y; }
+.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: none; cursor: crosshair; }
 .qc-scrubber { display: flex; align-items: center; gap: 12px; }
 .qc-scrubber > label { flex: 1; }
 .qc-scrubber output { font: 12px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; min-width: 95px; text-align: right; }
@@ -116,6 +121,7 @@
 .qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }
 .qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .qc-contact-header > .qc-tabs { flex: 1; }
+.qc-panel-title { display: flex; align-items: center; gap: 10px; }
 .qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }
 .qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }
 .qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }
@@ -143,6 +149,8 @@
 .qcord-button.qcord-decrypt-enabled { color: #a1d6b1; background: #8aba9e0d; filter: drop-shadow(0 0 3px #6aa78025); }
 .qcord-button:focus-visible { outline: 2px solid #8fbd9c; outline-offset: 2px; }
 [class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); box-shadow: inset 0 0 0 1px #87c79c48, 0 0 14px #5f9b7320; }
+[class*="channelTextArea"].qcord-encrypt-enabled { outline: 1px solid #87c79c75; outline-offset: -1px; }
+[class*="channelTextArea"].qcord-encrypt-enabled:focus-within { outline: 2px solid #9ad0ad; outline-offset: -2px; box-shadow: inset 0 0 0 2px #87c79c48, 0 0 14px #5f9b7320; }
 [class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); }
 .qcord-file-hidden, .qcord-empty-content { display: none !important; }
 .qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }
@@ -154,6 +162,7 @@
 .qcord-message a { color: var(--text-link, #a2c5ef); }
 .qcord-message pre { max-width: 100%; overflow-x: auto; }
 .qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #97a4a0); font-size: 15px; }
+.qcord-download svg { width: 18px; height: 18px; fill: currentColor; }
 @media (hover: hover) and (pointer: fine) {
     .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #ffffff0b; }
     .qc-panel .qc-primary:hover:not(:disabled) { background: #aed4b8; border-color: #aed4b8; }
@@ -170,7 +179,7 @@
 }
 @media (max-width: 950px) {
     .qc-toolbar { gap: 7px; }
-    .qc-toolbar .qc-key-button { font-size: 0; width: 40px; padding: 8px; }
+    .qc-toolbar .qc-panel-button { font-size: 0; width: 40px; padding: 8px; }
     .qc-recipient { min-width: 140px; }
     .qc-split { gap: 18px; }
     .qc-visual { padding-left: 18px; }
@@ -182,7 +191,7 @@
     .qc-toolbar .qc-recipient { order: 0; flex: 1; }
     .qc-mode-controls { order: 3; width: 100%; }
     .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }
-    .qc-toolbar .qc-key-button { order: 1; }
+    .qc-toolbar .qc-panel-button { order: 1; }
     .qc-toolbar .qc-icon-button { order: 2; }
     .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }
     .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }

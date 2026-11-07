@@ -43,7 +43,12 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
         const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null), filePicker = R.useRef(null);
         const indices = [0, 1, 2], row = partners.find(r => r.channel_id === channel);
         const profile = row ? plugin.getPartnerProfile(row.user_id) : null;
-        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes) : null, [row]);
+        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes) : null, [row?.public_encaps]);
+        const derived = R.useMemo(() => {
+            if (!draft) return null;
+            const kr = sha3_512(Uint8Array.from([...draft.trace.m, ...sha3_256(PQC.createPublicKey(draft.public_encaps).bytes)]));
+            try { return {k: hex(kr.slice(0, 32)), r: hex(kr.slice(32))}; } finally { kr.fill(0); }
+        }, [draft?.trace.m, draft?.public_encaps]);
         R.useEffect(() => {
             const stop = () => { alive.current = false; ticket.current++; M.wipe(preview.current); setDraft(null); setKeys(null); setStopped(true); };
             const reset = value => { invalidate(); setPartners([]); setKeys(value); setText(""); setOpened(null); setContactsTab(null); setStep(0); setNotice("New key ready. Share your public key with contacts."); };
@@ -71,7 +76,11 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
             if (!alive.current || request !== ticket.current) { M.wipe(result); return; }
             preview.current = result; setDraft(result); setMessageReady(text.length > 0); setStep(target);
         }
-        const navigate = value => run(async () => { if (value >= 1) await prepare(value); else setStep(value); });
+        const navigate = value => {
+            if (value === step) return;
+            if (value === 0 || draft) { setStep(value); return; }
+            run(() => prepare(value));
+        };
         const refreshed = () => { invalidate(); setPartners(plugin.getSavedPartners()); setStep(0); };
         function editMessage(value) {
             setText(value); setAttached(false); setError(""); setMessageReady(false);
@@ -94,24 +103,22 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                     selected ? h(Polynomial, {values: selected, name: keyTab === "vector" ? `t̂[${vectorIndex}] · NTT` : `Â[${Math.floor(matrixCell / 3)},${matrixCell % 3}] · NTT`}) : h("div", {className: "qc-awaiting"}, p("Each cell is a polynomial of 256 coefficients."), p("Your recipient's values appear here after you save their key.")))));
         }
         if (step === 1 && draft) {
-            const kr = sha3_512(Uint8Array.from([...draft.trace.m, ...sha3_256(PQC.createPublicKey(draft.public_encaps).bytes)]));
-            const kHex = hex(kr.slice(0, 32)), rHex = hex(kr.slice(32)); kr.fill(0);
             content = split(h(R.Fragment, null, h(Variables, {items: [["m", "fresh random 32 bytes"], ["ek", "recipient key · 1184 bytes"], ["H", "SHA3-256"], ["G", "SHA3-512"]]}),
                 h("h3", null, "Derive the shared key"), formula("(K, r) = G(m ∥ H(ek))"),
                 p("Hash the entire public key. Split G's 64-byte output: the first 32 bytes are K; the last 32 are the noise seed r."),
                 formula("μ = Decompress₁(ByteDecode₁(m))"), p("μ encodes m as 256 coefficients: a 0 bit becomes 0, a 1 bit becomes 1665."),
-                button("Sample fresh m", () => run(() => prepare(1, true)), {disabled: busy, className: "qc-quiet"})),
-            h(R.Fragment, null, h("div", {className: "qc-secret-values"}, code(`m · ${hex(draft.trace.m)}`), code(`K · ${kHex}`), code(`r · ${rHex}`)), h(Polynomial, {values: draft.trace.mu, name: "μ · encoded m"})));
+                button(h(R.Fragment, null, h(Icon, {name: "refresh"}), "Sample fresh m"), () => run(() => prepare(1, true)), {disabled: busy, className: "qc-action", title: "Generate fresh randomness and rebuild this encapsulation"})),
+            h(R.Fragment, null, h("div", {className: "qc-secret-values"}, code(`m · ${hex(draft.trace.m)}`), code(`K · ${derived.k}`), code(`r · ${derived.r}`)), h(Polynomial, {values: draft.trace.mu, name: "μ · encoded m"})));
         }
         if (step === 2 && draft) {
             const t = draft.trace, i = vectorIndex, j = coefficient, values = part === "u" ? t.u[i] : t.v;
             const product = part === "u" ? M.mod(values[j] - t.e1[i][j]) : M.mod(values[j] - t.e2[j] - t.mu[j]);
-            content = split(h(R.Fragment, null, h(Variables, {items: [["A / t", "recipient public polynomials"], ["y", "3 noise polynomials · course r⃗"], ["e₁ / e₂", "noise vector / polynomial"], ["μ", "encoded random m"]]}),
-                h("h3", null, "Construct u and v"), formula("u = Aᵀy + e₁"), formula("v = tᵀy + μ + e₂"),
-                p("Polynomial arithmetic modulo 3329. With row vectors, uᵀ = yᵀA + e₁ᵀ — the course's rA + e₁."),
+            content = split(h(R.Fragment, null, h(Variables, {items: [["Â / t̂", "recipient public polynomials in NTT form"], ["ŷ = NTT(y)", "3 noise polynomials in NTT form"], ["e₁ / e₂", "noise vector / polynomial"], ["μ", "encoded random m"]]}),
+                h("h3", null, "Construct u and v"), formula("u = NTT⁻¹(Âᵀ ∘ ŷ) + e₁"), formula("v = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂"),
+                p("∘ multiplies polynomials in the NTT domain. NTT⁻¹ returns coefficients modulo 3329 before adding noise."),
                 code(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
                 h("div", {className: "qc-compression"}, h("span", null, "Compressed for the file"), h("strong", null, `${values[j]} → ${M.compress(values[j], part === "u" ? 10 : 4)}`), h("small", null, part === "u" ? "10 bits" : "4 bits")),
-                h("details", null, h("summary", null, "Noise and NTT details"), code(`y/e₁/e₂ use CBD₂ with successive PRF(r, N) nonces.\nu = NTT⁻¹(Âᵀ ∘ ŷ) + e₁\nv = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂\ny[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} …`))),
+                h("details", null, h("summary", null, "Sampled noise"), code(`y/e₁/e₂ use CBD₂ with successive PRF(r, N) nonces.\ny[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} …`))),
             h(R.Fragment, null, h(Tabs, {label: "Ciphertext components", items: [["u", "Compute u"], ["v", "Compute v"]], value: part, onChange: setPart}),
                 part === "u" ? vectorTiles(t.u, "u", i, setVectorIndex) : h("div", {className: "qc-vector-summary"}, h("strong", null, "v"), p("One polynomial · 256 coefficients")),
                 h(Polynomial, {values, name: part === "u" ? `u[${i}] · before compression` : "v · before compression", index: j, onIndexChange: setCoefficient}),
@@ -132,7 +139,8 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 button(h(R.Fragment, null, profile && h(Avatar, {profile}), h("span", null, h("strong", null, profile?.displayName || "Choose recipient"), h("small", null, row ? "Public key saved" : "Save their public key"))), () => setContactsTab("contacts"), {className: "qc-recipient", "aria-label": "Choose recipient"}),
                 h("div", {className: "qc-mode-controls"}, h(Switch, {label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: value => run(async () => plugin.setAutomatic("encrypt", value))}),
                     h(Switch, {label: "Auto decrypt", checked: autoDecrypt, onChange: value => run(async () => plugin.setAutomatic("decrypt", value))})),
-                button(h(R.Fragment, null, h(Icon, {name: "keys"}), "Keys & contacts"), () => setContactsTab("keys"), {className: "qc-key-button"}),
+                button(h(R.Fragment, null, h(Icon, {name: "keys"}), "Your keys"), () => setContactsTab("keys"), {className: "qc-panel-button", "aria-label": "Your keys"}),
+                button(h(R.Fragment, null, h(Icon, {name: "contacts"}), "Contacts"), () => setContactsTab("contacts"), {className: "qc-panel-button", "aria-label": "Contacts"}),
                 onClose && button(h(Icon, {name: "close"}), onClose, {className: "qc-icon-button", "aria-label": "Close"})),
             h(Tabs, {label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy}),
             h("main", {className: "qc-main", role: "tabpanel", "aria-label": `${stages[step]} stage`, "aria-busy": busy}, content),
@@ -145,7 +153,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 }}),
                 step < 3 ? button("Next", () => navigate(step + 1), {className: "qc-primary", disabled: busy || !row}) : button(attached ? "Attached" : "Attach .qcord", () => run(async () => { await plugin.stageDraft(draft); if (alive.current) { setAttached(true); setNotice("Ready in Discord. Press Send to share."); } }), {className: "qc-primary", disabled: busy || attached || !draft || !messageReady})),
             opened && h(OpenedMessage, {result: opened, onDismiss: () => setOpened(null)}),
-            contactsTab && h(Contacts, {plugin, channel, keys, initialTab: contactsTab, onClose: () => setContactsTab(null), onChanged: refreshed, onSelect: id => { invalidate(); setChannel(id); setPartners(plugin.getSavedPartners()); setStep(0); }}));
+            contactsTab && h(Contacts, {key: contactsTab, plugin, channel, keys, view: contactsTab, onClose: () => setContactsTab(null), onChanged: refreshed, onSelect: id => { invalidate(); setChannel(id); setPartners(plugin.getSavedPartners()); setStep(0); }}));
     }
     return h(Panel);
 };

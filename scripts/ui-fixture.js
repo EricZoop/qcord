@@ -8,7 +8,7 @@ import message from "../src/message.js";
 
 globalThis.Buffer = Buffer;
 const data = {};
-const state = {channel: "100", staged: [], sent: [], notices: [], downloads: [], markdownThrows: false};
+const state = {channel: "100", staged: [], sent: [], notices: [], downloads: [], markdownThrows: false, encapsulations: 0};
 const downloads = new Map();
 // A small stand-in for Discord's renderer: tests verify delegation and safe React text.
 const markdown = {reactParserFor() {}, parse: text => {
@@ -38,12 +38,14 @@ BdApi.Net = {fetch: async (url, options) => {
     return {ok:true, headers:{get:()=>String(item.size ?? new TextEncoder().encode(item.wire).length)}, text:async()=>item.wire};
 }};
 const plugin=new Qcord();plugin.start();
+const prepare=plugin.prepareEncapsulation.bind(plugin);
+plugin.prepareEncapsulation=(...args)=>{state.encapsulations++;return prepare(...args);};
 const chat=document.createElement("div");chat.id="qcord-test-chat";document.body.append(chat);
 const composer=document.createElement("div");composer.className="channelTextArea_fixture";
 const editor=document.createElement("div");editor.contentEditable="true";editor.setAttribute("role","textbox");editor.setAttribute("aria-label","Discord draft");
 const controls=document.createElement("div");controls.className="buttons_fixture";composer.append(editor,controls);document.body.append(composer);plugin.mountButtons();
 editor.addEventListener("keydown",async event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();const result=await actions.sendMessage(state.channel,{content:editor.innerText});if(result.shouldClear)editor.replaceChildren();}});
-const observer=new MutationObserver(()=>plugin.observer());observer.observe(chat,{childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
+const observer=new MutationObserver(records=>{for(const record of records)plugin.observer(record);});observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:["class","title","aria-label","href"]});
 function addAttachment(wire, {id="1",channel="100",url,delay=false,size}={}) {
     url ||= `https://cdn.discordapp.com/attachments/${channel}/${id}/message.qcord?ex=fixture`;
     const item={wire,size};

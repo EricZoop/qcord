@@ -2,7 +2,7 @@
   "name": "Qcord",
   "author": "Eric, Arsh, Yasser",
   "authorId": "215269534540496896",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "ML-KEM-768 encrypted messages with independent automatic modes, Discord Markdown, and a compact visual walkthrough.",
   "invite": "GSdMfMBW5g",
   "source": "https://github.com/EricZoop/qcord"

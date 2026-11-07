@@ -1,6 +1,7 @@
 "use strict";
 
 const {MAX_DECODED_FILE_SIZE, NAME} = require("./constants");
+const LOGO = require("./button.svg");
 
 // Own only Qcord's inserted nodes. Discord continues to own its attachment cards.
 module.exports = class AttachmentDecoder {
@@ -64,7 +65,7 @@ module.exports = class AttachmentDecoder {
             const download = document.createElement("a");
             download.className = "qcord-download";
             download.href = entry.url;
-            download.textContent = "↓";
+            download.innerHTML = LOGO; // Static bundled logo, never decrypted HTML.
             download.title = "Download .qcord";
             download.setAttribute("aria-label", "Download .qcord");
             element.append(download);

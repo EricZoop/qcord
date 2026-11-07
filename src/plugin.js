@@ -35,7 +35,7 @@ module.exports = class Qcord extends Encapsulation {
         BdApi.DOM.addStyle(NAME, PLUGIN_CSS);
         this.mountButtons();
         this.attachments.scan();
-        BdApi.UI.showToast("Qcord ready — inspect a recipient key to begin.", {type: "success"});
+        BdApi.UI.showToast("Qcord ready. Inspect a recipient key to begin.", {type: "success"});
     }
 
     currentChannel() { return BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId(); }
@@ -118,22 +118,21 @@ module.exports = class Qcord extends Encapsulation {
             const composer = editor.closest('[class*="channelTextArea"]');
             const controls = composer?.querySelector('[class*="buttons_"]');
             if (!controls) continue;
-            composer.classList.toggle("qcord-encrypt-enabled", this.autoEncrypt);
+            if (composer.classList.contains("qcord-encrypt-enabled") !== this.autoEncrypt) composer.classList.toggle("qcord-encrypt-enabled", this.autoEncrypt);
             let button = composer.querySelector(BUTTON_SELECTOR);
             if (!button) {
                 button = document.createElement("button");
                 button.type = "button";
                 button.className = "qcord-button";
-                button.title = "Qcord — ML-KEM encapsulation";
-                button.setAttribute("aria-label", button.title);
                 button.setAttribute("aria-haspopup", "dialog");
                 button.innerHTML = BUTTON_SVG;
                 button.addEventListener("mousedown", event => event.preventDefault());
                 button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); this.openComposer(); });
             }
-            button.classList.toggle("qcord-decrypt-enabled", this.autoDecrypt);
-            button.title = `Qcord · Auto-encrypt ${this.autoEncrypt ? "on" : "off"} · Auto-decrypt ${this.autoDecrypt ? "on" : "off"}`;
-            button.setAttribute("aria-label", button.title);
+            if (button.classList.contains("qcord-decrypt-enabled") !== this.autoDecrypt) button.classList.toggle("qcord-decrypt-enabled", this.autoDecrypt);
+            const title = `Qcord · Auto-encrypt ${this.autoEncrypt ? "on" : "off"} · Auto-decrypt ${this.autoDecrypt ? "on" : "off"}`;
+            if (button.title !== title) button.title = title;
+            if (button.getAttribute("aria-label") !== title) button.setAttribute("aria-label", title);
             if (controls.firstElementChild !== button) controls.prepend(button);
         }
     }
@@ -162,7 +161,11 @@ module.exports = class Qcord extends Encapsulation {
         dialog.showModal();
     }
 
-    observer() { this.scheduleMount(); }
+    observer(mutation) {
+        const target = mutation?.target?.nodeType === 1 ? mutation.target : mutation?.target?.parentElement;
+        if (target?.closest(".qcord-dialog, .qcord-decrypted, .qcord-button")) return;
+        this.scheduleMount();
+    }
     onSwitch() { this.attachments?.retry(); this.scheduleMount(); }
     scheduleMount() {
         if (!this.running || this.frame !== null) return;

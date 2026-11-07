@@ -7,9 +7,9 @@ const dismissOnBackdrop = require("./dialog");
 const raw = key => Buffer.from(key.bytes).toString("base64");
 
 module.exports = function createContacts(R, ui) {
-    const {h, button, field, code, p, Icon, Tabs, Avatar, KeyParts} = ui;
-    return function Contacts({plugin, channel, keys, initialTab = "contacts", onSelect, onChanged, onClose}) {
-        const [tab, setTab] = R.useState(initialTab), [query, setQuery] = R.useState("");
+    const {h, button, field, code, p, Icon, Avatar, KeyParts} = ui;
+    return function Contacts({plugin, channel, keys, view = "contacts", onSelect, onChanged, onClose}) {
+        const tab = view, [query, setQuery] = R.useState("");
         const [rows, setRows] = R.useState(() => plugin.getSavedPartners()), [selected, setSelected] = R.useState(channel || plugin.currentChannel());
         const [keyText, setKeyText] = R.useState(""), [dkText, setDkText] = R.useState("");
         const [revealed, setRevealed] = R.useState(false), [confirmReset, setConfirmReset] = R.useState(false), [confirmRestore, setConfirmRestore] = R.useState(false);
@@ -32,9 +32,9 @@ module.exports = function createContacts(R, ui) {
             finally { pending.current = false; if (alive.current) setBusy(false); }
         }
         const copy = value => run(async () => { await navigator.clipboard.writeText(value); if (alive.current) setNotice("Copied."); });
-        return h("dialog", {ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": "Contacts and keys", onClose},
+        return h("dialog", {ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": tab === "keys" ? "Your keys" : "Contacts", onClose},
             h("div", {className: "qc-panel qc-contacts"},
-                h("header", {className: "qc-contact-header"}, h(Tabs, {label: "Key manager", items: [["keys", "My keys"], ["contacts", "Contacts"]], value: tab, onChange: value => { setTab(value); setRevealed(false); setError(""); setNotice(""); }, disabled: busy}), button(h(Icon, {name: "close"}), () => dialog.current.close(), {className: "qc-icon-button", "aria-label": "Close contacts"})),
+                h("header", {className: "qc-contact-header"}, h("h3", {className: "qc-panel-title"}, h(Icon, {name: tab === "keys" ? "keys" : "contacts"}), tab === "keys" ? "Your keys" : "Contacts"), button(h(Icon, {name: "close"}), () => dialog.current.close(), {className: "qc-icon-button", "aria-label": tab === "keys" ? "Close keys" : "Close contacts"})),
                 tab === "contacts" ? h("div", {className: "qc-contact-layout"},
                     h("aside", {className: "qc-contact-sidebar"}, field("Search contacts", h("input", {type: "search", value: query, onChange: e => setQuery(e.target.value), placeholder: "Find a contact…"})),
                         button("Current DM", () => run(async () => { const id = plugin.currentChannel(); plugin.getDirectPartner(id); setSelected(id); setQuery(""); onSelect(id); }), {className: "qc-quiet"}),

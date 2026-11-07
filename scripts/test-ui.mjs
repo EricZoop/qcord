@@ -1,21 +1,15 @@
-import {build} from "esbuild";
-import {chromium} from "playwright";
-import {mkdir, writeFile} from "node:fs/promises";
-import {createServer} from "node:http";
-import {readFileSync} from "node:fs";
+import {launchBrowser} from "./browser.mjs";
+import {serveFixture} from "./ui-server.mjs";
+import {writeFile} from "node:fs/promises";
 import assert from "node:assert/strict";
-await mkdir(".tools/ui", {recursive: true});
-await build({entryPoints: ["scripts/ui-fixture.js"], outfile: ".tools/ui/panel.js", bundle: true, platform: "browser", format: "esm", loader: {".css": "text", ".svg": "text"}});
-await writeFile(".tools/ui/index.html", '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Qcord test</title><style>body{margin:0;background:#18191c;color:#b8bdc5;color-scheme:dark;font-family:system-ui}button,input,select{font-family:system-ui}.discord-markup-fixture{color:#111}.discord-markup-fixture code{color:#222}#qcord-test-chat{max-width:900px;margin:30px auto;padding:20px}#qcord-test-chat li{margin:16px 0;list-style:none}.header_fixture{margin:0;font-size:14px;color:#eee}.messageContent_fixture{min-height:22px}.accessories_fixture{margin-top:6px}.channelTextArea_fixture{display:flex;max-width:900px;margin:24px auto;padding:12px;background:#2b2d31}.channelTextArea_fixture [role=textbox]{flex:1;min-height:24px;outline:0}.buttons_fixture{display:flex}</style><script type="module" src="/panel.js"></script></html>');
-const server = createServer((req, res) => { res.setHeader("Content-Type", req.url === "/panel.js" ? "text/javascript" : "text/html"); res.end(readFileSync(req.url === "/panel.js" ? ".tools/ui/panel.js" : ".tools/ui/index.html")); });
-await new Promise(r => server.listen(0, "127.0.0.1", r));
+const {server, url} = await serveFixture();
 let browser;
 try {
-    browser = await chromium.launch({headless: true, ...(process.env.QCORD_BROWSER ? {executablePath: process.env.QCORD_BROWSER} : {})});
+    browser = await launchBrowser();
     const page = await browser.newPage({viewport: {width: 1600, height: 1000}}), errors = [];
     page.on("pageerror", e => errors.push(e.message));
     await page.route("https://cdn.discordapp.com/avatars/**", route => route.fulfill({contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#587451"/></svg>'}));
-    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await page.goto(url);
     const composer = page.getByRole("dialog", {name: "Qcord encapsulation", exact: true}); await composer.waitFor();
     const idle = () => page.waitForFunction(() => !document.querySelector('.qc-main[aria-busy="true"]'));
     const stage = async name => { await composer.getByRole("tab", {name, exact: true}).click(); await idle(); };
@@ -31,11 +25,33 @@ try {
     assert.equal(await composer.getByRole("switch",{name:"Auto encrypt",exact:true}).getAttribute("aria-checked"),"false");
     assert.equal(await composer.getByRole("switch",{name:"Auto decrypt",exact:true}).getAttribute("aria-checked"),"true");
     assert.ok(await composer.locator(".qc-variables").first().evaluate(el=>el.getBoundingClientRect().top)<await composer.locator(".qc-equation").first().evaluate(el=>el.getBoundingClientRect().top));
-    const heights=await composer.locator(".qc-recipient,.qc-mode-controls,.qc-key-button").evaluateAll(els=>els.map(el=>el.getBoundingClientRect().height));
+    const heights=await composer.locator(".qc-recipient,.qc-mode-controls,.qc-panel-button").evaluateAll(els=>els.map(el=>el.getBoundingClientRect().height));
     assert.ok(heights.every(height=>height===heights[0]),JSON.stringify(heights));
+    const redundantWrites=await page.evaluate(async()=>{
+        let writes=0;const observer=new MutationObserver(records=>{writes+=records.length;});
+        observer.observe(document.querySelector(".qcord-button"),{attributes:true});
+        window.qcordTest.plugin.mountButtons();window.qcordTest.plugin.mountButtons();
+        await Promise.resolve();observer.disconnect();return writes;
+    });
+    assert.equal(redundantWrites,0,"Repeated composer scans do not rewrite unchanged attributes");
+    const graph=composer.locator(".qc-polynomial > svg"),scrubber=composer.getByLabel("Coefficient index");
+    await scrubber.fill("17");const graphBounds=await graph.boundingBox();
+    await page.mouse.move(graphBounds.x+graphBounds.width*.8,graphBounds.y+graphBounds.height*.5);
+    assert.equal(await scrubber.inputValue(),"17","Hovering never scrubs the graph");
+    await page.mouse.move(graphBounds.x+graphBounds.width*.2,graphBounds.y+graphBounds.height*.5);await page.mouse.down();
+    await page.mouse.move(graphBounds.x+graphBounds.width*.6,graphBounds.y+graphBounds.height*.5,{steps:4});await page.mouse.up();
+    const dragged=Number(await scrubber.inputValue());assert.ok(dragged>=152&&dragged<=155,"Click and drag updates the selected coefficient");
+    await page.mouse.move(graphBounds.x+graphBounds.width*.9,graphBounds.y+graphBounds.height*.5);
+    assert.equal(Number(await scrubber.inputValue()),dragged,"Releasing the pointer stops scrubbing");
     const contactPublic=await page.evaluate(()=>window.qcordTest.data.recipients[0].public_encaps);
     await composer.getByRole("button",{name:"Choose recipient",exact:true}).click();
-    const contactEditor=page.getByRole("dialog",{name:"Contacts and keys",exact:true});
+    const contactEditor=page.getByRole("dialog",{name:"Contacts",exact:true});
+    assert.equal(await contactEditor.getByRole("tab").count(),0,"Contacts is its own panel");
+    assert.equal(await composer.getAttribute("data-covered"),"true");
+    assert.equal(await composer.evaluate(el=>getComputedStyle(el).backdropFilter),"none");
+    assert.equal(await composer.evaluate(el=>getComputedStyle(el,"::backdrop").backgroundColor),"rgba(0, 0, 0, 0)");
+    assert.equal(await contactEditor.evaluate(el=>getComputedStyle(el).backdropFilter),"none");
+    assert.equal(await contactEditor.evaluate(el=>getComputedStyle(el,"::backdrop").backdropFilter),"none");
     assert.equal(await contactEditor.getByRole("textbox").count(),1,"One field edits the saved contact key");
     await contactEditor.getByLabel("Recipient public key").fill(contactPublic+"\n");
     await contactEditor.getByRole("button",{name:"Save key",exact:true}).click();
@@ -45,10 +61,13 @@ try {
     await contactEditor.getByRole("button",{name:"Close contacts",exact:true}).click();
     await noOuterOverflow(); await page.screenshot({path: ".tools/ui/01-recipient-key.png"});
     await stage("2. Derive K");
+    assert.ok(await composer.getByRole("button",{name:"Sample fresh m",exact:true}).evaluate(el=>!el.classList.contains("qc-quiet")&&getComputedStyle(el).borderStyle==="solid"));
     const oldM = await composer.locator(".qc-code").first().innerText();
     await composer.getByRole("button", {name: "Sample fresh m", exact: true}).click(); await idle();
     assert.notEqual(await composer.locator(".qc-code").first().innerText(), oldM);
     await stage("3. Construct u, v");
+    const formulas=await composer.locator(".qc-equation").allTextContents();
+    assert.deepEqual(formulas,["u = NTT⁻¹(Âᵀ ∘ ŷ) + e₁","v = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂"]);
     await composer.getByRole("button",{name:"u[2]",exact:true}).click(); await composer.getByLabel("Coefficient index").fill("17");
     assert.match(await composer.locator(".qc-explanation > .qc-code").innerText(), /u\[2\]\[17\]/);
     await composer.getByRole("tab", {name: "Compute v", exact: true}).click();
@@ -61,6 +80,8 @@ try {
     const first = JSON.parse(await composer.locator(".qc-json").innerText());
     const text = "\uFEFFHello from both sides 👋\nα + β";
     await composer.getByRole("textbox", {name: "Message", exact: true}).fill(text);
+    const focusStyle=await composer.getByRole("textbox",{name:"Message",exact:true}).evaluate(el=>{const s=getComputedStyle(el);return {outline:s.outlineStyle,width:s.outlineWidth,borders:[s.borderTopWidth,s.borderRightWidth,s.borderBottomWidth,s.borderLeftWidth]};});
+    assert.equal(focusStyle.outline,"solid");assert.equal(focusStyle.width,"2px");assert.ok(focusStyle.borders.every(width=>width==="1px"),"All four textbox edges receive the focus treatment");
     const wire = await composer.locator(".qc-json").innerText(), file = JSON.parse(wire);
     assert.equal(wire.split("\n").filter(line=>/^    \[/.test(line)).length, 3);
     assert.deepEqual(Object.keys(file).sort(), ["encrypted_message", "qcord_version", "u", "v"]);
@@ -88,6 +109,7 @@ try {
     assert.equal(await senderAuto.locator("code").evaluate(el=>getComputedStyle(el).color),"rgb(255, 255, 255)");
     assert.equal(await senderAuto.locator("img").count(),0,"Decrypted HTML stays inert text");
     assert.equal(await senderAuto.locator(".qcord-download").getAttribute("href"),senderURL);
+    assert.equal(await senderAuto.locator(".qcord-download svg path").getAttribute("d"),await page.locator(".qcord-button svg path").getAttribute("d"),"The file download uses the user's Qcord logo");
     assert.equal(await page.locator("#chat-messages-100-900 .mosaicItem_fixture").isVisible(),false);
     const gap=await page.locator("#chat-messages-100-900").evaluate(el=>el.querySelector(".qcord-decrypted").getBoundingClientRect().top-el.querySelector(".header_fixture").getBoundingClientRect().bottom);
     assert.ok(gap>=0&&gap<=6,`Username-to-message gap: ${gap}`);
@@ -151,21 +173,22 @@ try {
     await page.waitForFunction(url=>window.qcordTest.state.downloads.some(item=>item.url===url),pendingResetURL);
 
     const beforeReset = await page.evaluate(() => window.qcordTest.data.public_encaps);
-    await composer.getByRole("button",{name:"Keys & contacts",exact:true}).click();
-    const contacts=page.getByRole("dialog",{name:"Contacts and keys",exact:true});await contacts.waitFor();
-    assert.deepEqual(await contacts.getByRole("tab").allTextContents(),["My keys","Contacts"]);
-    assert.equal(await contacts.getByLabel("Your private decapsulation key").count(),0);
-    await contacts.getByRole("button",{name:"Reveal private key",exact:true}).click();
-    assert.equal(await contacts.getByLabel("Your private decapsulation key").count(),1);
-    await contacts.getByRole("button",{name:"Hide",exact:true}).click();
-    assert.equal(await contacts.getByLabel("Your private decapsulation key").count(),0);
+    await composer.getByRole("button",{name:"Your keys",exact:true}).click();
+    const keysPanel=page.getByRole("dialog",{name:"Your keys",exact:true});await keysPanel.waitFor();
+    const contacts=page.getByRole("dialog",{name:"Contacts",exact:true});
+    assert.equal(await keysPanel.getByRole("tab").count(),0,"Keys is its own panel");
+    assert.equal(await keysPanel.getByLabel("Your private decapsulation key").count(),0);
+    await keysPanel.getByRole("button",{name:"Reveal private key",exact:true}).click();
+    assert.equal(await keysPanel.getByLabel("Your private decapsulation key").count(),1);
+    await keysPanel.getByRole("button",{name:"Hide",exact:true}).click();
+    assert.equal(await keysPanel.getByLabel("Your private decapsulation key").count(),0);
     await page.screenshot({path:".tools/ui/10-my-keys.png"});
-    await contacts.getByRole("button",{name:"Clear config & reset key",exact:true}).click();
-    const warning=contacts.getByRole("alertdialog",{name:"Confirm config reset",exact:true});await warning.waitFor();
+    await keysPanel.getByRole("button",{name:"Clear config & reset key",exact:true}).click();
+    const warning=keysPanel.getByRole("alertdialog",{name:"Confirm config reset",exact:true});await warning.waitFor();
     assert.equal(await page.evaluate(()=>window.qcordTest.data.public_encaps),beforeReset,"Opening reset confirmation does not reset keys");
     await warning.getByRole("button",{name:"Cancel",exact:true}).click();
-    await contacts.getByRole("button",{name:"Clear config & reset key",exact:true}).click();
-    await warning.getByRole("button",{name:"Reset keys",exact:true}).click();await contacts.waitFor({state:"detached"});await idle();
+    await keysPanel.getByRole("button",{name:"Clear config & reset key",exact:true}).click();
+    await warning.getByRole("button",{name:"Reset keys",exact:true}).click();await keysPanel.waitFor({state:"detached"});await idle();
     const afterReset = await page.evaluate(() => window.qcordTest.data.public_encaps);
     assert.notEqual(afterReset, beforeReset);
     assert.deepEqual(await page.evaluate(() => window.qcordTest.data.recipients), []);
@@ -174,9 +197,9 @@ try {
     assert.equal(await composer.getByRole("button", {name: "Next", exact: true}).isDisabled(), true);
     await page.evaluate(url=>window.qcordTest.releaseDownload(url),pendingResetURL);await settle("905");
     assert.equal(await page.locator(".qcord-decrypted").count(),0,"Reset clears old plaintext and discards pending decryptions");
-    await composer.getByRole("button", {name: "Keys & contacts", exact: true}).click();
-    assert.equal(await contacts.getByLabel("Your public encapsulation key").inputValue(), afterReset);
-    await contacts.getByRole("button", {name: "Close contacts", exact: true}).click();
+    await composer.getByRole("button", {name: "Your keys", exact: true}).click();
+    assert.equal(await keysPanel.getByLabel("Your public encapsulation key").inputValue(), afterReset);
+    await keysPanel.getByRole("button", {name: "Close keys", exact: true}).click();
     await page.evaluate(() => window.qcordTest.actions.sendMessage("100", {content: "Ordinary Discord text"}));
     assert.equal(await page.evaluate(() => window.qcordTest.state.sent.length), 1);
     assert.equal(await page.evaluate(() => window.qcordTest.state.staged.length), 1);
@@ -194,6 +217,8 @@ try {
     await page.mouse.click(10,10);await composer.waitFor({state:"detached"});
     const discordDraft=page.getByRole("textbox",{name:"Discord draft",exact:true});
     await discordDraft.fill("Automatically encrypted chat text");await discordDraft.press("Enter");
+    const composerOutline=await page.locator(".channelTextArea_fixture").evaluate(el=>({style:getComputedStyle(el).outlineStyle,width:getComputedStyle(el).outlineWidth}));
+    assert.deepEqual(composerOutline,{style:"solid",width:"2px"});
     await page.waitForFunction(()=>window.qcordTest.state.staged.length===2);
     await page.waitForFunction(()=>!document.querySelector('[aria-label="Discord draft"]').textContent);
     assert.equal(await page.evaluate(()=>window.qcordTest.state.sent.length),1,"Automatic mode never sends the plaintext draft");
@@ -205,8 +230,8 @@ try {
     await composer.getByRole("switch",{name:"Auto decrypt",exact:true}).click();await idle();
     assert.equal(await page.locator(".channelTextArea_fixture.qcord-encrypt-enabled").count(),0);
     assert.equal(await page.locator(".qcord-button.qcord-decrypt-enabled").count(),1);
-    await composer.getByRole("button",{name:"Keys & contacts",exact:true}).click();await contacts.waitFor();
-    await page.mouse.click(10,10);await contacts.waitFor({state:"detached"});await composer.waitFor({state:"detached"});
+    await composer.getByRole("button",{name:"Your keys",exact:true}).click();await keysPanel.waitFor();
+    await page.mouse.click(10,10);await keysPanel.waitFor({state:"detached"});await composer.waitFor({state:"detached"});
     await page.locator(".qcord-button").click();await composer.waitFor();
     await page.setViewportSize({width: 1366, height: 768}); await noOuterOverflow();
     for(const name of ["1. Recipient key","2. Derive K","3. Construct u, v","4. Message & attach"]){
@@ -215,6 +240,21 @@ try {
         assert.ok(overflow.every(n=>n<=2),`${name} should fit a laptop: ${overflow}`);
     }
     await stage("1. Recipient key");await page.screenshot({path:".tools/ui/13-laptop-panel.png"});
+    const perf=await page.evaluate(async()=>{
+        const calls=window.qcordTest.state.encapsulations,samples=[];
+        const tabs=[...document.querySelector('.qc-composer > [role="tablist"]').children];
+        for(let i=0;i<16;i++){
+            const start=performance.now();tabs[i%4].click();
+            await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+            samples.push(performance.now()-start);
+        }
+        samples.sort((a,b)=>a-b);
+        return {samples:samples.length,p50_ms:Math.round(samples[8]),p95_ms:Math.round(samples[15]),extraEncapsulations:window.qcordTest.state.encapsulations-calls};
+    });
+    assert.equal(perf.extraEncapsulations,0,"Switching existing draft tabs does not encapsulate again");
+    await writeFile(".tools/ui/performance.json",JSON.stringify(perf,null,2)+"\n");
+    console.log(`Local fixture tab navigation: p50 ${perf.p50_ms} ms, p95 ${perf.p95_ms} ms (includes two animation frames).`);
+    await stage("1. Recipient key");
     await page.setViewportSize({width: 390, height: 844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({path: ".tools/ui/06-narrow.png"});
