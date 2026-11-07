@@ -10,8 +10,8 @@ module.exports = function createUI(R) {
     const code = text => h("code", {className: "qc-code"}, text);
     const p = text => h("p", null, text);
     function Icon({name}) {
-        if (filled[name]) return h("svg", {viewBox: filled[name].viewBox, width: 18, height: 18, fill: "currentColor", "aria-hidden": true}, h("path", {d: filled[name].path}));
-        return h("svg", {viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true}, (lines[name] || lines.file).map((d, i) => h("path", {key: i, d})));
+        if (filled[name]) return h("svg", {viewBox: filled[name].viewBox, width: 14, height: 14, fill: "currentColor", "aria-hidden": true}, h("path", {d: filled[name].path}));
+        return h("svg", {viewBox: "0 0 24 24", width: 14, height: 14, fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true}, (lines[name] || lines.file).map((d, i) => h("path", {key: i, d})));
     }
     function Tabs({items, value, onChange, label, disabled = false}) {
         const id = R.useId();

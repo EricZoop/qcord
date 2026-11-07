@@ -9,16 +9,16 @@ The walkthrough starts with the recipient's key:
 3. **Construct u, v**: inspect actual noise and coefficient calculations. The NTT formulas appear above the worked coefficients. The independent polynomial trace must reproduce the library's 1088-byte ciphertext exactly.
 4. **Message & attach**: enter the message, encrypt it with AES-256-GCM using K, and review the exact JSON attachment. Attaching saves m locally. Press Send in Discord to share the file.
 
-Open **Your keys** to share your encapsulation key. The private-key spoiler reveals the secret only when requested. The separate **Contacts** button opens a panel with one field to paste, edit and save a contact key; saving does not create another field. Only ML-KEM-768 keys are accepted. Keys are raw Base64, with existing ML-KEM-768 DER keys still importable. Supplied key/contact icons are bundled with their attribution.
+Open **Your keys** to share your encapsulation key. Both keys use the same field layout. The actual private-key textbox is blurred until revealed; its Copy button is hidden with space reserved so revealing it does not move anything. The separate **Contacts** button opens a panel with one field to paste, edit and save a contact key; saving does not create another field. Only ML-KEM-768 keys are accepted. Keys are raw Base64, with existing ML-KEM-768 DER keys still importable. Supplied key, contact, reset, copy, and upload icons inherit the theme's text color and are bundled with their attribution.
 
-Graphs change their selected coefficient only after a click or during a drag, or through the slider and numbered coefficient buttons. Hovering does not scrub. Static plots and derived values are cached between tab changes. Panels do not apply background blur; opening a popup hides the underlying walkthrough and its backdrop so surfaces do not stack.
+Graphs change their selected coefficient only after a click or during a drag, or through the slider and numbered coefficient buttons. Hovering does not scrub. Static plots and derived values are cached between tab changes. Panels are fully opaque and do not apply background blur; opening a popup hides the underlying walkthrough and its backdrop so surfaces do not stack.
 
 The toolbar has two independent switches:
 
 - **Auto encrypt** (off by default): typing in Discord and pressing Enter prepares a `.qcord` attachment and clears the plaintext draft only after successful staging. Review it, then press Send again. A restrained green gradient and border glow mark the Discord composer while this is on. Missing keys, failures, or cancellation keep the draft and do not send plaintext. This encrypts text; existing non-Qcord attachments are not encrypted.
 - **Auto decrypt** (on by default): automatically opens visible `.qcord` attachments using saved sender m values or your private key. The shield is lit while this is on. Switching it off restores original attachments and clears rendered plaintext, including pending decryptions. Manual file opening still works with either switch off.
 
-The switches persist separately. Click outside the panels to return to chat, or use Escape. **Open file** in the footer decrypts a `.qcord` file already downloaded to your device; its tooltip explains that action.
+The switches persist separately. **Previous step** navigates the walkthrough. In a subpanel, **Go Back**, Escape, or an outside click returns to the main popup. Clicking outside again exits Qcord, as does **X** on the main popup. **Open file** in the footer decrypts a `.qcord` file already downloaded to your device; its tooltip explains that action.
 
 The polynomial equations use column vectors:
 

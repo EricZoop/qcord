@@ -21,7 +21,7 @@ module.exports = function createContacts(R, ui) {
         const channelIds = [...new Set([...rows.map(r => r.channel_id), selected].filter(Boolean))];
         R.useEffect(() => {
             dialog.current.showModal(); const close = () => dialog.current?.close(); plugin.dialogs.add(close);
-            const unbind = dismissOnBackdrop(dialog.current, () => plugin.dismissDialogs());
+            const unbind = dismissOnBackdrop(dialog.current, close);
             return () => { alive.current = false; plugin.dialogs.delete(close); unbind(); };
         }, []);
         R.useEffect(() => { setKeyText(row?.public_encaps || ""); setError(""); setNotice(""); }, [selected, row?.public_encaps]);
@@ -34,7 +34,8 @@ module.exports = function createContacts(R, ui) {
         const copy = value => run(async () => { await navigator.clipboard.writeText(value); if (alive.current) setNotice("Copied."); });
         return h("dialog", {ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": tab === "keys" ? "Your keys" : "Contacts", onClose},
             h("div", {className: "qc-panel qc-contacts"},
-                h("header", {className: "qc-contact-header"}, h("h3", {className: "qc-panel-title"}, h(Icon, {name: tab === "keys" ? "keys" : "contacts"}), tab === "keys" ? "Your keys" : "Contacts"), button(h(Icon, {name: "close"}), () => dialog.current.close(), {className: "qc-icon-button", "aria-label": tab === "keys" ? "Close keys" : "Close contacts"})),
+                h("header", {className: "qc-contact-header"}, h("h3", {className: "qc-panel-title"}, h(Icon, {name: tab === "keys" ? "keys" : "contacts"}), tab === "keys" ? "Your keys" : "Contacts"),
+                    button("Go Back", () => dialog.current.close(), {className: "qc-quiet", title: "Return to the main Qcord panel"})),
                 tab === "contacts" ? h("div", {className: "qc-contact-layout"},
                     h("aside", {className: "qc-contact-sidebar"}, field("Search contacts", h("input", {type: "search", value: query, onChange: e => setQuery(e.target.value), placeholder: "Find a contact…"})),
                         button("Current DM", () => run(async () => { const id = plugin.currentChannel(); plugin.getDirectPartner(id); setSelected(id); setQuery(""); onSelect(id); }), {className: "qc-quiet"}),
@@ -53,15 +54,18 @@ module.exports = function createContacts(R, ui) {
                         }), {className: "qc-primary", disabled: busy || !keyText.trim() || keyText === row?.public_encaps}),
                         row && button("Remove", () => { plugin.removePartner(selected); setRows(plugin.getSavedPartners()); setKeyText(""); onChanged(); }, {className: "qc-quiet", disabled: busy}))) : p("Open a one-to-one DM to save a recipient."))) :
                 h("section", {className: "qc-my-keys"},
-                    h("div", {className: "qc-label-row"}, h("h3", null, "Public encapsulation key"), button("Copy", () => copy(raw(keys.publicKey)), {disabled: !keys || busy, className: "qc-quiet"})),
-                    field("Your public encapsulation key", h("textarea", {readOnly: true, rows: 3, value: keys ? raw(keys.publicKey) : "Generating key…"})),
+                    h("div", {className: "qc-key-field"},
+                        h("div", {className: "qc-label-row"}, h("h3", null, "Public encapsulation key"), button(h(R.Fragment, null, h(Icon, {name: "copy"}), "Copy"), () => copy(raw(keys.publicKey)), {disabled: !keys || busy, className: "qc-quiet"})),
+                        h("textarea", {"aria-label": "Public encapsulation key", readOnly: true, rows: 3, value: keys ? raw(keys.publicKey) : "Generating key…"})),
                     h(KeyParts),
                     p("Stored in this order: encoded t̂, then ρ. Together: 1184 bytes / 1580 Base64 characters."),
                     p("KeyGen takes random d and computes (ρ, σ) = G(d ∥ byte(3)). The public seed ρ reconstructs Â; secret s and noise e produce t̂ = Â ∘ ŝ + ê."),
-                    h("div", {className: "qc-secret"},
-                        h("div", {className: "qc-label-row"}, h("strong", null, "Private decapsulation key"), button(revealed ? "Hide" : "Reveal", () => setRevealed(!revealed), {className: "qc-quiet", disabled: !keys, "aria-expanded": revealed})),
-                        revealed ? h(R.Fragment, null, field("Your private decapsulation key", h("textarea", {readOnly: true, rows: 3, value: keys ? raw(keys.privateKey) : ""})), button("Copy private key", () => copy(raw(keys.privateKey)), {className: "qc-quiet", disabled: !keys || busy})) :
-                            button(h(R.Fragment, null, h("span", {className: "qc-secret-mask", "aria-hidden": true}, "•••• •••• •••• •••• •••• ••••"), h("small", null, "Click to reveal · keep private")), () => setRevealed(true), {className: "qc-spoiler", disabled: !keys, "aria-label": "Reveal private key"})),
+                    h("div", {className: "qc-key-field"},
+                        h("div", {className: "qc-label-row"}, h("h3", null, "Private decapsulation key"), h("div", {className: "qc-key-actions"},
+                            button(h(R.Fragment, null, h(Icon, {name: "copy"}), "Copy"), () => copy(raw(keys.privateKey)), {className: "qc-quiet qc-private-copy", style: {visibility: revealed ? "visible" : "hidden"}, "aria-label": "Copy private key", title: "Copy private key", disabled: !revealed || !keys || busy}),
+                            button(revealed ? "Hide" : "Reveal", () => setRevealed(!revealed), {className: "qc-quiet qc-reveal", disabled: !keys, "aria-label": revealed ? "Hide private key" : "Reveal private key", "aria-expanded": revealed}))),
+                        h("div", {className: "qc-private-key", "data-revealed": revealed, onClick: () => keys && setRevealed(true)},
+                            h("textarea", {"aria-label": "Private decapsulation key", "aria-hidden": !revealed, tabIndex: revealed ? 0 : -1, readOnly: true, rows: 3, value: keys ? raw(keys.privateKey) : "", onCopy: e => { if (!revealed) e.preventDefault(); }}))),
                     h("details", {className: "qc-restore"}, h("summary", null, "Restore a private key"),
                         field("Private key to restore", h("textarea", {rows: 2, value: dkText, onChange: e => { setDkText(e.target.value); setConfirmRestore(false); }})),
                         confirmRestore && p("This replaces your current identity. Keep a backup of the old key."),
@@ -77,8 +81,8 @@ module.exports = function createContacts(R, ui) {
                         }); }, {disabled: busy || !dkText.trim(), className: "qc-quiet"})),
                     h("div", {className: "qc-reset-area"}, confirmReset ? h("div", {className: "qc-reset-confirm", role: "alertdialog", "aria-label": "Confirm config reset"},
                         h("strong", null, "Reset keys and clear config?"), p("This removes your current key, contacts, and saved m values. Old messages need your old backup. A new public key will be generated."),
-                        h("div", {className: "qc-row"}, button("Cancel", () => setConfirmReset(false), {disabled: busy}), button("Reset keys", () => run(() => plugin.clearConfig()), {className: "qc-danger", disabled: busy}))) :
-                        button("Clear config & reset key", () => setConfirmReset(true), {className: "qc-danger", disabled: busy}))),
+                        h("div", {className: "qc-row"}, button("Cancel", () => setConfirmReset(false), {disabled: busy}), button(h(R.Fragment, null, h(Icon, {name: "reset"}), "Reset keys"), () => run(() => plugin.clearConfig()), {className: "qc-danger", disabled: busy}))) :
+                        button(h(R.Fragment, null, h(Icon, {name: "reset"}), "Clear config & reset key"), () => setConfirmReset(true), {className: "qc-danger", disabled: busy}))),
                 (error || notice || busy) && h("div", {className: "qc-feedback"}, h("div", {role: "alert", className: "qc-error"}, error), h("div", {role: "status"}, busy ? "Working…" : notice))));
     };
 };

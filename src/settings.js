@@ -20,11 +20,12 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
         const dialog = R.useRef(null);
         R.useEffect(() => {
             dialog.current.showModal(); const close = () => dialog.current?.close(); plugin.dialogs.add(close);
-            const unbind = dismissOnBackdrop(dialog.current, () => plugin.dismissDialogs());
+            const unbind = dismissOnBackdrop(dialog.current, close);
             return () => { plugin.dialogs.delete(close); unbind(); };
         }, []);
         return h("dialog", {ref: dialog, className: "qcord-dialog qc-opened-dialog", "aria-label": "Decrypted message", onClose: onDismiss},
-            h("div", {className: "qc-panel"}, h("div", {className: "qc-label-row"}, h("span", {className: "qc-muted"}, result.source), button(h(Icon, {name: "close"}), () => dialog.current.close(), {className: "qc-icon-button", "aria-label": "Close message"})),
+            h("div", {className: "qc-panel"}, h("div", {className: "qc-label-row"}, h("span", {className: "qc-muted"}, result.source), h("div", {className: "qc-row"},
+                button("Go Back", () => dialog.current.close(), {className: "qc-quiet", title: "Return to the main Qcord panel"}))),
                 h("div", {className: `qc-plaintext qcord-message ${plugin.markupClass}`}, plugin.messageContent(result.text, plugin.currentChannel())),
                 h("details", null, h("summary", null, "Derived K"), code(result.key))));
     }
@@ -95,7 +96,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 h("h3", null, "Read the recipient's key"), formula("ek = ByteEncode₁₂(t̂) ∥ ρ"), h(KeyParts),
                 p("The first 1152 bytes encode t̂. The last 32 bytes are ρ, which reconstructs the 3 × 3 matrix Â."),
                 code("Â[i,j] = SampleNTT(ρ ∥ byte(j) ∥ byte(i))"),
-                !row && button("Save recipient key", () => setContactsTab("contacts"), {className: "qc-primary"})),
+                !row && button("Add recipient's public key", () => setContactsTab("contacts"), {className: "qc-primary"})),
             h(R.Fragment, null, h(Tabs, {label: "Public key views", items: [["matrix", "Matrix Â"], ["vector", "Vector t̂"], ["saved", "Encoded key"]], value: keyTab, onChange: setKeyTab}),
                 keyTab === "saved" ? h(R.Fragment, null, field("Saved public_encaps", h("textarea", {rows: 5, readOnly: true, value: row?.public_encaps || "Save a recipient key to inspect its bytes."})), p("1184 raw bytes · 1580 Base64 characters")) :
                 h(R.Fragment, null, keyTab === "matrix" ? h("div", {className: "qc-matrix", "aria-label": "Public matrix A hat"}, indices.flatMap(i => indices.map(j => button(h(R.Fragment, null, h("span", null, `Â[${i},${j}]`), h(Sparkline, {values: publicInfo?.aHat[i][j]})), () => setMatrixCell(i * 3 + j), {key: `${i}-${j}`, "aria-pressed": matrixCell === i * 3 + j, disabled: !publicInfo})))) :
@@ -141,12 +142,12 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                     h(Switch, {label: "Auto decrypt", checked: autoDecrypt, onChange: value => run(async () => plugin.setAutomatic("decrypt", value))})),
                 button(h(R.Fragment, null, h(Icon, {name: "keys"}), "Your keys"), () => setContactsTab("keys"), {className: "qc-panel-button", "aria-label": "Your keys"}),
                 button(h(R.Fragment, null, h(Icon, {name: "contacts"}), "Contacts"), () => setContactsTab("contacts"), {className: "qc-panel-button", "aria-label": "Contacts"}),
-                onClose && button(h(Icon, {name: "close"}), onClose, {className: "qc-icon-button", "aria-label": "Close"})),
+                onClose && button(h(Icon, {name: "close"}), onClose, {className: "qc-icon-button", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat"})),
             h(Tabs, {label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy}),
             h("main", {className: "qc-main", role: "tabpanel", "aria-label": `${stages[step]} stage`, "aria-busy": busy}, content),
-            h("footer", {className: "qc-footer"}, button("Back", () => navigate(step - 1), {disabled: busy || step === 0}),
+            h("footer", {className: "qc-footer"}, button("Previous step", () => navigate(step - 1), {disabled: busy || step === 0}),
                 h("div", {className: "qc-feedback"}, h("div", {role: "alert", className: "qc-error"}, error), h("div", {role: "status"}, busy ? "Working…" : notice)),
-                button(h(R.Fragment, null, h(Icon, {name: "file"}), "Open file"), () => filePicker.current.click(), {className: "qc-quiet qc-open-file", title: "Decrypt a downloaded .qcord file on this device", disabled: busy}),
+                button(h(R.Fragment, null, h(Icon, {name: "upload"}), "Open file"), () => filePicker.current.click(), {className: "qc-quiet qc-open-file", title: "Decrypt a downloaded .qcord file on this device", disabled: busy}),
                 h("input", {ref: filePicker, hidden: true, type: "file", accept: ".qcord,application/json", "aria-label": "Open saved .qcord file", onChange: e => {
                     const file = e.target.files?.[0]; e.target.value = "";
                     if (file) run(async () => { if (file.size > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large."); const result = await plugin.openFile(await file.text(), channel); if (alive.current) setOpened(result); });

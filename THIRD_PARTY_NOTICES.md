@@ -71,7 +71,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-Font Awesome Free 7.3.1 icons: key and address-card
+Font Awesome Free 7.3.1 icons: key, address-card, rotate-left, copy, and upload
 Copyright 2026 Fonticons, Inc. https://fontawesome.com
 SVG paths supplied by the user; rendered using currentColor.
 Icons licensed under Creative Commons Attribution 4.0 International:
