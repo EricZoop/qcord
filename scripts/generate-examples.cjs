@@ -17,8 +17,8 @@ const nonce = Uint8Array.from({length: 12}, (_, i) => 200 + i); // PUBLIC exampl
 const sealed = gcm(encapsulated.sharedSecret, nonce, Uint8Array.from(aad(file))).encrypt(new TextEncoder().encode("Hello from Qcord."));
 file.encrypted_message = {nonce_base64: raw(nonce), ciphertext_base64: raw(sealed.slice(0, -16)), authentication_tag_base64: raw(sealed.slice(-16))};
 writeFileSync("schemas/example.qcord", stringify(file));
-write("schemas/example.qcord.config.json", {config_version: 3,
+write("schemas/example.qcord.config.json", {config_version: 3, auto_encrypt: false, auto_decrypt: true,
     public_encaps: raw(sender.publicKey), private_decaps: raw(sender.secretKey),
     recipients: [{channel_id: "100", user_id: "2", public_encaps: raw(recipient.publicKey), encapsulations: [{m: raw(m)}]}]});
-write("schemas/example.recipient.config.json", {config_version: 3,
+write("schemas/example.recipient.config.json", {config_version: 3, auto_encrypt: false, auto_decrypt: true,
     public_encaps: raw(recipient.publicKey), private_decaps: raw(recipient.secretKey), recipients: []});

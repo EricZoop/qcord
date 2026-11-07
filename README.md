@@ -9,7 +9,14 @@ The walkthrough starts with the recipient's key:
 3. **Construct u, v** — inspect actual noise and coefficient calculations. The independent polynomial trace must reproduce the library's 1088-byte ciphertext exactly.
 4. **Message & attach** — enter the message, encrypt it with AES-256-GCM using K, and review the exact JSON attachment. Attaching saves m locally. Press Send in Discord to share the file.
 
-Open **Contacts & keys → My public key** to share your encapsulation key. Only ML-KEM-768 keys are accepted; there is no parameter selector. Keys are raw Base64, with existing ML-KEM-768 DER keys still importable.
+Open **Keys & contacts → My keys** to share your encapsulation key. The private-key spoiler reveals the secret only when requested. The **Contacts** tab uses one field to paste, edit and save a contact key; saving does not create another field. Only ML-KEM-768 keys are accepted. Keys are raw Base64, with existing ML-KEM-768 DER keys still importable.
+
+The toolbar has two independent switches:
+
+- **Auto encrypt** (off by default): typing in Discord and pressing Enter prepares a `.qcord` attachment and clears the plaintext draft only after successful staging. Review it, then press Send again. A restrained green gradient and border glow mark the Discord composer while this is on. Missing keys, failures, or cancellation keep the draft and do not send plaintext. This encrypts text; existing non-Qcord attachments are not encrypted.
+- **Auto decrypt** (on by default): automatically opens visible `.qcord` attachments using saved sender m values or your private key. The shield is lit while this is on. Switching it off restores original attachments and clears rendered plaintext, including pending decryptions. Manual file opening still works with either switch off.
+
+The switches persist separately. Click outside the panels to return to chat, or use Escape. **Open file** in the footer decrypts a `.qcord` file already downloaded to your device; its tooltip explains that action.
 
 The polynomial equations use column vectors:
 
@@ -40,21 +47,21 @@ This abbreviated illustration uses placeholders. See [schemas/README.md](schemas
 
 The file stores compressed u (3 × 256 coefficients, 10 bits each) and v (one polynomial, 4 bits per coefficient). Each u polynomial occupies one bracketed row, and v occupies one bracketed row. The preview scrolls horizontally for long rows. This formatting changes no coefficients or authentication data. FIPS 203 ByteEncode reconstructs the packed ML-KEM ciphertext exactly. AES-GCM encrypts the full text directly with K, using a fresh 12-byte nonce and a 16-byte tag. The version and u/v are authenticated as canonical JSON additional data. There are no wrapping keys, sender ciphertext copies, or recipient key hashes.
 
-With Qcord enabled, `.qcord` attachments in visible one-to-one DMs are detected and decrypted automatically for both parties:
+With **Auto decrypt** on, `.qcord` attachments in visible one-to-one DMs are detected and decrypted automatically for both parties:
 
 - The sender reproduces K from the selected recipient's saved public key and the original saved m, matching its u/v to the file.
 - The recipient calls ML-KEM.Decaps with their private dk and the packed u/v ciphertext. Internally it recovers m′, derives K, and performs re-encryption and implicit rejection.
 - Both use K with the file's nonce, ciphertext and tag. Wrong keys or modified files fail AES-GCM authentication. This does not authenticate the sender's identity.
 
-Successfully decrypted attachments display as white text with Discord Markdown, including bold, lists, links and code blocks. A **Download .qcord** link preserves access to the file. Discord's renderer supplies Markdown support; if it is unavailable or fails, Qcord displays safe plain text. Manual **Open .qcord locally** uses the same renderer.
+Successfully decrypted attachments display as white text with Discord Markdown, including bold, lists, links and code blocks. A subtle box sits directly below the username when the original message has no caption. Its download icon preserves access to the `.qcord` file. Discord's renderer supplies Markdown support; if it is unavailable or fails, Qcord displays safe plain text. Manual **Open file** uses the same renderer.
 
 Failed or unsupported files stay visible as their original attachments. Automatic downloads accept HTTPS Discord CDN attachment URLs, and parsing is limited to 1 MiB; BetterDiscord's native fetch buffers downloads before the size check. Repeated scans reuse pending or completed results. Stopping Qcord, resetting config, or replacing keys clears displayed plaintext and restores the original attachments.
 
-The local config has only `config_version`, `public_encaps`, `private_decaps`, and `recipients`. Each recipient stores their public key once and `{ "m": "…" }` per attached encapsulation. New drafts always sample fresh m. The config stores neither K nor plaintext.
+The local config contains `config_version`, `public_encaps`, `private_decaps`, `recipients`, and the two boolean preferences `auto_encrypt` / `auto_decrypt`. Missing preferences default to false / true respectively. Each recipient stores their public key once and `{ "m": "…" }` per attached encapsulation. New drafts always sample fresh m. The config stores neither K nor plaintext.
 
-**Clear config & reset key** deletes saved contacts, saved m values, and the current key pair, then generates a new ML-KEM-768 pair. Share the new public key with contacts. Older files need the old private-key/config backup. Installing and enabling this version also cleans stale `learning_*` fields, multi-set `key_pairs`, old toggles, and redundant parameter settings, including configurations already marked version 2.
+**Clear config & reset key**, in **My keys**, shows a confirmation warning. Confirming deletes saved contacts, saved m values, and the current key pair, then generates a new ML-KEM-768 pair and restores the automatic-mode defaults. Share the new public key with contacts. Older files need the old private-key/config backup. Installing and enabling this version also cleans stale `learning_*` fields, multi-set `key_pairs`, old toggles, and redundant parameter settings, including configurations already marked version 2.
 
-This is a course tool, not a FIPS-validated module. [FIPS 203](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf) defines ML-KEM; AES-GCM is the application message layer. Retaining m for course replay differs from the standard's ephemeral-data lifecycle. The config contains unencrypted private material; keep it local. JavaScript cannot guarantee memory erasure. Version-3 encrypted-chat files and version-4 KEM-only files are not loaded. Ordinary Discord text sending is unaffected.
+This is a course tool, not a FIPS-validated module. [FIPS 203](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf) defines ML-KEM; AES-GCM is the application message layer. Retaining m for course replay differs from the standard's ephemeral-data lifecycle. The config contains unencrypted private material; keep it local. JavaScript cannot guarantee memory erasure. Version-3 encrypted-chat files and version-4 KEM-only files are not loaded. Ordinary Discord sending works normally when auto-encrypt is off. Discord's private send API can change; automatic encryption stays unavailable if Qcord cannot install its send hook.
 
 Each new `.qcord` file still gets a fresh encapsulation and m. This walkthrough does not introduce shared conversation sessions or signature schemes.
 

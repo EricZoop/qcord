@@ -2,8 +2,8 @@
  * @name Qcord
  * @author Eric, Arsh, Yasser
  * @authorId 215269534540496896
- * @version 2.2.0
- * @description Inspect ML-KEM-768 keys, share encrypted attachments, and automatically display decrypted messages with Discord Markdown.
+ * @version 2.3.0
+ * @description ML-KEM-768 encrypted messages with independent automatic modes, Discord Markdown, and a compact visual walkthrough.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
  */
@@ -1942,6 +1942,8 @@ var require_config = __commonJS({
       save("public_encaps", Buffer.from(keys.publicKey.bytes).toString("base64"));
       save("private_decaps", Buffer.from(keys.privateKey.bytes).toString("base64"));
       save("recipients", []);
+      save("auto_encrypt", false);
+      save("auto_decrypt", true);
       save("config_version", 3);
     }
     module2.exports = { load, save, initialize, reset };
@@ -3674,8 +3676,11 @@ var require_messaging = __commonJS({
           public_encaps: encoded,
           encapsulations: previous?.public_encaps === encoded ? previous.encapsulations : []
         };
-        const others = (config2.load("recipients") || []).filter((row) => row.channel_id !== channelId || PQC.createPublicKey(row.public_encaps).asymmetricKeyType !== scheme);
-        config2.save("recipients", [...others, entry]);
+        const saved = config2.load("recipients") || [];
+        const index = saved.findIndex((row) => row.channel_id === channelId);
+        if (index >= 0) saved[index] = entry;
+        else saved.push(entry);
+        config2.save("recipients", saved);
         this.attachments?.clear();
         this.scheduleMount?.();
       }
@@ -3799,7 +3804,12 @@ var require_messaging = __commonJS({
           if (!this.running || this.session !== session) throw new Error("Qcord stopped during reset.");
           config2.reset(keys);
           this.keyPairs.set(ACTIVE_SCHEME2, keys);
+          this.autoEncrypt = false;
+          this.autoDecrypt = true;
+          this.outgoingEpoch = {};
           this.resetting = false;
+          this.mountButtons?.();
+          for (const notify of this.modeListeners || []) notify();
           for (const reset of this.resets || []) reset(keys);
           this.scheduleMount?.();
           return keys;
@@ -3825,6 +3835,10 @@ var require_ui = __commonJS({
       const formula = (text) => h("div", { className: "qc-equation", role: "math" }, text);
       const code = (text) => h("code", { className: "qc-code" }, text);
       const p = (text) => h("p", null, text);
+      function Icon({ name }) {
+        const paths = { close: "M6 6l12 12M18 6L6 18", keys: "M14 4a6 6 0 1 0 6 6 6 6 0 0 0-6-6ZM9 14l-6 6m3-3 3 3m-1-5 3 3", file: "M6 3h8l4 4v14H6V3Zm8 0v5h5M9 12h6m-6 4h6", chevron: "m9 6 6 6-6 6" };
+        return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, h("path", { d: paths[name] || paths.file }));
+      }
       function Tabs({ items, value, onChange, label, disabled = false }) {
         const id = R.useId();
         return h("div", { role: "tablist", "aria-label": label, className: "qc-tabs" }, items.map(([key, name]) => button(name, () => onChange(key), {
@@ -3832,52 +3846,95 @@ var require_ui = __commonJS({
           role: "tab",
           id: `${id}-${key}`,
           "aria-selected": key === value,
-          disabled,
           tabIndex: key === value ? 0 : -1,
+          disabled,
           onKeyDown: (event) => {
-            const index = items.findIndex(([k]) => k === key);
-            const next = event.key === "ArrowRight" ? (index + 1) % items.length : event.key === "ArrowLeft" ? (index + items.length - 1) % items.length : event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : -1;
-            if (next < 0) return;
-            event.preventDefault();
-            onChange(items[next][0]);
-            event.currentTarget.parentElement.children[next].focus();
+            const i = items.findIndex(([k]) => k === key);
+            const next = event.key === "ArrowRight" ? (i + 1) % items.length : event.key === "ArrowLeft" ? (i + items.length - 1) % items.length : event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : -1;
+            if (next >= 0) {
+              event.preventDefault();
+              onChange(items[next][0]);
+              event.currentTarget.parentElement.children[next].focus();
+            }
           }
         })));
+      }
+      function Switch({ label, checked, onChange, disabled, title }) {
+        return button(h(R.Fragment, null, h("span", null, label), h("span", { className: "qc-switch-track" }, h("span"))), () => onChange(!checked), { className: "qc-switch", role: "switch", "aria-label": label, "aria-checked": checked, disabled, title });
       }
       function Avatar({ profile }) {
         const [failed, setFailed] = R.useState(false);
         R.useEffect(() => setFailed(false), [profile.avatar]);
         return profile.avatar && !failed ? h("img", { className: "qc-avatar", src: profile.avatar, alt: "", onError: () => setFailed(true) }) : h("span", { className: "qc-avatar qc-avatar-fallback", "aria-hidden": true }, profile.displayName.slice(0, 1).toUpperCase());
       }
-      function Polynomial({ values, name, signed = false }) {
-        const [index, setIndex] = R.useState(0);
-        const i = Math.min(index, Math.max(0, values.length - 1));
+      function Variables({ items }) {
+        return h("dl", { className: "qc-variables", "aria-label": "Known variables" }, items.map(([symbol, value]) => h("div", { key: symbol }, h("dt", null, symbol), h("dd", null, value))));
+      }
+      function Sparkline({ values = [] }) {
+        const min = Math.min(0, ...values), max = Math.max(1, ...values), span = Math.max(1, max - min);
+        const points = values.filter((_, i) => i % 4 === 0).map((v, i, a) => `${i / Math.max(1, a.length - 1) * 100},${25 - (v - min) / span * 23}`).join(" ");
+        return h("svg", { viewBox: "0 0 100 28", preserveAspectRatio: "none", "aria-hidden": true }, h("polyline", { points, fill: "none", stroke: "currentColor", strokeWidth: 1.2 }));
+      }
+      function KeyParts() {
+        return h("div", { className: "qc-keyparts", "aria-label": "Public key byte order" }, h("div", null, h("strong", null, "Encoded t\u0302"), h("span", null, "1152 bytes \xB7 1536 Base64 characters")), h("div", null, h("strong", null, "\u03C1 seed"), h("span", null, "32 bytes \xB7 44 Base64 characters")));
+      }
+      function Polynomial({ values, name, signed = false, index, onIndexChange }) {
+        const [localIndex, setLocalIndex] = R.useState(0);
+        const i = Math.min(index ?? localIndex, Math.max(0, values.length - 1));
+        const choose = (value) => {
+          setLocalIndex(value);
+          onIndexChange?.(value);
+        };
         const scale = signed ? Math.max(1, ...values.map(Math.abs)) : 3328;
+        const baseline = signed ? 58 : 110;
         return h(
           "figure",
           { className: "qc-polynomial" },
           h("figcaption", null, h("strong", null, name), h("span", null, `${values.length} coefficients`)),
           h(
             "svg",
-            { viewBox: `0 0 640 ${Math.max(20, Math.ceil(values.length / 32) * 20)}`, role: "img", "aria-label": `${name}. Use the coefficient slider to inspect exact values.` },
-            values.map((v, j) => h("rect", {
-              key: j,
-              x: j % 32 * 20 + 1,
-              y: Math.floor(j / 32) * 20 + 1,
-              width: 18,
-              height: 18,
-              rx: 2,
-              fill: v === 0 ? "var(--qc-empty)" : "var(--qc-graph)",
-              opacity: j === i ? 1 : 0.3 + 0.7 * Math.min(1, Math.abs(v) / scale),
-              stroke: j === i ? "var(--qc-text)" : "none",
-              strokeWidth: 2
-            }, h("title", null, `${name}[${j}] = ${v}`)))
+            { viewBox: "0 0 640 120", role: "img", "aria-label": `${name}. Scrub to inspect coefficients.`, onPointerMove: (event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              choose(Math.max(0, Math.min(values.length - 1, Math.floor((event.clientX - rect.left) / rect.width * values.length))));
+            } },
+            h("line", { x1: 0, x2: 640, y1: baseline, y2: baseline, stroke: "currentColor", opacity: 0.15 }),
+            values.map((v, j) => {
+              const height = Math.max(1, Math.abs(v) / scale * (signed ? 50 : 100));
+              return h("rect", { key: j, x: j * 2.5, y: signed && v < 0 ? baseline : baseline - height, width: 1.8, height, fill: j === i ? "var(--qc-text)" : "var(--qc-graph)", opacity: j === i ? 1 : 0.7 }, h("title", null, `${name}[${j}] = ${v}`));
+            })
           ),
-          field("Coefficient index", h("input", { type: "range", min: 0, max: Math.max(0, values.length - 1), value: i, onChange: (e) => setIndex(Number(e.target.value)) })),
-          h("output", { className: "qc-equation", "aria-live": "polite" }, `a[${i}] = ${values[i] ?? 0}   \u2192   ${values[i] ?? 0} \xB7 X^${i}`)
+          h("div", { className: "qc-scrubber" }, field("Coefficient index", h("input", { type: "range", min: 0, max: values.length - 1, value: i, onChange: (e) => choose(Number(e.target.value)) })), h("output", { "aria-live": "polite" }, `[${i}] = ${values[i] ?? 0}`)),
+          h("div", { className: "qc-coefficient-strip", "aria-label": "Nearby coefficients" }, Array.from({ length: 7 }, (_, j) => Math.max(0, Math.min(values.length - 7, i - 3)) + j).filter((j) => j < values.length).map((j) => button(h(R.Fragment, null, h("small", null, j), values[j]), () => choose(j), { key: j, "aria-pressed": j === i, title: `Coefficient ${j}` })))
         );
       }
-      return { h, button, field, formula, code, p, Tabs, Avatar, Polynomial };
+      return { h, button, field, formula, code, p, Icon, Tabs, Switch, Avatar, Variables, Sparkline, KeyParts, Polynomial };
+    };
+  }
+});
+
+// src/dialog.js
+var require_dialog = __commonJS({
+  "src/dialog.js"(exports2, module2) {
+    "use strict";
+    module2.exports = function dismissOnBackdrop2(dialog, dismiss) {
+      const outside = (event) => {
+        const rect = dialog.getBoundingClientRect();
+        return event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom);
+      };
+      let pressedOutside = false;
+      const down = (event) => {
+        pressedOutside = outside(event);
+      };
+      const up = (event) => {
+        if (pressedOutside && outside(event)) dismiss();
+        pressedOutside = false;
+      };
+      dialog.addEventListener("pointerdown", down);
+      dialog.addEventListener("pointerup", up);
+      return () => {
+        dialog.removeEventListener("pointerdown", down);
+        dialog.removeEventListener("pointerup", up);
+      };
     };
   }
 });
@@ -3887,50 +3944,48 @@ var require_contacts = __commonJS({
   "src/contacts.js"(exports2, module2) {
     "use strict";
     var { PQC } = require_pqc();
-    var { parameters: parameters2 } = require_parameters();
+    var { ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
     var config2 = require_config();
+    var dismissOnBackdrop2 = require_dialog();
+    var raw = (key) => Buffer.from(key.bytes).toString("base64");
     module2.exports = function createContacts(R, ui) {
-      const { h, button, field, code, p, Tabs, Avatar } = ui;
-      return function Contacts({ plugin, scheme, channel, keys, onSelect, onChanged, onClose }) {
-        const params = parameters2(scheme);
-        const [tab, setTab] = R.useState("contacts"), [query, setQuery] = R.useState("");
-        const [rows, setRows] = R.useState(() => plugin.getSavedPartners());
-        const [selected, setSelected] = R.useState(channel || plugin.currentChannel());
+      const { h, button, field, code, p, Icon, Tabs, Avatar, KeyParts } = ui;
+      return function Contacts({ plugin, channel, keys, initialTab = "contacts", onSelect, onChanged, onClose }) {
+        const [tab, setTab] = R.useState(initialTab), [query, setQuery] = R.useState("");
+        const [rows, setRows] = R.useState(() => plugin.getSavedPartners()), [selected, setSelected] = R.useState(channel || plugin.currentChannel());
         const [keyText, setKeyText] = R.useState(""), [dkText, setDkText] = R.useState("");
+        const [revealed, setRevealed] = R.useState(false), [confirmReset, setConfirmReset] = R.useState(false), [confirmRestore, setConfirmRestore] = R.useState(false);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
-        const [confirmRestore, setConfirmRestore] = R.useState(false);
-        const dialog = R.useRef(null), alive = R.useRef(true);
-        const row = rows.find((r) => r.channel_id === selected && r.key_algorithm === scheme);
-        const channelIds = [...new Set([...rows.map((r) => r.channel_id), selected].filter(Boolean))];
+        const dialog = R.useRef(null), alive = R.useRef(true), pending = R.useRef(false);
+        const row = rows.find((r) => r.channel_id === selected);
         const contact = (id) => {
-          const existing = rows.find((r) => r.channel_id === id);
           try {
-            return { id, userId: existing?.user_id || plugin.getDirectPartner(id).userId };
+            return { id, userId: rows.find((r) => r.channel_id === id)?.user_id || plugin.getDirectPartner(id).userId };
           } catch {
             return null;
           }
         };
-        const selectedContact = contact(selected);
-        const profile = selectedContact && plugin.getPartnerProfile(selectedContact.userId);
+        const selectedContact = contact(selected), profile = selectedContact && plugin.getPartnerProfile(selectedContact.userId);
+        const channelIds = [...new Set([...rows.map((r) => r.channel_id), selected].filter(Boolean))];
         R.useEffect(() => {
           dialog.current.showModal();
-          const close = () => {
-            alive.current = false;
-            dialog.current?.close();
-          };
+          const close = () => dialog.current?.close();
           plugin.dialogs.add(close);
+          const unbind = dismissOnBackdrop2(dialog.current, () => plugin.dismissDialogs());
           return () => {
             alive.current = false;
             plugin.dialogs.delete(close);
+            unbind();
           };
         }, []);
         R.useEffect(() => {
-          setKeyText("");
-          setNotice("");
+          setKeyText(row?.public_encaps || "");
           setError("");
-        }, [selected]);
+          setNotice("");
+        }, [selected, row?.public_encaps]);
         async function run(task) {
-          if (busy || !alive.current || !plugin.running) return;
+          if (pending.current || !alive.current || !plugin.running) return;
+          pending.current = true;
           setBusy(true);
           setError("");
           setNotice("");
@@ -3939,152 +3994,141 @@ var require_contacts = __commonJS({
           } catch (e) {
             if (alive.current) setError(e.message);
           } finally {
+            pending.current = false;
             if (alive.current) setBusy(false);
           }
         }
-        const copy = (text) => run(async () => {
-          await navigator.clipboard.writeText(text);
+        const copy = (value) => run(async () => {
+          await navigator.clipboard.writeText(value);
           if (alive.current) setNotice("Copied.");
         });
-        const refresh = () => {
-          const next = plugin.getSavedPartners();
-          setRows(next);
-          onChanged();
-        };
         return h(
           "dialog",
-          { ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": "Contacts and keys", onClose, onCancel: () => {
-          } },
+          { ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": "Contacts and keys", onClose },
           h(
             "div",
             { className: "qc-panel qc-contacts" },
-            h("header", { className: "qc-header" }, h("div", null, h("h2", null, "Contacts & keys"), p("ML-KEM-768 \xB7 one local key pair")), button("Close contacts", () => dialog.current.close())),
-            h(Tabs, { label: "Key manager", items: [["contacts", "Contacts"], ["public", "My public key"], ["private", "Private key"]], value: tab, onChange: (v) => {
-              setTab(v);
+            h("header", { className: "qc-contact-header" }, h(Tabs, { label: "Key manager", items: [["keys", "My keys"], ["contacts", "Contacts"]], value: tab, onChange: (value) => {
+              setTab(value);
+              setRevealed(false);
               setError("");
               setNotice("");
-            }, disabled: busy }),
-            tab === "contacts" && h(
+            }, disabled: busy }), button(h(Icon, { name: "close" }), () => dialog.current.close(), { className: "qc-icon-button", "aria-label": "Close contacts" })),
+            tab === "contacts" ? h(
               "div",
               { className: "qc-contact-layout" },
               h(
                 "aside",
                 { className: "qc-contact-sidebar" },
-                field("Search contacts", h("input", { type: "search", value: query, onChange: (e) => setQuery(e.target.value), placeholder: "Name, username or ID" })),
-                button("Add open DM", () => run(async () => {
+                field("Search contacts", h("input", { type: "search", value: query, onChange: (e) => setQuery(e.target.value), placeholder: "Find a contact\u2026" })),
+                button("Current DM", () => run(async () => {
                   const id = plugin.currentChannel();
                   plugin.getDirectPartner(id);
                   setSelected(id);
                   setQuery("");
-                })),
-                h("div", { className: "qc-contact-list", "aria-label": "Saved contacts" }, channelIds.map(contact).filter(Boolean).filter((c) => {
-                  const user = plugin.getPartnerProfile(c.userId);
-                  return `${user.displayName} ${user.username} ${c.userId}`.toLowerCase().includes(query.toLowerCase());
+                  onSelect(id);
+                }), { className: "qc-quiet" }),
+                h("div", { className: "qc-contact-list" }, channelIds.map(contact).filter(Boolean).filter((c) => {
+                  const u = plugin.getPartnerProfile(c.userId);
+                  return `${u.displayName} ${u.username}`.toLowerCase().includes(query.toLowerCase());
                 }).map((c) => {
-                  const user = plugin.getPartnerProfile(c.userId), available = rows.filter((r) => r.channel_id === c.id);
-                  return button(
-                    h(R.Fragment, null, h(Avatar, { profile: user }), h(
-                      "span",
-                      null,
-                      h("strong", null, user.displayName),
-                      h("small", null, user.username),
-                      h("span", { className: "qc-key-badges" }, h("span", { className: available.length ? "has-key" : "" }, "768"))
-                    )),
-                    () => setSelected(c.id),
-                    { key: c.id, className: "qc-contact-card", "aria-pressed": selected === c.id, disabled: busy }
-                  );
+                  const u = plugin.getPartnerProfile(c.userId);
+                  return button(h(R.Fragment, null, h(Avatar, { profile: u }), h("span", null, h("strong", null, u.displayName), h("small", null, u.username))), () => {
+                    setSelected(c.id);
+                    onSelect(c.id);
+                  }, { key: c.id, className: "qc-contact-card", "aria-pressed": selected === c.id });
                 }))
               ),
+              h("section", { className: "qc-contact-detail" }, profile ? h(
+                R.Fragment,
+                null,
+                h("div", { className: "qc-person" }, h(Avatar, { profile }), h("div", null, h("h3", null, profile.displayName), p(profile.username))),
+                field("Recipient public key", h("textarea", { rows: 5, value: keyText, disabled: busy, placeholder: "Paste their ML-KEM-768 public key", onChange: (e) => setKeyText(e.target.value) })),
+                p("1184 raw bytes \xB7 1580 Base64 characters. Save once for this DM."),
+                h(
+                  "div",
+                  { className: "qc-row" },
+                  button(row && keyText === row.public_encaps ? "Saved" : "Save key", () => run(async () => {
+                    const publicKey = PQC.createPublicKey(keyText);
+                    plugin.saveRecipients(selected, [{ user_id: selectedContact.userId, public_encaps: raw(publicKey) }]);
+                    setRows(plugin.getSavedPartners());
+                    setKeyText(raw(publicKey));
+                    onChanged();
+                    onSelect(selected);
+                    setNotice("Recipient key saved.");
+                  }), { className: "qc-primary", disabled: busy || !keyText.trim() || keyText === row?.public_encaps }),
+                  row && button("Remove", () => {
+                    plugin.removePartner(selected);
+                    setRows(plugin.getSavedPartners());
+                    setKeyText("");
+                    onChanged();
+                  }, { className: "qc-quiet", disabled: busy })
+                )
+              ) : p("Open a one-to-one DM to save a recipient."))
+            ) : h(
+              "section",
+              { className: "qc-my-keys" },
+              h("div", { className: "qc-label-row" }, h("h3", null, "Public encapsulation key"), button("Copy", () => copy(raw(keys.publicKey)), { disabled: !keys || busy, className: "qc-quiet" })),
+              field("Your public encapsulation key", h("textarea", { readOnly: true, rows: 3, value: keys ? raw(keys.publicKey) : "Generating key\u2026" })),
+              h(KeyParts),
+              p("Stored in this order: encoded t\u0302, then \u03C1. Together: 1184 bytes / 1580 Base64 characters."),
+              p("KeyGen takes random d and computes (\u03C1, \u03C3) = G(d \u2225 byte(3)). The public seed \u03C1 reconstructs \xC2; secret s and noise e produce t\u0302 = \xC2 \u2218 \u015D + \xEA."),
               h(
-                "section",
-                { className: "qc-contact-detail", "aria-label": "Contact key details" },
-                profile ? h(
-                  R.Fragment,
-                  null,
-                  h("div", { className: "qc-person" }, h(Avatar, { profile }), h("div", null, h("h3", null, profile.displayName), p(`${profile.username} \xB7 ${selectedContact.userId}`))),
-                  h("div", { className: "qc-note" }, row ? `${params.label} public key saved` : `No ${params.label} key saved for this contact.`),
-                  row && h(
-                    R.Fragment,
-                    null,
-                    field("Saved public_encaps", h("textarea", { readOnly: true, rows: 3, value: row.public_encaps })),
-                    h("div", { className: "qc-row" }, button("Copy contact public key", () => copy(row.public_encaps)), button("Remove contact key", () => {
-                      plugin.removePartner(selected, scheme);
-                      refresh();
-                    }, { disabled: busy }))
-                  ),
-                  field(`${params.label} public key`, h("textarea", { rows: 3, value: keyText, disabled: busy, placeholder: row ? "Paste a replacement public key" : "Paste the public key your contact shared", onChange: (e) => setKeyText(e.target.value) })),
-                  p("Only ML-KEM-768 keys are accepted: 1184 raw bytes. Verify the shared key with your contact over a trusted route."),
-                  h(
-                    "div",
-                    { className: "qc-row" },
-                    button(row ? "Replace public key" : "Save public key", () => run(async () => {
-                      const imported = PQC.createPublicKey(keyText);
-                      if (!alive.current) return;
-                      plugin.saveRecipients(selected, [{ user_id: selectedContact.userId, public_encaps: keyText }], imported.asymmetricKeyType);
-                      setRows(plugin.getSavedPartners());
-                      onChanged(imported.asymmetricKeyType);
-                      setKeyText("");
-                      setNotice(`${imported.asymmetricKeyType.toUpperCase()} contact key saved.`);
-                    }), { disabled: busy || !keyText.trim() }),
-                    button("Use this recipient", () => {
-                      onSelect(selected);
-                      dialog.current.close();
-                    }, { className: "qc-primary", disabled: busy || !row })
-                  )
-                ) : h("div", { className: "qc-empty-state" }, h("h3", null, "Choose a contact"), p("Open a one-to-one Discord DM, then choose Add open DM."))
-              )
-            ),
-            tab === "public" && h(
-              "section",
-              { className: "qc-key-page" },
-              h("h3", null, "Your encapsulation key \xB7 ek"),
-              p(`Share this ${params.label} public_encaps. Base64 decodes directly to ${params.publicBytes} FIPS 203 key bytes.`),
-              field("Your public encapsulation key", h("textarea", { readOnly: true, rows: 5, value: keys ? Buffer.from(keys.publicKey.bytes).toString("base64") : "Loading\u2026" })),
-              keys && button("Copy my public key", () => copy(Buffer.from(keys.publicKey.bytes).toString("base64")), { className: "qc-primary" }),
-              p("The corresponding private dk stays on this device.")
-            ),
-            tab === "private" && h(
-              "section",
-              { className: "qc-key-page" },
-              h("h3", null, "Your decapsulation key \xB7 dk"),
-              p(`Your ${params.label} private key is ${params.privateBytes} raw bytes. It is stored unencrypted in qcord.config.json. Never send it to a contact.`),
-              keys && button("Copy private key for backup", () => copy(Buffer.from(keys.privateKey.bytes).toString("base64"))),
-              field("Private decapsulation key to restore", h("textarea", { rows: 3, value: dkText, disabled: busy, onChange: (e) => {
-                setDkText(e.target.value);
-                setConfirmRestore(false);
-              } })),
-              confirmRestore && h("div", { className: "qc-note", role: "alert" }, `This replaces only your ${params.label} identity. Back up the current dk first; replacing it changes which older files you can open.`),
-              button(confirmRestore ? "Confirm replacement" : "Restore decapsulation key", () => {
-                if (!confirmRestore) {
-                  setConfirmRestore(true);
-                  return;
-                }
-                run(async () => {
-                  const privateKey = PQC.createPrivateKey(dkText), publicKey = PQC.createPublicKey(privateKey);
-                  const trial = await PQC.encapsulate(publicKey), recovered = await PQC.decapsulate(privateKey, trial.ciphertext);
-                  if (!recovered.equals(trial.sharedKey)) throw new Error("The restored key failed its local check.");
-                  recovered.fill(0);
-                  trial.sharedKey.fill(0);
-                  trial.m.fill(0);
-                  if (!alive.current || !plugin.running) return;
-                  config2.save("public_encaps", Buffer.from(publicKey.bytes).toString("base64"));
-                  config2.save("private_decaps", Buffer.from(privateKey.bytes).toString("base64"));
-                  plugin.session = {};
-                  plugin.keyPairs.get(scheme)?.privateKey.bytes.fill(0);
-                  plugin.keyPairs.delete(scheme);
-                  plugin.keyTasks.clear();
-                  plugin.attachments?.clear();
-                  plugin.scheduleMount?.();
-                  await plugin.generateKeys(scheme);
-                  onChanged();
-                  setDkText("");
+                "div",
+                { className: "qc-secret" },
+                h("div", { className: "qc-label-row" }, h("strong", null, "Private decapsulation key"), button(revealed ? "Hide" : "Reveal", () => setRevealed(!revealed), { className: "qc-quiet", disabled: !keys, "aria-expanded": revealed })),
+                revealed ? h(R.Fragment, null, field("Your private decapsulation key", h("textarea", { readOnly: true, rows: 3, value: keys ? raw(keys.privateKey) : "" })), button("Copy private key", () => copy(raw(keys.privateKey)), { className: "qc-quiet", disabled: !keys || busy })) : button(h(R.Fragment, null, h("span", { className: "qc-secret-mask", "aria-hidden": true }, "\u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022"), h("small", null, "Click to reveal \xB7 keep private")), () => setRevealed(true), { className: "qc-spoiler", disabled: !keys, "aria-label": "Reveal private key" })
+              ),
+              h(
+                "details",
+                { className: "qc-restore" },
+                h("summary", null, "Restore a private key"),
+                field("Private key to restore", h("textarea", { rows: 2, value: dkText, onChange: (e) => {
+                  setDkText(e.target.value);
                   setConfirmRestore(false);
-                  setNotice("Key restored. Share its public key with your contacts.");
-                });
-              }, { disabled: busy || !dkText.trim() })
+                } })),
+                confirmRestore && p("This replaces your current identity. Keep a backup of the old key."),
+                button(confirmRestore ? "Confirm replacement" : "Restore key", () => {
+                  if (!confirmRestore) {
+                    setConfirmRestore(true);
+                    return;
+                  }
+                  run(async () => {
+                    const privateKey = PQC.createPrivateKey(dkText), publicKey = PQC.createPublicKey(privateKey);
+                    const test = await PQC.encapsulate(publicKey), recovered = await PQC.decapsulate(privateKey, test.ciphertext);
+                    try {
+                      if (!recovered.equals(test.sharedKey)) throw new Error("This key did not pass its local check.");
+                    } finally {
+                      recovered.fill(0);
+                      test.sharedKey.fill(0);
+                      test.m.fill(0);
+                    }
+                    if (!alive.current || !plugin.running) return;
+                    config2.save("public_encaps", raw(publicKey));
+                    config2.save("private_decaps", raw(privateKey));
+                    plugin.session = {};
+                    plugin.keyPairs.get(ACTIVE_SCHEME2)?.privateKey.bytes.fill(0);
+                    plugin.keyPairs.clear();
+                    plugin.keyTasks.clear();
+                    plugin.attachments?.clear();
+                    await plugin.generateKeys();
+                    onChanged();
+                    plugin.scheduleMount();
+                    setDkText("");
+                    setConfirmRestore(false);
+                    setNotice("Key restored. Share its public key with your contacts.");
+                  });
+                }, { disabled: busy || !dkText.trim(), className: "qc-quiet" })
+              ),
+              h("div", { className: "qc-reset-area" }, confirmReset ? h(
+                "div",
+                { className: "qc-reset-confirm", role: "alertdialog", "aria-label": "Confirm config reset" },
+                h("strong", null, "Reset keys and clear config?"),
+                p("This removes your current key, contacts, and saved m values. Old messages need your old backup. A new public key will be generated."),
+                h("div", { className: "qc-row" }, button("Cancel", () => setConfirmReset(false), { disabled: busy }), button("Reset keys", () => run(() => plugin.clearConfig()), { className: "qc-danger", disabled: busy }))
+              ) : button("Clear config & reset key", () => setConfirmReset(true), { className: "qc-danger", disabled: busy }))
             ),
-            h("div", { className: "qc-feedback" }, h("div", { role: "alert", className: "qc-error" }, error), h("div", { role: "status" }, busy ? "Working locally\u2026" : notice)),
-            h("footer", { className: "qc-source" }, "FIPS 203 \xB7 Public keys identify key bytes; they do not prove identity.")
+            (error || notice || busy) && h("div", { className: "qc-feedback" }, h("div", { role: "alert", className: "qc-error" }, error), h("div", { role: "status" }, busy ? "Working\u2026" : notice))
           )
         );
       };
@@ -4098,16 +4142,16 @@ var require_settings = __commonJS({
     "use strict";
     var { PQC } = require_pqc();
     var { sha3_256: sha3_2562, sha3_512: sha3_5122 } = (init_sha3(), __toCommonJS(sha3_exports));
-    var { ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
-    var { parameters: parameters2 } = require_parameters();
+    var { ACTIVE_SCHEME: ACTIVE_SCHEME2, MAX_DECODED_FILE_SIZE } = require_constants();
     var M = require_mlkem();
     var createUI = require_ui();
     var createContacts = require_contacts();
+    var dismissOnBackdrop2 = require_dialog();
     var hex = (bytes) => Buffer.from(bytes).toString("hex");
     var stages = ["Recipient key", "Derive K", "Construct u, v", "Message & attach"];
     module2.exports = function getSettingsPanel2(plugin, { onClose } = {}) {
       const R = BdApi.React, ui = createUI(R);
-      const { h, p, button, field, formula, code, Tabs, Avatar, Polynomial } = ui;
+      const { h, p, button, field, formula, code, Icon, Tabs, Switch, Avatar, Variables, Sparkline, KeyParts, Polynomial } = ui;
       const Contacts = createContacts(R, ui);
       const split2 = (left, right) => h("div", { className: "qc-split" }, h("section", { className: "qc-explanation" }, left), h("section", { className: "qc-visual" }, right));
       function OpenedMessage({ result, onDismiss }) {
@@ -4116,7 +4160,11 @@ var require_settings = __commonJS({
           dialog.current.showModal();
           const close = () => dialog.current?.close();
           plugin.dialogs.add(close);
-          return () => plugin.dialogs.delete(close);
+          const unbind = dismissOnBackdrop2(dialog.current, () => plugin.dismissDialogs());
+          return () => {
+            plugin.dialogs.delete(close);
+            unbind();
+          };
         }, []);
         return h(
           "dialog",
@@ -4124,29 +4172,27 @@ var require_settings = __commonJS({
           h(
             "div",
             { className: "qc-panel" },
-            h("header", { className: "qc-header" }, h("h2", null, "Decrypted message"), button("Close message", () => dialog.current.close())),
-            p(`${result.source} \xB7 ML-KEM-768 + AES-256-GCM`),
+            h("div", { className: "qc-label-row" }, h("span", { className: "qc-muted" }, result.source), button(h(Icon, { name: "close" }), () => dialog.current.close(), { className: "qc-icon-button", "aria-label": "Close message" })),
             h("div", { className: `qc-plaintext qcord-message ${plugin.markupClass}` }, plugin.messageContent(result.text, plugin.currentChannel())),
-            h("details", null, h("summary", null, "Derived K (local)"), code(result.key))
+            h("details", null, h("summary", null, "Derived K"), code(result.key))
           )
         );
       }
       function Panel() {
-        const [step, setStep] = R.useState(0), scheme = ACTIVE_SCHEME2;
-        const [text, setText] = R.useState(""), [messageReady, setMessageReady] = R.useState(false), [opened, setOpened] = R.useState(null);
+        const [step, setStep] = R.useState(0), [text, setText] = R.useState("");
         const [channel, setChannel] = R.useState(() => plugin.currentChannel() || "");
-        const [partners, setPartners] = R.useState(() => plugin.getSavedPartners());
-        const [keys, setKeys] = R.useState(null), [draft, setDraft] = R.useState(null);
+        const [partners, setPartners] = R.useState(() => plugin.getSavedPartners()), [keys, setKeys] = R.useState(null);
+        const [draft, setDraft] = R.useState(null), [messageReady, setMessageReady] = R.useState(false);
+        const [opened, setOpened] = R.useState(null), [contactsTab, setContactsTab] = R.useState(null);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
-        const [contactsOpen, setContactsOpen] = R.useState(false), [attached, setAttached] = R.useState(false), [stopped, setStopped] = R.useState(!plugin.running);
-        const [keyTab, setKeyTab] = R.useState("shape"), [part, setPart] = R.useState("u");
+        const [attached, setAttached] = R.useState(false), [stopped, setStopped] = R.useState(!plugin.running);
+        const [autoEncrypt, setAutoEncrypt] = R.useState(plugin.autoEncrypt), [autoDecrypt, setAutoDecrypt] = R.useState(plugin.autoDecrypt);
+        const [keyTab, setKeyTab] = R.useState("matrix"), [part, setPart] = R.useState("u");
         const [vectorIndex, setVectorIndex] = R.useState(0), [matrixCell, setMatrixCell] = R.useState(0), [coefficient, setCoefficient] = R.useState(0);
-        const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null);
-        const params = parameters2(scheme), indices = Array.from({ length: params.k }, (_, i) => i);
-        const row = partners.find((r) => r.channel_id === channel && r.key_algorithm === scheme);
-        const anyRow = partners.find((r) => r.channel_id === channel);
-        const profile = anyRow ? plugin.getPartnerProfile(anyRow.user_id) : null;
-        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes, scheme) : null, [row, scheme]);
+        const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null), filePicker = R.useRef(null);
+        const indices = [0, 1, 2], row = partners.find((r) => r.channel_id === channel);
+        const profile = row ? plugin.getPartnerProfile(row.user_id) : null;
+        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes) : null, [row]);
         R.useEffect(() => {
           const stop = () => {
             alive.current = false;
@@ -4162,24 +4208,29 @@ var require_settings = __commonJS({
             setKeys(value);
             setText("");
             setOpened(null);
-            setContactsOpen(false);
+            setContactsTab(null);
             setStep(0);
-            setNotice("Config cleared. New public key generated \u2014 share it with your contacts.");
+            setNotice("New key ready. Share your public key with contacts.");
+          };
+          const modes = () => {
+            setAutoEncrypt(plugin.autoEncrypt);
+            setAutoDecrypt(plugin.autoDecrypt);
           };
           plugin.panels.add(stop);
           plugin.resets.add(reset);
+          plugin.modeListeners.add(modes);
           return () => {
             alive.current = false;
             ticket.current++;
             M.wipe(preview.current);
             plugin.panels.delete(stop);
             plugin.resets.delete(reset);
+            plugin.modeListeners.delete(modes);
           };
         }, []);
         R.useEffect(() => {
           let active = true;
-          setKeys(null);
-          plugin.generateKeys(scheme).then((value) => {
+          plugin.generateKeys().then((value) => {
             if (active && alive.current) setKeys(value);
           }).catch((e) => {
             if (active && alive.current) setError(e.message);
@@ -4187,7 +4238,7 @@ var require_settings = __commonJS({
           return () => {
             active = false;
           };
-        }, [scheme, partners]);
+        }, [partners]);
         function invalidate() {
           ticket.current++;
           M.wipe(preview.current);
@@ -4214,14 +4265,14 @@ var require_settings = __commonJS({
           }
         }
         async function prepare(target, fresh = false) {
-          if (!row) throw new Error(`Choose a recipient with a saved ${params.label} public key.`);
+          if (!row) throw new Error("Save your recipient's public key first.");
           if (draft && !fresh) {
             setStep(target);
             return;
           }
           invalidate();
           const request = ++ticket.current;
-          const result = await plugin.prepareEncapsulation(channel, scheme, text);
+          const result = await plugin.prepareEncapsulation(channel, ACTIVE_SCHEME2, text);
           if (!alive.current || request !== ticket.current) {
             M.wipe(result);
             return;
@@ -4231,6 +4282,15 @@ var require_settings = __commonJS({
           setMessageReady(text.length > 0);
           setStep(target);
         }
+        const navigate = (value) => run(async () => {
+          if (value >= 1) await prepare(value);
+          else setStep(value);
+        });
+        const refreshed = () => {
+          invalidate();
+          setPartners(plugin.getSavedPartners());
+          setStep(0);
+        };
         function editMessage(value) {
           setText(value);
           setAttached(false);
@@ -4245,117 +4305,80 @@ var require_settings = __commonJS({
             setError(e.message);
           }
         }
-        const navigate = (value) => run(async () => {
-          if (value >= 1) await prepare(value);
-          else setStep(value);
-        });
-        const refreshed = () => {
-          invalidate();
-          setPartners(plugin.getSavedPartners());
-          setStep(0);
-        };
-        const vectorSelector = field("Vector index", h("select", { value: vectorIndex, onChange: (e) => setVectorIndex(Number(e.target.value)) }, indices.map((i) => h("option", { key: i, value: i }, i))));
+        const vectorTiles = (polynomials, label, selected, select) => h("div", { className: "qc-vector-tiles", "aria-label": `${label} vector` }, polynomials.map((values, i) => button(h(R.Fragment, null, h("span", null, `${label}[${i}]`), h(Sparkline, { values })), () => select(i), { key: i, "aria-pressed": selected === i })));
         let content;
         if (step === 0) {
+          const selected = keyTab === "vector" ? publicInfo?.tHat[vectorIndex] : publicInfo?.aHat[Math.floor(matrixCell / 3)][matrixCell % 3];
           content = split2(
             h(
               R.Fragment,
               null,
-              h("h3", null, "Unpack the recipient's public_encaps"),
-              p("Start with the key your recipient shared. Qcord accepts ML-KEM-768 only: 1184 raw key bytes."),
-              formula(`ek = ByteEncode\u2081\u2082(t\u0302) \u2225 \u03C1`),
-              formula(`${params.publicBytes} = 384 \xD7 ${params.k} + 32 bytes`),
-              p("t\u0302 has 3 polynomials; \xC2 has 3 \xD7 3. Every polynomial has 256 coefficients modulo 3329. ML-KEM-768 is NIST security category 3."),
-              p("The matrix is reconstructed from \u03C1, not sent as a full matrix in the key.")
+              h(Variables, { items: [["ek", "recipient's public key"], ["k / n / q", "3 / 256 / 3329"], ["t\u0302", "3 public polynomials"], ["\u03C1", "32-byte public seed"]] }),
+              h("h3", null, "Read the recipient's key"),
+              formula("ek = ByteEncode\u2081\u2082(t\u0302) \u2225 \u03C1"),
+              h(KeyParts),
+              p("The first 1152 bytes encode t\u0302. The last 32 bytes are \u03C1, which reconstructs the 3 \xD7 3 matrix \xC2."),
+              code("\xC2[i,j] = SampleNTT(\u03C1 \u2225 byte(j) \u2225 byte(i))"),
+              !row && button("Save recipient key", () => setContactsTab("contacts"), { className: "qc-primary" })
             ),
-            !publicInfo ? h("div", { className: "qc-empty-state" }, p("Save the public key supplied by your recipient."), button("Save recipient key", () => setContactsOpen(true))) : h(
+            h(
               R.Fragment,
               null,
-              h(Tabs, { label: "Public key views", items: [["shape", "Dimensions"], ["matrix", "Matrix \xC2"], ["vector", "Vector t\u0302"], ["saved", "Saved public_encaps"]], value: keyTab, onChange: setKeyTab }),
-              keyTab === "shape" ? h(
+              h(Tabs, { label: "Public key views", items: [["matrix", "Matrix \xC2"], ["vector", "Vector t\u0302"], ["saved", "Encoded key"]], value: keyTab, onChange: setKeyTab }),
+              keyTab === "saved" ? h(R.Fragment, null, field("Saved public_encaps", h("textarea", { rows: 5, readOnly: true, value: row?.public_encaps || "Save a recipient key to inspect its bytes." })), p("1184 raw bytes \xB7 1580 Base64 characters")) : h(
                 R.Fragment,
                 null,
-                h("h3", null, `${params.label} detected \xB7 ${params.publicBytes} raw bytes`),
-                h("div", { className: "qc-packet-bars" }, h("span", null, `Encoded t\u0302 \xB7 ${384 * params.k} bytes`), h("span", null, "\u03C1 \xB7 32 bytes")),
-                h(
-                  "div",
-                  { className: "qc-key-shapes" },
-                  h("div", null, p(`\xC2: ${params.k} \xD7 ${params.k} polynomials`), h("div", { className: "qc-matrix", "aria-label": "Matrix dimensions", style: { gridTemplateColumns: `repeat(${params.k}, 1fr)` } }, indices.flatMap((i) => indices.map((j) => h("span", { key: `${i}-${j}` }, `\xC2[${i},${j}]`))))),
-                  h("div", null, p(`t\u0302: ${params.k} polynomials`), h("div", { className: "qc-matrix", "aria-label": "Vector dimensions" }, indices.map((i) => h("span", { key: i }, `t\u0302[${i}]`))))
-                ),
-                code(`\u03C1 = ${hex(publicInfo.rho)}`),
-                p("Hats indicate NTT representation. A and t are the same public objects expressed as coefficient polynomials.")
-              ) : keyTab === "matrix" ? h(
-                R.Fragment,
-                null,
-                h("div", { className: "qc-matrix", style: { gridTemplateColumns: `repeat(${params.k}, 1fr)` }, "aria-label": "Public matrix A hat" }, indices.flatMap((i) => indices.map((j) => button(`\xC2[${i},${j}]`, () => setMatrixCell(i * params.k + j), { key: `${i}-${j}`, "aria-pressed": matrixCell === i * params.k + j })))),
-                h(Polynomial, { values: publicInfo.aHat[Math.floor(matrixCell / params.k)][matrixCell % params.k], name: "Selected \xC2 polynomial \xB7 NTT" }),
-                code("\xC2[i,j] = SampleNTT(\u03C1 \u2225 byte(j) \u2225 byte(i))")
-              ) : keyTab === "vector" ? h(R.Fragment, null, vectorSelector, h(Polynomial, { values: publicInfo.tHat[vectorIndex], name: `t\u0302[${vectorIndex}] \xB7 NTT` })) : h(R.Fragment, null, field("Saved public_encaps", h("textarea", { readOnly: true, rows: 7, value: row.public_encaps })), p(`Base64 decodes to ${params.publicBytes} raw bytes. The config stores this key once per recipient.`))
+                keyTab === "matrix" ? h("div", { className: "qc-matrix", "aria-label": "Public matrix A hat" }, indices.flatMap((i) => indices.map((j) => button(h(R.Fragment, null, h("span", null, `\xC2[${i},${j}]`), h(Sparkline, { values: publicInfo?.aHat[i][j] })), () => setMatrixCell(i * 3 + j), { key: `${i}-${j}`, "aria-pressed": matrixCell === i * 3 + j, disabled: !publicInfo })))) : vectorTiles(publicInfo?.tHat || [[], [], []], "t\u0302", vectorIndex, setVectorIndex),
+                selected ? h(Polynomial, { values: selected, name: keyTab === "vector" ? `t\u0302[${vectorIndex}] \xB7 NTT` : `\xC2[${Math.floor(matrixCell / 3)},${matrixCell % 3}] \xB7 NTT` }) : h("div", { className: "qc-awaiting" }, p("Each cell is a polynomial of 256 coefficients."), p("Your recipient's values appear here after you save their key."))
+              )
             )
           );
         }
         if (step === 1 && draft) {
-          const digest = sha3_2562(PQC.createPublicKey(draft.public_encaps).bytes);
-          const kr = sha3_5122(Uint8Array.from([...draft.trace.m, ...digest]));
+          const kr = sha3_5122(Uint8Array.from([...draft.trace.m, ...sha3_2562(PQC.createPublicKey(draft.public_encaps).bytes)]));
           const kHex = hex(kr.slice(0, 32)), rHex = hex(kr.slice(32));
           kr.fill(0);
           content = split2(
             h(
               R.Fragment,
               null,
-              h("h3", null, "Sample m, then derive K and r"),
-              p("The sender samples a fresh random 32-byte m for this recipient's encapsulation."),
+              h(Variables, { items: [["m", "fresh random 32 bytes"], ["ek", "recipient key \xB7 1184 bytes"], ["H", "SHA3-256"], ["G", "SHA3-512"]] }),
+              h("h3", null, "Derive the shared key"),
               formula("(K, r) = G(m \u2225 H(ek))"),
-              formula("H = SHA3-256; G = SHA3-512"),
-              p("H hashes the whole raw public key. G returns 64 bytes: the first 32 are K, the last 32 are the encryption seed r."),
-              p("FIPS 203 calls the ephemeral noise vector y. If your course calls it r\u20D7, that vector is distinct from the 32-byte seed r."),
-              button("Sample fresh m", () => run(() => prepare(1, true)), { disabled: busy })
-            ),
-            h(
-              R.Fragment,
-              null,
-              code(`m (32 bytes, local secret)
-${hex(draft.trace.m)}`),
-              code(`K = G(m \u2225 H(ek))[0:32]
-${kHex}`),
-              code(`r = G(m \u2225 H(ek))[32:64]
-${rHex}`),
+              p("Hash the entire public key. Split G's 64-byte output: the first 32 bytes are K; the last 32 are the noise seed r."),
               formula("\u03BC = Decompress\u2081(ByteDecode\u2081(m))"),
-              h(Polynomial, { values: draft.trace.mu, name: "\u03BC \xB7 bit 0 \u2192 0, bit 1 \u2192 1665" }),
-              p("m is retained locally when you attach. A new draft always samples fresh m; saved m reproduces only its original K and ciphertext.")
-            )
+              p("\u03BC encodes m as 256 coefficients: a 0 bit becomes 0, a 1 bit becomes 1665."),
+              button("Sample fresh m", () => run(() => prepare(1, true)), { disabled: busy, className: "qc-quiet" })
+            ),
+            h(R.Fragment, null, h("div", { className: "qc-secret-values" }, code(`m \xB7 ${hex(draft.trace.m)}`), code(`K \xB7 ${kHex}`), code(`r \xB7 ${rHex}`)), h(Polynomial, { values: draft.trace.mu, name: "\u03BC \xB7 encoded m" }))
           );
         }
         if (step === 2 && draft) {
-          const t = draft.trace, i = vectorIndex, j = coefficient;
-          const values = part === "u" ? t.u[i] : t.v;
+          const t = draft.trace, i = vectorIndex, j = coefficient, values = part === "u" ? t.u[i] : t.v;
           const product = part === "u" ? M.mod(values[j] - t.e1[i][j]) : M.mod(values[j] - t.e2[j] - t.mu[j]);
           content = split2(
             h(
               R.Fragment,
               null,
-              h("h3", null, "Construct the ciphertext pair"),
+              h(Variables, { items: [["A / t", "recipient public polynomials"], ["y", "3 noise polynomials \xB7 course r\u20D7"], ["e\u2081 / e\u2082", "noise vector / polynomial"], ["\u03BC", "encoded random m"]] }),
+              h("h3", null, "Construct u and v"),
               formula("u = A\u1D40y + e\u2081"),
               formula("v = t\u1D40y + \u03BC + e\u2082"),
-              p("These are polynomial products and sums modulo 3329 in Rq = \u2124q[X]/(X\xB2\u2075\u2076 + 1). In row-vector notation: u\u1D40 = y\u1D40A + e\u2081\u1D40, as in your course's rA + e\u2081."),
-              code("u = NTT\u207B\xB9(\xC2\u1D40 \u2218 \u0177) + e\u2081\nv = NTT\u207B\xB9(t\u0302\u1D40 \u2218 \u0177) + \u03BC + e\u2082"),
-              p(`Sample y from CBD\u03B7\u2081 (\u03B7\u2081=${params.eta1}); e\u2081 and e\u2082 from CBD\u03B7\u2082 (\u03B7\u2082=${params.eta2}), using PRF(r, N) with successive nonces N=0\u2026${2 * params.k}.`),
-              h("details", null, h("summary", null, "See sampled noise"), code(`y[${i}] first 16: ${t.rVector[i].slice(0, 16).join(", ")}
-e\u2081[${i}] first 16: ${t.e1[i].slice(0, 16).join(", ")}
-e\u2082 first 16: ${t.e2.slice(0, 16).join(", ")}`)),
-              p("The independently reconstructed, compressed ciphertext matches the bundled ML-KEM implementation byte for byte.")
+              p("Polynomial arithmetic modulo 3329. With row vectors, u\u1D40 = y\u1D40A + e\u2081\u1D40 \u2014 the course's rA + e\u2081."),
+              code(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
+              h("div", { className: "qc-compression" }, h("span", null, "Compressed for the file"), h("strong", null, `${values[j]} \u2192 ${M.compress(values[j], part === "u" ? 10 : 4)}`), h("small", null, part === "u" ? "10 bits" : "4 bits")),
+              h("details", null, h("summary", null, "Noise and NTT details"), code(`y/e\u2081/e\u2082 use CBD\u2082 with successive PRF(r, N) nonces.
+u = NTT\u207B\xB9(\xC2\u1D40 \u2218 \u0177) + e\u2081
+v = NTT\u207B\xB9(t\u0302\u1D40 \u2218 \u0177) + \u03BC + e\u2082
+y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} \u2026`))
             ),
             h(
               R.Fragment,
               null,
               h(Tabs, { label: "Ciphertext components", items: [["u", "Compute u"], ["v", "Compute v"]], value: part, onChange: setPart }),
-              part === "u" ? vectorSelector : p("v is one polynomial, with 256 coefficients."),
-              h(Polynomial, { values, name: part === "u" ? `u[${i}] \xB7 before compression` : "v \xB7 before compression" }),
-              field("Construction coefficient", h("input", { type: "range", min: 0, max: 255, value: j, onChange: (e) => setCoefficient(Number(e.target.value)) })),
-              code(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
-              formula(`Compress${part === "u" ? params.du : params.dv}(${values[j]}) = ${M.compress(values[j], part === "u" ? params.du : params.dv)}`),
-              p("The file's u and v arrays hold compressed coefficients. Uncompressed values remain in this local draft.")
+              part === "u" ? vectorTiles(t.u, "u", i, setVectorIndex) : h("div", { className: "qc-vector-summary" }, h("strong", null, "v"), p("One polynomial \xB7 256 coefficients")),
+              h(Polynomial, { values, name: part === "u" ? `u[${i}] \xB7 before compression` : "v \xB7 before compression", index: j, onIndexChange: setCoefficient }),
+              h("span", { className: "qc-muted" }, "The compressed values match the library's ciphertext byte for byte.")
             )
           );
         }
@@ -4364,69 +4387,64 @@ e\u2082 first 16: ${t.e2.slice(0, 16).join(", ")}`)),
             h(
               R.Fragment,
               null,
-              h("h3", null, "Encrypt the message with K"),
-              field("Message", h("textarea", { rows: 4, maxLength: 64e3, value: text, disabled: busy, placeholder: "Write your message after constructing u and v\u2026", onChange: (e) => editMessage(e.target.value) })),
-              p("AES-256-GCM uses the shared K, a fresh 12-byte nonce and a 16-byte authentication tag. This message layer is separate from FIPS 203's ML-KEM."),
-              formula("c = ByteEncode(u) \u2225 ByteEncode(v)"),
-              p(`The JSON stores ${params.k} compressed u polynomials at ${params.du} bits per coefficient and one v polynomial at ${params.dv} bits. Packing them reconstructs the ${params.ciphertextBytes}-byte FIPS 203 ciphertext exactly.`),
-              code(`.qcord: qcord_version, u, v, encrypted_message
-Local config: public_encaps, private_decaps, recipients`),
-              p("The recipient uses their private dk and c to obtain K through ML-KEM.Decaps. The sender can reproduce K from saved m and the saved recipient public key."),
-              p("The config contains private material, including m; keep it local. m retention is for this course walkthrough, outside the standard's ephemeral-randomness lifecycle."),
-              p("AES-GCM rejects a wrong key or modified message. It does not prove the sender's identity.")
+              h(Variables, { items: [["K", "32-byte shared secret"], ["nonce", "12 fresh random bytes"], ["tag", "16-byte authentication tag"]] }),
+              h("h3", null, "Write the encrypted message"),
+              field("Message", h("textarea", { className: "qc-message-input", rows: 5, maxLength: 64e3, value: text, disabled: busy, placeholder: "Your message\u2026 Discord Markdown is supported.", onChange: (e) => editMessage(e.target.value) })),
+              code("AES-256-GCM(K, nonce, message) \u2192 ciphertext + tag"),
+              p("One attachment carries u, v, and the encrypted message. Your saved m reopens sent files; the recipient uses their private key."),
+              h("span", { className: "qc-muted" }, "AES-GCM is Qcord's message layer. ML-KEM follows FIPS 203.")
             ),
-            h(R.Fragment, null, h("h3", null, "Exact .qcord attachment"), h("pre", { className: "qc-json" }, draft.wire))
+            h(R.Fragment, null, h("div", { className: "qc-label-row" }, h("strong", null, "Attachment preview"), h("small", { className: "qc-muted" }, `${Buffer.byteLength(draft.wire).toLocaleString()} bytes`)), h("pre", { className: "qc-json", tabIndex: 0, "aria-label": "Exact attachment JSON" }, draft.wire))
           );
         }
-        if (stopped) return h("div", { className: "qc-panel" }, h("h2", null, "Qcord is stopped"), p("Enable the plugin and reopen the panel."));
+        if (stopped) return h("div", { className: "qc-panel" }, p("Qcord is stopped. Enable it and reopen the panel."));
         return h(
           "div",
           { className: "qc-panel qc-composer" },
           h(
             "header",
-            { className: "qc-header" },
-            h("div", null, h("span", { className: "qc-eyebrow" }, "QCORD / FIPS 203"), h("h2", null, "From recipient key to u, v")),
-            h("div", { className: "qc-row" }, field("Open .qcord locally", h("input", { type: "file", accept: ".qcord,application/json", disabled: busy, onChange: (e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) run(async () => {
-                if (file.size > 1024 * 1024) throw new Error("Qcord file is too large.");
-                const result = await plugin.openFile(await file.text(), channel);
-                if (alive.current) setOpened(result);
-              });
-            } })), onClose && button("Close", onClose))
-          ),
-          h(
-            "div",
             { className: "qc-toolbar" },
-            h("div", { className: "qc-level" }, h("span", null, "Parameter set \xB7 fixed"), h("strong", null, "ML-KEM-768")),
-            h("div", { className: "qc-level" }, h("span", null, "NIST category"), h("strong", null, params.category)),
-            button(h(R.Fragment, null, profile && h(Avatar, { profile }), h("span", null, h("strong", null, profile?.displayName || "Choose a recipient"), h("small", null, row ? `${params.publicBytes} bytes \xB7 ${params.label}` : "Public key needed"))), () => setContactsOpen(true), { className: "qc-recipient", disabled: busy, "aria-label": "Choose recipient" }),
-            button("Contacts & keys", () => setContactsOpen(true), { disabled: busy })
+            button(h(R.Fragment, null, profile && h(Avatar, { profile }), h("span", null, h("strong", null, profile?.displayName || "Choose recipient"), h("small", null, row ? "Public key saved" : "Save their public key"))), () => setContactsTab("contacts"), { className: "qc-recipient", "aria-label": "Choose recipient" }),
+            h(
+              "div",
+              { className: "qc-mode-controls" },
+              h(Switch, { label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: (value) => run(async () => plugin.setAutomatic("encrypt", value)) }),
+              h(Switch, { label: "Auto decrypt", checked: autoDecrypt, onChange: (value) => run(async () => plugin.setAutomatic("decrypt", value)) })
+            ),
+            button(h(R.Fragment, null, h(Icon, { name: "keys" }), "Keys & contacts"), () => setContactsTab("keys"), { className: "qc-key-button" }),
+            onClose && button(h(Icon, { name: "close" }), onClose, { className: "qc-icon-button", "aria-label": "Close" })
           ),
           h(Tabs, { label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy }),
           h("main", { className: "qc-main", role: "tabpanel", "aria-label": `${stages[step]} stage`, "aria-busy": busy }, content),
-          h("aside", { className: "qc-source" }, "FIPS 203 \xB7 Algorithms 14, 17, 20, 21 \xB7 Tables 2, 3 \xB7 Course tool; not a FIPS-validated module."),
-          h("div", { className: "qc-feedback" }, h("div", { role: "alert", className: "qc-error" }, error), h("div", { role: "status" }, busy ? "Working locally\u2026" : notice)),
           h(
             "footer",
             { className: "qc-footer" },
             button("Back", () => navigate(step - 1), { disabled: busy || step === 0 }),
-            button("Clear config & reset key", () => run(() => plugin.clearConfig()), { disabled: busy, title: "Deletes saved contacts, m values and the current key pair. Generates a new public key; old files need your old backup." }),
-            h("span", { className: "qc-muted" }, `Step ${step + 1} of 4 \xB7 ${params.label}`),
-            step < 3 ? button("Next", () => navigate(step + 1), { className: "qc-primary", disabled: busy || !row }) : button(attached ? "Attached" : "Attach .qcord to composer", () => run(async () => {
+            h("div", { className: "qc-feedback" }, h("div", { role: "alert", className: "qc-error" }, error), h("div", { role: "status" }, busy ? "Working\u2026" : notice)),
+            button(h(R.Fragment, null, h(Icon, { name: "file" }), "Open file"), () => filePicker.current.click(), { className: "qc-quiet qc-open-file", title: "Decrypt a downloaded .qcord file on this device", disabled: busy }),
+            h("input", { ref: filePicker, hidden: true, type: "file", accept: ".qcord,application/json", "aria-label": "Open saved .qcord file", onChange: (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) run(async () => {
+                if (file.size > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large.");
+                const result = await plugin.openFile(await file.text(), channel);
+                if (alive.current) setOpened(result);
+              });
+            } }),
+            step < 3 ? button("Next", () => navigate(step + 1), { className: "qc-primary", disabled: busy || !row }) : button(attached ? "Attached" : "Attach .qcord", () => run(async () => {
               await plugin.stageDraft(draft);
               if (alive.current) {
                 setAttached(true);
-                setNotice("m saved locally. Review the attachment in Discord and press Send.");
+                setNotice("Ready in Discord. Press Send to share.");
               }
             }), { className: "qc-primary", disabled: busy || attached || !draft || !messageReady })
           ),
           opened && h(OpenedMessage, { result: opened, onDismiss: () => setOpened(null) }),
-          contactsOpen && h(Contacts, { plugin, scheme, channel, keys, onClose: () => setContactsOpen(false), onChanged: refreshed, onSelect: (id) => {
+          contactsTab && h(Contacts, { plugin, channel, keys, initialTab: contactsTab, onClose: () => setContactsTab(null), onChanged: refreshed, onSelect: (id) => {
             invalidate();
             setChannel(id);
             setPartners(plugin.getSavedPartners());
+            setStep(0);
           } })
         );
       }
@@ -4445,178 +4463,7 @@ var require_button = __commonJS({
 // src/styles.css
 var require_styles = __commonJS({
   "src/styles.css"(exports2, module2) {
-    module2.exports = `/* Fixed-size dialogs, stable tab panels, one accent. Only long data areas scroll. */\r
-.qcord-dialog {\r
-    width: min(1480px, 96vw); height: min(920px, 94dvh);\r
-    max-width: 96vw; max-height: 94dvh; margin: auto; padding: 0;\r
-    border: 1px solid #484b50; border-radius: 10px; overflow: hidden;\r
-    background: #232428; color: #e9eaed; color-scheme: dark;\r
-    box-shadow: 0 20px 80px #0008;\r
-}\r
-.qcord-dialog::backdrop { background: #0009; }\r
-.qc-panel {\r
-    --qc-bg: var(--background-primary, #232428);\r
-    --qc-surface: var(--background-secondary, #2b2d31);\r
-    --qc-text: var(--text-normal, #e9eaed);\r
-    --qc-muted: var(--text-muted, #b4b7bf);\r
-    --qc-line: var(--background-modifier-accent, #45484f);\r
-    --qc-accent: #b0e56f; --qc-graph: #a3e635;\r
-    --qc-empty: var(--background-tertiary, #191a1e);\r
-    display: flex; flex-direction: column; gap: 14px; box-sizing: border-box;\r
-    width: 100%; height: 100%; min-height: 0; padding: 22px 28px;\r
-    background: var(--qc-bg); color: var(--qc-text);\r
-    font: 14px/1.5 var(--font-primary, system-ui, sans-serif); text-align: left;\r
-}\r
-/* Also works when BetterDiscord opens the plugin's settings inside its own host. */\r
-.qc-composer { min-height: min(720px, 90dvh); }\r
-.qcord-dialog > .qc-composer { min-height: 0; }\r
-.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\r
-.qc-panel h2, .qc-panel h3, .qc-panel h4, .qc-panel p, .qc-panel figure { margin: 0; }\r
-.qc-panel h2 { font-size: 27px; font-weight: 600; line-height: 1.25; }\r
-.qc-panel h3 { font-size: 20px; font-weight: 600; line-height: 1.3; }\r
-.qc-panel h4 { font-size: 16px; font-weight: 600; }\r
-.qc-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex: 0 0 auto; }\r
-.qc-eyebrow { display: block; margin-bottom: 5px; font-size: 10px; letter-spacing: .13em; color: var(--qc-muted); }\r
-.qc-header p { margin-top: 4px; color: var(--qc-muted); font-size: 13px; }\r
-.qc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }\r
-.qc-row > .qc-field { flex: 1; min-width: 110px; }\r
-.qc-toolbar { display: grid; grid-template-columns: 250px 130px minmax(200px, 1fr) auto; gap: 14px; align-items: end; flex: 0 0 auto; }\r
-.qc-level { display: flex; flex-direction: column; gap: 5px; }\r
-.qc-level > span:first-child { font-size: 12px; color: var(--qc-muted); }\r
-.qc-level > strong { border: 1px solid var(--qc-line); border-radius: 5px; padding: 9px 12px; height: 42px; font-weight: 500; }\r
-.qc-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }\r
-.qc-field > span { color: var(--qc-muted); }\r
-.qc-panel input[type="text"], .qc-panel input[type="search"], .qc-panel textarea, .qc-panel select {\r
-    width: 100%; border: 1px solid var(--qc-line); border-radius: 5px; padding: 9px 12px;\r
-    color: var(--qc-text); background: var(--qc-empty); font: inherit; font-size: 14px;\r
-}\r
-.qc-panel select { height: 42px; }\r
-.qc-panel textarea { min-height: 64px; resize: none; line-height: 1.6; }\r
-.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: var(--qc-muted); opacity: .85; }\r
-.qc-panel button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--qc-line); border-radius: 5px; padding: 8px 14px; background: var(--qc-surface); color: var(--qc-text); font: inherit; font-size: 13px; line-height: 1.4; min-height: 38px; cursor: pointer; }\r
-.qc-panel button:hover:not(:disabled) { background: var(--qc-empty); border-color: var(--qc-accent); }\r
-.qc-panel button:disabled { opacity: .45; cursor: default; }\r
-.qc-panel .qc-primary { background: var(--qc-accent); color: #18230c; border-color: var(--qc-accent); font-weight: 600; }\r
-.qc-panel .qc-primary:hover:not(:disabled) { background: #c0ef88; }\r
-.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\r
-.qc-panel .qc-recipient { min-width: 0; height: 60px; justify-content: start; text-align: left; }\r
-.qc-recipient > span { min-width: 0; }\r
-.qc-recipient strong, .qc-recipient small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\r
-.qc-recipient strong { font-size: 14px; font-weight: 500; }\r
-.qc-recipient small { font-size: 11px; color: var(--qc-muted); margin-top: 2px; }\r
-.qc-avatar { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; object-fit: cover; display: block; }\r
-.qc-avatar-fallback { display: flex; align-items: center; justify-content: center; background: #43494b; color: #fff; font-size: 17px; }\r
-.qc-tabs { display: flex; flex: 0 0 auto; gap: 4px; border-bottom: 1px solid var(--qc-line); overflow-x: auto; }\r
-.qc-tabs > button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 9px 12px; min-height: 40px; color: var(--qc-muted); white-space: nowrap; }\r
-.qc-composer > .qc-tabs > button { flex: 1; font-size: 14px; }\r
-.qc-tabs > button[aria-selected="true"] { color: var(--qc-text); border-bottom-color: var(--qc-accent); }\r
-.qc-tabs > button:hover:not(:disabled) { background: var(--qc-surface); }\r
-.qc-main { flex: 1 1 0; min-height: 0; }\r
-.qc-split { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 26px; height: 100%; min-height: 0; }\r
-.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; }\r
-.qc-visual { border-left: 1px solid var(--qc-line); padding-left: 26px; }\r
-.qc-equation { flex: 0 0 auto; font: 24px/1.45 "Cambria Math", "STIX Two Math", ui-monospace, monospace; padding: 12px 14px; border-left: 2px solid var(--qc-accent); border-radius: 0 4px 4px 0; background: var(--qc-surface); overflow-wrap: anywhere; }\r
-.qc-code { display: block; font: 12px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }\r
-.qc-parameters { width: 100%; border-collapse: collapse; font-size: 13px; }\r
-.qc-parameters th, .qc-parameters td { text-align: left; padding: 7px; border-bottom: 1px solid var(--qc-line); }\r
-.qc-parameters tr[data-selected="true"] { color: var(--qc-accent); background: var(--qc-surface); }\r
-.qc-key-shapes { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }\r
-.qc-key-shapes p { margin-bottom: 10px; }\r
-.qc-matrix > span { padding: 6px; text-align: center; background: var(--qc-surface); color: var(--qc-accent); font: 13px ui-monospace, monospace; }\r
-.qc-header input[type="file"] { max-width: 230px; font-size: 11px; }\r
-.qc-opened-dialog { width: min(800px, 94vw); height: min(600px, 90dvh); }\r
-.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; padding: 16px; background: var(--qc-empty); }\r
-.qc-feedback { overflow-wrap: anywhere; }\r
-.qc-muted { color: var(--qc-muted); font-size: 12px; }\r
-.qc-note { padding: 10px 12px; background: var(--qc-surface); border-left: 2px solid var(--qc-line); font-size: 13px; }\r
-.qc-polynomial { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 6px; }\r
-.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }\r
-.qc-polynomial figcaption span { color: var(--qc-muted); font-size: 11px; }\r
-.qc-polynomial svg { width: 100%; height: clamp(80px, 15vh, 144px); flex: 0 0 auto; }\r
-.qc-polynomial output { font-size: 22px; padding: 8px 12px; }\r
-.qc-panel input[type="range"] { width: 100%; accent-color: var(--qc-graph); margin: 4px 0; }\r
-.qc-matrix { display: grid; width: min(100%, 390px); align-self: center; gap: 4px; border-left: 2px solid var(--qc-muted); border-right: 2px solid var(--qc-muted); padding: 5px; }\r
-.qc-matrix button { min-height: 28px; padding: 3px 7px; font-size: 12px; }\r
-.qc-matrix button[aria-pressed="true"] { border-color: var(--qc-accent); color: var(--qc-accent); }\r
-.qc-packet-bars { display: flex; flex-wrap: wrap; gap: 6px; }\r
-.qc-packet-bars span { flex: 1; padding: 10px; border: 1px solid var(--qc-line); border-radius: 4px; font-size: 12px; }\r
-.qc-packet-bars span:first-child { flex: 4; }\r
-.qc-json { flex: 1; min-height: 0; margin: 0; padding: 12px; overflow: auto; font: 11px/1.55 ui-monospace, Consolas, monospace; white-space: pre; background: var(--qc-empty); border-radius: 4px; }\r
-.qc-source { flex: 0 0 auto; padding-top: 9px; border-top: 1px solid var(--qc-line); color: var(--qc-muted); font-size: 11px; }\r
-.qc-source span { display: block; margin-top: 3px; }\r
-.qc-feedback { flex: 0 0 auto; min-height: 22px; font-size: 13px; }\r
-.qc-feedback:has(:empty):not(:has(:not(:empty))) { min-height: 0; }\r
-.qc-error:not(:empty) { color: var(--text-danger, #f4a7ae); }\r
-.qc-footer { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 10px; border-top: 1px solid var(--qc-line); }\r
-.qc-empty-state { display: flex; flex-direction: column; align-items: start; justify-content: center; gap: 14px; flex: 1; }\r
-.qc-contacts-dialog { width: min(1120px, 94vw); height: min(750px, 91dvh); }\r
-.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; }\r
-.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding-right: 20px; border-right: 1px solid var(--qc-line); }\r
-.qc-contact-list { display: flex; flex-direction: column; gap: 5px; overflow: auto; min-height: 0; }\r
-.qc-panel .qc-contact-card { justify-content: start; text-align: left; gap: 12px; padding: 10px; flex-shrink: 0; }\r
-.qc-contact-card[aria-pressed="true"] { border-color: var(--qc-accent); background: var(--qc-empty); }\r
-.qc-contact-card > span { min-width: 0; }\r
-.qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\r
-.qc-contact-card strong { font-size: 14px; font-weight: 500; }\r
-.qc-contact-card small { font-size: 11px; color: var(--qc-muted); }\r
-.qc-key-badges { display: flex; gap: 4px; margin-top: 4px; }\r
-.qc-key-badges span { font-size: 9px; color: var(--qc-muted); border: 1px solid var(--qc-line); border-radius: 3px; padding: 0 4px; opacity: .5; }\r
-.qc-key-badges .has-key { opacity: 1; color: var(--qc-accent); border-color: var(--qc-accent); }\r
-.qc-contact-detail, .qc-key-page { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }\r
-.qc-key-page { flex: 1; padding: 8px 0; }\r
-.qc-key-page button { align-self: start; }\r
-.qc-person { display: flex; gap: 12px; align-items: center; }\r
-.qc-person p { font-size: 12px; color: var(--qc-muted); }\r
-.qcord-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; background: transparent; color: var(--interactive-normal, #b5bac1); cursor: pointer; }\r
-.qcord-button svg { width: 22px; height: 22px; fill: currentColor; }\r
-.qcord-button:focus-visible { outline: 2px solid #a3e635; outline-offset: 2px; border-radius: 4px; }\r
-.qcord-file-hidden { display: none !important; }\r
-.qcord-decrypted { min-width: 0; padding: 4px 0; }\r
-.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; white-space: pre-wrap; overflow-wrap: anywhere; }\r
-.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\r
-.qcord-message a { color: var(--text-link, #8ab4f8); }\r
-.qcord-message pre { max-width: 100%; overflow-x: auto; }\r
-.qcord-download { display: inline-block; margin-top: 6px; color: var(--text-link, #8ab4f8); font-size: 11px; }\r
-@media (max-height: 800px) and (min-width: 901px) {\r
-    .qc-panel { gap: 9px; padding: 16px 24px; }\r
-    .qc-polynomial svg { height: 85px; }\r
-    .qc-explanation, .qc-visual { gap: 9px; }\r
-    .qc-equation { padding: 9px 12px; font-size: 22px; }\r
-}\r
-@media (max-width: 1100px) {\r
-    .qc-toolbar { grid-template-columns: 210px 110px minmax(150px, 1fr) auto; gap: 9px; }\r
-    .qc-split { gap: 18px; }\r
-    .qc-visual { padding-left: 18px; }\r
-    .qc-tabs > button { font-size: 11px; padding: 8px; }\r
-}\r
-@media (max-width: 900px) {\r
-    .qc-panel { padding: 16px; gap: 10px; }\r
-    .qc-header h2 { font-size: 23px; }\r
-    .qc-toolbar { grid-template-columns: 1fr 120px; }\r
-    .qc-recipient { grid-column: 1; }\r
-    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 18px; }\r
-    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\r
-    .qc-visual { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--qc-line); }\r
-    .qc-contact-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }\r
-    .qc-header > .qc-row { gap: 6px; }\r
-    .qc-contacts-dialog { max-height: 95dvh; }\r
-}\r
-@media (max-width: 600px) {\r
-    .qcord-dialog { width: 98vw; height: 96dvh; max-width: 98vw; max-height: 96dvh; }\r
-    .qc-header { align-items: start; gap: 10px; }\r
-    .qc-header > .qc-row { flex-direction: column-reverse; align-items: end; }\r
-    .qc-header h2 { font-size: 19px; }\r
-    .qc-composer > .qc-tabs > button { font-size: 10px; padding: 8px 3px; }\r
-    .qc-equation { font-size: 21px; }\r
-    .qc-contact-layout { grid-template-columns: 1fr; overflow: auto; }\r
-    .qc-contact-sidebar { padding: 0 0 12px; border-right: 0; border-bottom: 1px solid var(--qc-line); flex-shrink: 0; min-height: 170px; }\r
-    .qc-contact-detail { overflow: visible; }\r
-    .qc-contact-list { max-height: 170px; }\r
-    .qc-footer { gap: 8px; flex-wrap: wrap; }\r
-    .qc-footer > span { order: 3; flex-basis: 100%; text-align: center; }\r
-    .qc-source { font-size: 9px; }\r
-}\r
-`;
+    module2.exports = '/* Quiet surfaces, consistent controls, no animated glow or decorative motion. */\n.qcord-dialog {\n    width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;\n    padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;\n    color: #f1f3f5; color-scheme: dark; background: #202226ed; backdrop-filter: blur(14px);\n    box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;\n}\n.qcord-dialog::backdrop { background: #080a0e65; backdrop-filter: blur(3px); }\n.qc-panel {\n    --qc-text: var(--text-normal, #f1f3f5); --qc-muted: var(--text-muted, #a4aab4);\n    --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #10121665;\n    --qc-accent: #9ac8a7; --qc-graph: #86b997;\n    display: flex; flex-direction: column; gap: 18px; width: 100%; height: 100%; min-height: 0;\n    padding: 22px; box-sizing: border-box; color: var(--qc-text); background: transparent;\n    font: 14px/1.5 var(--font-primary, system-ui, sans-serif); text-align: left;\n}\n.qc-composer { min-height: min(640px, 90dvh); }\n.qcord-dialog > .qc-composer { min-height: 0; }\n.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\n.qc-panel h2, .qc-panel h3, .qc-panel p, .qc-panel figure, .qc-panel dl { margin: 0; }\n.qc-panel h3 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em; }\n.qc-panel p { font-size: 13px; line-height: 1.65; color: var(--qc-muted); text-wrap: pretty; }\n.qc-panel small, .qc-muted { font-size: 11px; color: var(--qc-muted); }\n.qc-panel button {\n    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px;\n    padding: 8px 13px; border: 1px solid var(--qc-line); border-radius: 7px;\n    background: #ffffff06; color: var(--qc-text); font: inherit; font-size: 12px; line-height: 1.3;\n    cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, border-color 140ms ease;\n}\n.qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }\n.qc-panel button:disabled { opacity: .38; cursor: default; }\n.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\n.qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }\n.qc-panel .qc-primary { background: #9ac8a7; border-color: #9ac8a7; color: #13261b; font-weight: 600; }\n.qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }\n.qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }\n.qc-panel .qc-icon-button { width: 38px; height: 38px; padding: 8px; flex: 0 0 38px; background: transparent; border-color: transparent; }\n.qc-toolbar { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }\n.qc-toolbar > button, .qc-mode-controls { height: 44px; }\n.qc-panel .qc-recipient { justify-content: flex-start; text-align: left; min-width: 180px; flex: 1; height: 44px; padding: 5px 10px; }\n.qc-recipient > span, .qc-contact-card > span { min-width: 0; }\n.qc-recipient strong, .qc-recipient small, .qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\n.qc-recipient strong { font-size: 12px; font-weight: 500; }\n.qc-recipient small { font-size: 10px; margin-top: 2px; }\n.qc-avatar { display: block; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; object-fit: cover; }\n.qc-avatar-fallback { display: flex; justify-content: center; align-items: center; background: #375443; color: #dbeee0; }\n.qc-mode-controls { display: flex; align-items: stretch; gap: 3px; padding: 3px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\n.qc-panel .qc-switch { min-height: 36px; padding: 6px 9px; border: 0; background: transparent; font-size: 11px; color: var(--qc-muted); }\n.qc-switch[aria-checked="true"] { color: var(--qc-text); }\n.qc-switch-track { position: relative; display: block; width: 26px; height: 15px; flex: 0 0 26px; border-radius: 9px; background: #ffffff20; }\n.qc-switch-track > span { position: absolute; left: 3px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #b1b6bd; transition: transform 150ms cubic-bezier(.23,1,.32,1); }\n.qc-switch[aria-checked="true"] .qc-switch-track { background: #528064; }\n.qc-switch[aria-checked="true"] .qc-switch-track > span { transform: translateX(11px); background: #e4f6e9; }\n.qc-tabs { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--qc-line); }\n.qc-tabs > button { min-width: 0; border: 0; background: transparent; color: var(--qc-muted); white-space: nowrap; font-size: 12px; }\n.qc-tabs > button[aria-selected="true"] { background: #ffffff09; color: var(--qc-text); }\n.qc-composer > .qc-tabs > button { flex: 1; }\n.qc-main { flex: 1 1 0; min-height: 0; }\n.qc-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 28px; height: 100%; min-height: 0; }\n.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 15px; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; }\n.qc-visual { padding-left: 24px; border-left: 1px solid var(--qc-line); }\n.qc-visual > .qc-tabs { padding-bottom: 7px; }\n.qc-visual .qc-tabs > button { font-size: 11px; min-height: 32px; padding: 7px 10px; }\n.qc-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 8px; background: #00000012; flex: 0 0 auto; }\n.qc-variables > div { min-width: 0; }\n.qc-variables dt { font: 16px/1.4 "Cambria Math", ui-monospace, monospace; color: #dce9df; }\n.qc-variables dd { margin: 2px 0 0; color: var(--qc-muted); font-size: 10px; }\n.qc-equation { font: 23px/1.4 "Cambria Math", "STIX Two Math", serif; color: #edf3ef; padding: 4px 0; overflow-wrap: anywhere; flex: 0 0 auto; }\n.qc-code { display: block; font: 11px/1.7 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: #ccd8d0; }\n.qc-secret-values { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\n.qc-keyparts { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; flex: 0 0 auto; }\n.qc-keyparts > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; background: #83ae9514; border-top: 2px solid #8db99b; border-radius: 0 0 5px 5px; }\n.qc-keyparts > div + div { background: #a5b8d610; border-color: #9aaec3; }\n.qc-keyparts strong { font-size: 11px; font-weight: 500; }\n.qc-keyparts span { font-size: 9px; color: var(--qc-muted); }\n.qc-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; flex: 0 0 auto; }\n.qc-matrix button, .qc-vector-tiles button { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 43px; padding: 6px 9px; color: #84af94; background: #88ae9510; }\n.qc-matrix button > span, .qc-vector-tiles button > span { text-align: left; font: 10px ui-monospace, Consolas, monospace; }\n.qc-matrix svg, .qc-vector-tiles svg { width: 100%; height: 20px; }\n.qc-matrix button[aria-pressed="true"], .qc-vector-tiles button[aria-pressed="true"] { color: #b9dec6; border-color: #96c3a275; background: #8ab89c1c; }\n.qc-vector-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 0 0 auto; }\n.qc-vector-tiles button { min-height: 64px; }\n.qc-vector-summary { display: flex; align-items: center; gap: 15px; min-height: 64px; }\n.qc-awaiting { padding: 20px 4px; display: flex; flex-direction: column; gap: 8px; }\n.qc-polynomial { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 9px; background: #00000010; flex: 0 0 auto; }\n.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\n.qc-polynomial figcaption strong { font-weight: 500; }\n.qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }\n.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: pan-y; }\n.qc-scrubber { display: flex; align-items: center; gap: 12px; }\n.qc-scrubber > label { flex: 1; }\n.qc-scrubber output { font: 12px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; min-width: 95px; text-align: right; }\n.qc-coefficient-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }\n.qc-coefficient-strip > button { display: flex; flex-direction: column; gap: 3px; min-height: 42px; padding: 3px; font: 11px ui-monospace, monospace; background: transparent; border-color: transparent; }\n.qc-coefficient-strip small { font-size: 9px; }\n.qc-coefficient-strip button[aria-pressed="true"] { background: #87aa921c; color: #c7e7d1; border-color: #8bb9993b; }\n.qc-panel input[type="range"] { display: block; width: 100%; margin: 4px 0 0; accent-color: #8cb89a; }\n.qc-compression { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 7px; font-size: 11px; color: var(--qc-muted); }\n.qc-compression strong { margin-left: auto; color: #d3e6d9; font: 15px ui-monospace, monospace; }\n.qc-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--qc-muted); min-width: 0; }\n.qc-panel textarea, .qc-panel input[type="search"], .qc-panel input[type="text"] { width: 100%; padding: 10px 12px; color: var(--qc-text); background: var(--qc-empty); border: 1px solid var(--qc-line); border-radius: 7px; font: 11px/1.65 ui-monospace, Consolas, monospace; }\n.qc-panel textarea { resize: none; min-height: 60px; }\n.qc-panel textarea[readonly] { color: #bdc9c0; }\n.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: #7b838f; }\n.qc-panel input[type="search"] { font-family: inherit; }\n.qc-panel .qc-message-input { font: 14px/1.6 var(--font-primary, system-ui, sans-serif); min-height: 145px; }\n.qc-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.qc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\n.qc-json { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 14px; border-radius: 8px; border: 1px solid var(--qc-line); background: var(--qc-empty); color: #cad5ce; white-space: pre; font: 11px/1.85 ui-monospace, Consolas, monospace; }\n.qc-footer { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 13px; border-top: 1px solid var(--qc-line); }\n.qc-feedback { flex: 1; min-width: 0; font-size: 11px; color: var(--qc-muted); overflow-wrap: anywhere; }\n.qc-error { color: #f1a5ac; }\n.qc-panel details { font-size: 11px; color: var(--qc-muted); }\n.qc-panel summary { cursor: pointer; }\n.qc-panel details > .qc-code, .qc-panel details > .qc-field { margin-top: 12px; }\n.qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }\n.qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }\n.qc-contact-header > .qc-tabs { flex: 1; }\n.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }\n.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }\n.qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }\n.qc-panel .qc-contact-card { min-height: 48px; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 7px; }\n.qc-contact-card[aria-pressed="true"] { background: #9ab2a012; border-color: #9ab2a026; }\n.qc-contact-card strong { font-size: 12px; font-weight: 500; }\n.qc-contact-card small { margin-top: 2px; font-size: 10px; }\n.qc-contact-detail { display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding-top: 4px; min-width: 0; }\n.qc-person { display: flex; align-items: center; gap: 10px; }\n.qc-person h3 { font-size: 15px; }\n.qc-person p { font-size: 11px; }\n.qc-my-keys { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 3px; }\n.qc-my-keys h3 { font-size: 14px; }\n.qc-my-keys p { font-size: 11px; line-height: 1.6; }\n.qc-secret { border: 1px solid var(--qc-line); background: #00000010; border-radius: 8px; padding: 10px 12px; }\n.qc-secret .qc-label-row > strong { font-size: 12px; font-weight: 500; }\n.qc-panel .qc-spoiler { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 10px 2px; gap: 5px; border: 0; background: transparent; }\n.qc-secret-mask { filter: blur(3px); color: #9ea8b4; user-select: none; letter-spacing: 3px; font: 16px ui-monospace, monospace; }\n.qc-reset-area { padding-top: 10px; border-top: 1px solid var(--qc-line); }\n.qc-reset-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #bb546450; border-radius: 8px; background: #83344115; font-size: 12px; }\n.qc-opened-dialog { width: min(700px, 92vw); height: min(490px, 86dvh); }\n.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #0002; border: 1px solid var(--qc-line); border-radius: 8px; }\n.qcord-button { display: inline-flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: transparent; border: 0; padding: 6px; border-radius: 7px; color: var(--interactive-normal, #a4aab4); cursor: pointer; }\n.qcord-button svg { width: 21px; height: 21px; fill: currentColor; }\n.qcord-button.qcord-decrypt-enabled { color: #a1d6b1; background: #8aba9e0d; filter: drop-shadow(0 0 3px #6aa78025); }\n.qcord-button:focus-visible { outline: 2px solid #8fbd9c; outline-offset: 2px; }\n[class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); box-shadow: inset 0 0 0 1px #87c79c48, 0 0 14px #5f9b7320; }\n[class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #70ae8614, #77a38806 50%, #70ae8610); }\n.qcord-file-hidden, .qcord-empty-content { display: none !important; }\n.qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }\n.qcord-decrypted { position: relative; width: fit-content; max-width: 100%; min-width: 0; padding: 9px 34px 9px 12px; border: 1px solid #8fba9d28; border-radius: 8px; background: #829a8910; }\n.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; white-space: pre-wrap; overflow-wrap: anywhere; }\n.qcord-message > :first-child { margin-top: 0; }\n.qcord-message > :last-child { margin-bottom: 0; }\n.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\n.qcord-message a { color: var(--text-link, #a2c5ef); }\n.qcord-message pre { max-width: 100%; overflow-x: auto; }\n.qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #97a4a0); font-size: 15px; }\n@media (hover: hover) and (pointer: fine) {\n    .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #ffffff0b; }\n    .qc-panel .qc-primary:hover:not(:disabled) { background: #aed4b8; border-color: #aed4b8; }\n    .qc-panel .qc-danger:hover:not(:disabled) { background: #b53f4d; }\n    .qcord-download:hover { background: #ffffff0b; color: #d4e5da; }\n}\n@media (max-height: 780px) and (min-width: 901px) {\n    .qc-panel { padding: 18px; gap: 13px; }\n    .qc-explanation, .qc-visual { gap: 11px; }\n    .qc-polynomial > svg { height: 90px; }\n    .qc-polynomial { gap: 9px; }\n    .qc-my-keys { gap: 8px; }\n    .qc-variables { padding: 10px; gap: 8px 12px; }\n}\n@media (max-width: 950px) {\n    .qc-toolbar { gap: 7px; }\n    .qc-toolbar .qc-key-button { font-size: 0; width: 40px; padding: 8px; }\n    .qc-recipient { min-width: 140px; }\n    .qc-split { gap: 18px; }\n    .qc-visual { padding-left: 18px; }\n}\n@media (max-width: 760px) {\n    .qcord-dialog { width: 96vw; height: 92dvh; }\n    .qc-panel { padding: 15px; gap: 12px; }\n    .qc-toolbar { flex-wrap: wrap; }\n    .qc-toolbar .qc-recipient { order: 0; flex: 1; }\n    .qc-mode-controls { order: 3; width: 100%; }\n    .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }\n    .qc-toolbar .qc-key-button { order: 1; }\n    .qc-toolbar .qc-icon-button { order: 2; }\n    .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }\n    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }\n    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\n    .qc-visual { border-left: 0; padding: 16px 0 0; border-top: 1px solid var(--qc-line); }\n    .qc-contact-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 15px; }\n    .qc-contact-sidebar { padding-right: 12px; }\n    .qc-footer { gap: 5px; }\n    .qc-footer .qc-open-file { font-size: 0; padding: 8px; }\n    .qc-contact-header { gap: 10px; }\n}\n@media (max-width: 520px) {\n    .qc-contact-layout { display: flex; flex-direction: column; overflow: auto; }\n    .qc-contact-sidebar { border-right: 0; padding-right: 0; flex: 0 0 auto; }\n    .qc-contact-list { flex-direction: row; max-height: 55px; overflow-x: auto; }\n    .qc-contact-list > button { flex: 0 0 auto; }\n    .qc-contact-detail { gap: 13px; }\n    .qc-keyparts { grid-template-columns: 1.5fr 1fr; }\n    .qc-secret-mask { letter-spacing: 1px; }\n}\n@media (prefers-reduced-motion: reduce) {\n    .qc-panel button, .qc-switch-track > span { transition: none; }\n    .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: none; }\n}\n';
   }
 });
 
@@ -4633,6 +4480,10 @@ var require_attachments = __commonJS({
       remove(card, entry) {
         entry.root?.unmount();
         entry.element?.remove();
+        if (entry.inline && !entry.inline.children.length) {
+          entry.inline.remove();
+          entry.slot?.classList.remove("qcord-empty-content");
+        }
         card.classList.remove("qcord-file-hidden");
         this.entries.delete(card);
       }
@@ -4644,15 +4495,15 @@ var require_attachments = __commonJS({
       }
       scan() {
         const plugin = this.plugin;
-        if (!plugin.running || plugin.resetting) return;
+        if (!plugin.running || plugin.resetting || plugin.autoDecrypt === false) return;
         for (const [card, entry] of this.entries) {
-          if (!card.isConnected || entry.session !== plugin.session || !entry.link.isConnected || entry.link.href !== entry.url || entry.element && !entry.element.isConnected) this.remove(card, entry);
+          if (!card.isConnected || entry.session !== plugin.session || !entry.link.isConnected || entry.link.href !== entry.url || entry.element && !entry.element.isConnected || entry.slot && (!entry.slot.isConnected || entry.slot.textContent.trim())) this.remove(card, entry);
         }
         for (const link of document.querySelectorAll('[id^="chat-messages-"] a[href]')) this.decode(link);
       }
       async decode(link) {
         const plugin = this.plugin;
-        if (!plugin.running || plugin.resetting) return;
+        if (!plugin.running || plugin.resetting || plugin.autoDecrypt === false) return;
         let url, channelId, card;
         try {
           url = new URL(link.href);
@@ -4669,7 +4520,7 @@ var require_attachments = __commonJS({
         }
         const entry = { link, url: url.href, session: plugin.session, pending: true };
         this.entries.set(card, entry);
-        const current = () => plugin.running && !plugin.resetting && plugin.session === entry.session && this.entries.get(card) === entry && card.isConnected && link.isConnected && link.href === entry.url;
+        const current = () => plugin.running && plugin.autoDecrypt !== false && !plugin.resetting && plugin.session === entry.session && this.entries.get(card) === entry && card.isConnected && link.isConnected && link.href === entry.url;
         try {
           const response = await BdApi.Net.fetch(entry.url, { timeout: 1e4, redirect: "error", maxRedirects: 0 });
           if (!response.ok || !current()) return;
@@ -4687,10 +4538,25 @@ var require_attachments = __commonJS({
           const download = document.createElement("a");
           download.className = "qcord-download";
           download.href = entry.url;
-          download.textContent = "Download .qcord";
+          download.textContent = "\u2193";
+          download.title = "Download .qcord";
+          download.setAttribute("aria-label", "Download .qcord");
           element.append(download);
           entry.element = element;
-          card.after(element);
+          const message = link.closest('[id^="chat-messages-"]');
+          const slot = message?.querySelector('[id^="message-content-"], [class*="messageContent_"]');
+          if (slot && !slot.textContent.trim() && !slot.children.length) {
+            entry.slot = slot;
+            entry.inline = message.querySelector(".qcord-inline-messages");
+            if (!entry.inline) {
+              entry.inline = document.createElement("div");
+              entry.inline.className = "qcord-inline-messages";
+              slot.after(entry.inline);
+            }
+            slot.classList.add("qcord-empty-content");
+            const later = [...this.entries].find(([otherCard, other]) => other.inline === entry.inline && other.element && card.compareDocumentPosition(otherCard) & 4);
+            entry.inline.insertBefore(element, later?.[1].element || null);
+          } else card.after(element);
           entry.root = BdApi.ReactDOM.createRoot(content);
           entry.root.render(plugin.messageContent(result.text, channelId));
           card.classList.add("qcord-file-hidden");
@@ -4699,6 +4565,10 @@ var require_attachments = __commonJS({
           entry.element?.remove();
           entry.root = null;
           entry.element = null;
+          if (entry.inline && !entry.inline.children.length) {
+            entry.inline.remove();
+            entry.slot?.classList.remove("qcord-empty-content");
+          }
           if (this.entries.get(card) === entry) card.classList.remove("qcord-file-hidden");
           if (current()) BdApi.Logger.warn(NAME2, "Could not decrypt a Qcord attachment; the original file remains available.", error);
         } finally {
@@ -4716,6 +4586,7 @@ var getSettingsPanel = require_settings();
 var BUTTON_SVG = require_button();
 var PLUGIN_CSS = require_styles();
 var AttachmentDecoder = require_attachments();
+var dismissOnBackdrop = require_dialog();
 var { parameters } = require_parameters();
 var { NAME, ACTIVE_SCHEME, BUTTON_SELECTOR } = require_constants();
 module.exports = class Qcord extends Encapsulation {
@@ -4724,6 +4595,11 @@ module.exports = class Qcord extends Encapsulation {
     this.panels = /* @__PURE__ */ new Set();
     this.dialogs = /* @__PURE__ */ new Set();
     this.resets = /* @__PURE__ */ new Set();
+    this.modeListeners = /* @__PURE__ */ new Set();
+    this.pendingSends = /* @__PURE__ */ new Map();
+    this.outgoingEpoch = {};
+    this.autoEncrypt = config.load("auto_encrypt") === true;
+    this.autoDecrypt = config.load("auto_decrypt") !== false;
     this.keyPairs = /* @__PURE__ */ new Map();
     this.keyTasks = /* @__PURE__ */ new Map();
     this.session = {};
@@ -4734,6 +4610,7 @@ module.exports = class Qcord extends Encapsulation {
     this.markupClass = BdApi.Webpack.getByKeys("markup")?.markup || "";
     this.attachments = new AttachmentDecoder(this);
     this.running = true;
+    this.installSendHook();
     BdApi.DOM.addStyle(NAME, PLUGIN_CSS);
     this.mountButtons();
     this.attachments.scan();
@@ -4741,6 +4618,65 @@ module.exports = class Qcord extends Encapsulation {
   }
   currentChannel() {
     return BdApi.Webpack.getStore?.("SelectedChannelStore")?.getChannelId();
+  }
+  installSendHook() {
+    const actions = BdApi.Webpack.getByKeys("sendMessage", "editMessage");
+    this.sendHookReady = false;
+    try {
+      if (typeof actions?.sendMessage === "function" && BdApi.Patcher?.instead) {
+        const unpatch = BdApi.Patcher.instead(NAME, actions, "sendMessage", (context, args, original) => {
+          if (!this.running || !this.autoEncrypt) return original.apply(context, args);
+          if (typeof args[1]?.content !== "string") return this.blockSend("Qcord could not recognize this message. Your draft was kept.");
+          if (args[1].content.length) return this.prepareAutomaticMessage(args[0], args[1].content);
+          return original.apply(context, args);
+        });
+        this.sendHookReady = typeof unpatch === "function";
+      }
+    } catch (error) {
+      BdApi.Logger.warn(NAME, "Could not install Qcord's automatic encryption hook.", error);
+    }
+    if (!this.sendHookReady && this.autoEncrypt) {
+      this.autoEncrypt = false;
+      config.save("auto_encrypt", false);
+      BdApi.UI.showToast("Qcord could not install automatic encryption. Auto-encrypt is off.", { type: "error" });
+    }
+  }
+  blockSend(reason) {
+    BdApi.UI.showToast(reason, { type: "error" });
+    return Promise.resolve({ shouldClear: false, shouldRefocus: true });
+  }
+  setAutomatic(mode, enabled) {
+    if (!this.running || this.resetting) throw new Error("Wait until Qcord is ready.");
+    if (!["encrypt", "decrypt"].includes(mode)) throw new Error("Unknown automatic mode.");
+    if (mode === "encrypt" && enabled && !this.sendHookReady) throw new Error("Automatic encryption is unavailable in this Discord build.");
+    config.save(`auto_${mode}`, Boolean(enabled));
+    if (mode === "encrypt") {
+      this.autoEncrypt = Boolean(enabled);
+      this.outgoingEpoch = {};
+    } else {
+      this.autoDecrypt = Boolean(enabled);
+      this.attachments.clear();
+    }
+    this.mountButtons();
+    this.attachments.scan();
+    for (const notify of this.modeListeners) notify();
+  }
+  async prepareAutomaticMessage(channelId, text) {
+    if (this.pendingSends.has(channelId)) return this.blockSend("Qcord is already preparing this attachment.");
+    const session = this.session, epoch = this.outgoingEpoch;
+    this.pendingSends.set(channelId, true);
+    let draft;
+    try {
+      draft = await this.prepareEncapsulation(channelId, ACTIVE_SCHEME, text);
+      if (!this.running || !this.autoEncrypt || this.session !== session || this.outgoingEpoch !== epoch) throw new Error("Automatic encryption was cancelled. Your draft was kept.");
+      await this.stageDraft(draft, () => this.autoEncrypt && this.outgoingEpoch === epoch);
+      return { shouldClear: true, shouldRefocus: true };
+    } catch (error) {
+      return this.blockSend(error.message);
+    } finally {
+      require_mlkem().wipe(draft);
+      this.pendingSends.delete(channelId);
+    }
   }
   messageContent(text, channelId) {
     try {
@@ -4750,7 +4686,7 @@ module.exports = class Qcord extends Encapsulation {
     }
     return text;
   }
-  async stageDraft(draft) {
+  async stageDraft(draft, stillAllowed = () => true) {
     if (!this.running) throw new Error("Enable Qcord first.");
     if (this.currentChannel() !== draft.channelId) throw new Error("Open the selected recipient's DM before attaching.");
     const attachments = BdApi.Webpack.getByKeys("addFiles");
@@ -4758,6 +4694,7 @@ module.exports = class Qcord extends Encapsulation {
     const session = this.session;
     await this.saveDraft(draft);
     this.checkSession(session);
+    if (!stillAllowed()) throw new Error("Automatic encryption was cancelled. Your draft was kept.");
     if (this.currentChannel() !== draft.channelId) throw new Error("Open the selected recipient's DM before attaching.");
     const file = new File([draft.wire], `${Date.now()}.qcord`, { type: "application/json" });
     await attachments.addFiles({
@@ -4766,7 +4703,7 @@ module.exports = class Qcord extends Encapsulation {
       showLargeMessageDialog: false,
       files: [{ file, platform: 1, isThumbnail: false }]
     });
-    BdApi.UI.showToast("Qcord attached the encapsulation. Review it and press Send.", { type: "success" });
+    BdApi.UI.showToast("Encrypted attachment ready. Press Send to share it.", { type: "success" });
   }
   mountButtons() {
     if (!this.running) return;
@@ -4774,6 +4711,7 @@ module.exports = class Qcord extends Encapsulation {
       const composer = editor.closest('[class*="channelTextArea"]');
       const controls = composer?.querySelector('[class*="buttons_"]');
       if (!controls) continue;
+      composer.classList.toggle("qcord-encrypt-enabled", this.autoEncrypt);
       let button = composer.querySelector(BUTTON_SELECTOR);
       if (!button) {
         button = document.createElement("button");
@@ -4790,11 +4728,17 @@ module.exports = class Qcord extends Encapsulation {
           this.openComposer();
         });
       }
+      button.classList.toggle("qcord-decrypt-enabled", this.autoDecrypt);
+      button.title = `Qcord \xB7 Auto-encrypt ${this.autoEncrypt ? "on" : "off"} \xB7 Auto-decrypt ${this.autoDecrypt ? "on" : "off"}`;
+      button.setAttribute("aria-label", button.title);
       if (controls.firstElementChild !== button) controls.prepend(button);
     }
   }
   getSettingsPanel() {
     return getSettingsPanel(this);
+  }
+  dismissDialogs() {
+    for (const close of [...this.dialogs].reverse()) close();
   }
   openComposer() {
     if (this.composerDialog?.open) {
@@ -4809,7 +4753,9 @@ module.exports = class Qcord extends Encapsulation {
     const close = () => dialog.close();
     this.dialogs.add(close);
     this.composerDialog = dialog;
+    const unbind = dismissOnBackdrop(dialog, () => this.dismissDialogs());
     dialog.addEventListener("close", () => {
+      unbind();
       root.unmount();
       dialog.remove();
       this.dialogs.delete(close);
@@ -4841,12 +4787,15 @@ module.exports = class Qcord extends Encapsulation {
     for (const close of this.panels || []) close();
     this.panels?.clear();
     this.resets?.clear();
+    this.modeListeners?.clear();
     for (const pair of this.keyPairs?.values() || []) pair.privateKey.bytes.fill(0);
     this.keyPairs?.clear();
     this.keyTasks?.clear();
     if (this.frame !== null && this.frame !== void 0) cancelAnimationFrame(this.frame);
     this.frame = null;
     BdApi.DOM.removeStyle(NAME);
+    BdApi.Patcher?.unpatchAll(NAME);
+    for (const composer of document.querySelectorAll(".qcord-encrypt-enabled")) composer.classList.remove("qcord-encrypt-enabled");
     for (const button of document.querySelectorAll(BUTTON_SELECTOR)) button.remove();
   }
 };

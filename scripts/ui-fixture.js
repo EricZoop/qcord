@@ -16,6 +16,7 @@ const markdown = {reactParserFor() {}, parse: text => {
     return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => part.startsWith("**") ? React.createElement("strong", {key: i}, part.slice(2, -2)) : part.startsWith("`") ? React.createElement("code", {key: i}, part.slice(1, -1)) : part);
 }};
 const actions = {sendMessage: async (id, message) => { state.sent.push({id,message}); return {shouldClear:true}; }, editMessage() {}};
+const patches=[];
 const channels = {"100":{type:1,recipients:["2"]},"200":{type:1,recipients:["3"]}};
 globalThis.BdApi = {
     React, ReactDOM: {createRoot},
@@ -28,6 +29,7 @@ globalThis.BdApi = {
     UI: {showToast:text=>state.notices.push(text),showConfirmationModal:(_,__,options)=>options.onConfirm?.()},
     Logger: {warn:()=>{}}
 };
+BdApi.Patcher={instead:(_,object,key,callback)=>{const original=object[key];object[key]=function(...args){return callback(this,args,original);};const undo=()=>{object[key]=original;};patches.push(undo);return undo;},unpatchAll:()=>{for(const undo of patches.splice(0).reverse())undo();}};
 BdApi.Net = {fetch: async (url, options) => {
     state.downloads.push({url, options});
     const item=downloads.get(url);
@@ -37,6 +39,10 @@ BdApi.Net = {fetch: async (url, options) => {
 }};
 const plugin=new Qcord();plugin.start();
 const chat=document.createElement("div");chat.id="qcord-test-chat";document.body.append(chat);
+const composer=document.createElement("div");composer.className="channelTextArea_fixture";
+const editor=document.createElement("div");editor.contentEditable="true";editor.setAttribute("role","textbox");editor.setAttribute("aria-label","Discord draft");
+const controls=document.createElement("div");controls.className="buttons_fixture";composer.append(editor,controls);document.body.append(composer);plugin.mountButtons();
+editor.addEventListener("keydown",async event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();const result=await actions.sendMessage(state.channel,{content:editor.innerText});if(result.shouldClear)editor.replaceChildren();}});
 const observer=new MutationObserver(()=>plugin.observer());observer.observe(chat,{childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
 function addAttachment(wire, {id="1",channel="100",url,delay=false,size}={}) {
     url ||= `https://cdn.discordapp.com/attachments/${channel}/${id}/message.qcord?ex=fixture`;
@@ -44,9 +50,13 @@ function addAttachment(wire, {id="1",channel="100",url,delay=false,size}={}) {
     if(delay)item.wait=new Promise(resolve=>{item.release=resolve;});
     downloads.set(url,item);
     const message=document.createElement("li");message.id=`chat-messages-${channel}-${id}`;
+    const contents=document.createElement("div");contents.className="contents_fixture";
+    const heading=document.createElement("h3");heading.className="header_fixture";heading.textContent="Maya  4:44 PM";
+    const slot=document.createElement("div");slot.id=`message-content-${id}`;slot.className="messageContent_fixture";contents.append(heading,slot);message.append(contents);
+    const accessories=document.createElement("div");accessories.className="accessories_fixture";message.append(accessories);
     const card=document.createElement("div");card.className="mosaicItem_fixture";
     const link=document.createElement("a");link.href=url;link.textContent="message.qcord";
-    card.append(link);message.append(card);chat.append(message);
+    card.append(link);accessories.append(card);chat.append(message);
     return url;
 }
 const contact=await PQC.generateKeyPair("ml-kem-768");

@@ -2,8 +2,8 @@
   "name": "Qcord",
   "author": "Eric, Arsh, Yasser",
   "authorId": "215269534540496896",
-  "version": "2.2.0",
-  "description": "Inspect ML-KEM-768 keys, share encrypted attachments, and automatically display decrypted messages with Discord Markdown.",
+  "version": "2.3.0",
+  "description": "ML-KEM-768 encrypted messages with independent automatic modes, Discord Markdown, and a compact visual walkthrough.",
   "invite": "GSdMfMBW5g",
   "source": "https://github.com/EricZoop/qcord"
 }

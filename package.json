@@ -1,6 +1,6 @@
 {
   "name": "qcord",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "description": "Qcord: ML-KEM-768 keys and encrypted message attachments for BetterDiscord",
   "scripts": {

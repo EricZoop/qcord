@@ -7,6 +7,8 @@
   "dependentRequired": {"public_encaps": ["private_decaps"], "private_decaps": ["public_encaps"]},
   "properties": {
     "config_version": {"const": 3},
+    "auto_encrypt": {"type": "boolean", "default": false},
+    "auto_decrypt": {"type": "boolean", "default": true},
     "public_encaps": {"$ref": "#/$defs/ek"},
     "private_decaps": {"type": "string", "minLength": 3200, "maxLength": 3200, "pattern": "^[A-Za-z0-9+/]{3200}$"},
     "recipients": {"type": "array", "items": {

@@ -44,6 +44,8 @@ function reset(keys) {
     save("public_encaps", Buffer.from(keys.publicKey.bytes).toString("base64"));
     save("private_decaps", Buffer.from(keys.privateKey.bytes).toString("base64"));
     save("recipients", []);
+    save("auto_encrypt", false);
+    save("auto_decrypt", true);
     save("config_version", 3);
 }
 module.exports = {load, save, initialize, reset};

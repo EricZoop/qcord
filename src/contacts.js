@@ -1,103 +1,84 @@
 "use strict";
 
 const {PQC} = require("./pqc");
-const {parameters} = require("./parameters");
+const {ACTIVE_SCHEME} = require("./constants");
 const config = require("./config");
+const dismissOnBackdrop = require("./dialog");
+const raw = key => Buffer.from(key.bytes).toString("base64");
 
 module.exports = function createContacts(R, ui) {
-    const {h, button, field, code, p, Tabs, Avatar} = ui;
-    return function Contacts({plugin, scheme, channel, keys, onSelect, onChanged, onClose}) {
-        const params = parameters(scheme);
-        const [tab, setTab] = R.useState("contacts"), [query, setQuery] = R.useState("");
-        const [rows, setRows] = R.useState(() => plugin.getSavedPartners());
-        const [selected, setSelected] = R.useState(channel || plugin.currentChannel());
+    const {h, button, field, code, p, Icon, Tabs, Avatar, KeyParts} = ui;
+    return function Contacts({plugin, channel, keys, initialTab = "contacts", onSelect, onChanged, onClose}) {
+        const [tab, setTab] = R.useState(initialTab), [query, setQuery] = R.useState("");
+        const [rows, setRows] = R.useState(() => plugin.getSavedPartners()), [selected, setSelected] = R.useState(channel || plugin.currentChannel());
         const [keyText, setKeyText] = R.useState(""), [dkText, setDkText] = R.useState("");
+        const [revealed, setRevealed] = R.useState(false), [confirmReset, setConfirmReset] = R.useState(false), [confirmRestore, setConfirmRestore] = R.useState(false);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
-        const [confirmRestore, setConfirmRestore] = R.useState(false);
-        const dialog = R.useRef(null), alive = R.useRef(true);
-        const row = rows.find(r => r.channel_id === selected && r.key_algorithm === scheme);
+        const dialog = R.useRef(null), alive = R.useRef(true), pending = R.useRef(false);
+        const row = rows.find(r => r.channel_id === selected);
+        const contact = id => { try { return {id, userId: rows.find(r => r.channel_id === id)?.user_id || plugin.getDirectPartner(id).userId}; } catch { return null; } };
+        const selectedContact = contact(selected), profile = selectedContact && plugin.getPartnerProfile(selectedContact.userId);
         const channelIds = [...new Set([...rows.map(r => r.channel_id), selected].filter(Boolean))];
-        const contact = id => {
-            const existing = rows.find(r => r.channel_id === id);
-            try { return {id, userId: existing?.user_id || plugin.getDirectPartner(id).userId}; }
-            catch { return null; }
-        };
-        const selectedContact = contact(selected);
-        const profile = selectedContact && plugin.getPartnerProfile(selectedContact.userId);
         R.useEffect(() => {
-            dialog.current.showModal();
-            const close = () => { alive.current = false; dialog.current?.close(); };
-            plugin.dialogs.add(close);
-            return () => { alive.current = false; plugin.dialogs.delete(close); };
+            dialog.current.showModal(); const close = () => dialog.current?.close(); plugin.dialogs.add(close);
+            const unbind = dismissOnBackdrop(dialog.current, () => plugin.dismissDialogs());
+            return () => { alive.current = false; plugin.dialogs.delete(close); unbind(); };
         }, []);
-        R.useEffect(() => { setKeyText(""); setNotice(""); setError(""); }, [selected]);
+        R.useEffect(() => { setKeyText(row?.public_encaps || ""); setError(""); setNotice(""); }, [selected, row?.public_encaps]);
         async function run(task) {
-            if (busy || !alive.current || !plugin.running) return;
-            setBusy(true); setError(""); setNotice("");
+            if (pending.current || !alive.current || !plugin.running) return;
+            pending.current = true; setBusy(true); setError(""); setNotice("");
             try { await task(); } catch (e) { if (alive.current) setError(e.message); }
-            finally { if (alive.current) setBusy(false); }
+            finally { pending.current = false; if (alive.current) setBusy(false); }
         }
-        const copy = text => run(async () => { await navigator.clipboard.writeText(text); if (alive.current) setNotice("Copied."); });
-        const refresh = () => { const next = plugin.getSavedPartners(); setRows(next); onChanged(); };
-        return h("dialog", {ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": "Contacts and keys", onClose, onCancel: () => { /* Native dialog closes on Escape and restores focus. */ }},
+        const copy = value => run(async () => { await navigator.clipboard.writeText(value); if (alive.current) setNotice("Copied."); });
+        return h("dialog", {ref: dialog, className: "qcord-dialog qc-contacts-dialog", "aria-label": "Contacts and keys", onClose},
             h("div", {className: "qc-panel qc-contacts"},
-                h("header", {className: "qc-header"}, h("div", null, h("h2", null, "Contacts & keys"), p("ML-KEM-768 · one local key pair")), button("Close contacts", () => dialog.current.close())),
-                h(Tabs, {label: "Key manager", items: [["contacts", "Contacts"], ["public", "My public key"], ["private", "Private key"]], value: tab, onChange: v => { setTab(v); setError(""); setNotice(""); }, disabled: busy}),
-                tab === "contacts" && h("div", {className: "qc-contact-layout"},
-                    h("aside", {className: "qc-contact-sidebar"},
-                        field("Search contacts", h("input", {type: "search", value: query, onChange: e => setQuery(e.target.value), placeholder: "Name, username or ID"})),
-                        button("Add open DM", () => run(async () => { const id = plugin.currentChannel(); plugin.getDirectPartner(id); setSelected(id); setQuery(""); })),
-                        h("div", {className: "qc-contact-list", "aria-label": "Saved contacts"}, channelIds.map(contact).filter(Boolean).filter(c => {
-                            const user = plugin.getPartnerProfile(c.userId);
-                            return `${user.displayName} ${user.username} ${c.userId}`.toLowerCase().includes(query.toLowerCase());
-                        }).map(c => {
-                            const user = plugin.getPartnerProfile(c.userId), available = rows.filter(r => r.channel_id === c.id);
-                            return button(h(R.Fragment, null, h(Avatar, {profile: user}), h("span", null, h("strong", null, user.displayName), h("small", null, user.username),
-                                h("span", {className: "qc-key-badges"}, h("span", {className: available.length ? "has-key" : ""}, "768")))),
-                            () => setSelected(c.id), {key: c.id, className: "qc-contact-card", "aria-pressed": selected === c.id, disabled: busy});
+                h("header", {className: "qc-contact-header"}, h(Tabs, {label: "Key manager", items: [["keys", "My keys"], ["contacts", "Contacts"]], value: tab, onChange: value => { setTab(value); setRevealed(false); setError(""); setNotice(""); }, disabled: busy}), button(h(Icon, {name: "close"}), () => dialog.current.close(), {className: "qc-icon-button", "aria-label": "Close contacts"})),
+                tab === "contacts" ? h("div", {className: "qc-contact-layout"},
+                    h("aside", {className: "qc-contact-sidebar"}, field("Search contacts", h("input", {type: "search", value: query, onChange: e => setQuery(e.target.value), placeholder: "Find a contact…"})),
+                        button("Current DM", () => run(async () => { const id = plugin.currentChannel(); plugin.getDirectPartner(id); setSelected(id); setQuery(""); onSelect(id); }), {className: "qc-quiet"}),
+                        h("div", {className: "qc-contact-list"}, channelIds.map(contact).filter(Boolean).filter(c => { const u = plugin.getPartnerProfile(c.userId); return `${u.displayName} ${u.username}`.toLowerCase().includes(query.toLowerCase()); }).map(c => {
+                            const u = plugin.getPartnerProfile(c.userId);
+                            return button(h(R.Fragment, null, h(Avatar, {profile: u}), h("span", null, h("strong", null, u.displayName), h("small", null, u.username))), () => { setSelected(c.id); onSelect(c.id); }, {key: c.id, className: "qc-contact-card", "aria-pressed": selected === c.id});
                         }))),
-                    h("section", {className: "qc-contact-detail", "aria-label": "Contact key details"},
-                        profile ? h(R.Fragment, null,
-                            h("div", {className: "qc-person"}, h(Avatar, {profile}), h("div", null, h("h3", null, profile.displayName), p(`${profile.username} · ${selectedContact.userId}`))),
-                            h("div", {className: "qc-note"}, row ? `${params.label} public key saved` : `No ${params.label} key saved for this contact.`),
-                            row && h(R.Fragment, null, field("Saved public_encaps", h("textarea", {readOnly: true, rows: 3, value: row.public_encaps})),
-                                h("div", {className: "qc-row"}, button("Copy contact public key", () => copy(row.public_encaps)), button("Remove contact key", () => { plugin.removePartner(selected, scheme); refresh(); }, {disabled: busy}))),
-                            field(`${params.label} public key`, h("textarea", {rows: 3, value: keyText, disabled: busy, placeholder: row ? "Paste a replacement public key" : "Paste the public key your contact shared", onChange: e => setKeyText(e.target.value)})),
-                            p("Only ML-KEM-768 keys are accepted: 1184 raw bytes. Verify the shared key with your contact over a trusted route."),
-                            h("div", {className: "qc-row"}, button(row ? "Replace public key" : "Save public key", () => run(async () => {
-                                const imported = PQC.createPublicKey(keyText);
-                                if (!alive.current) return;
-                                plugin.saveRecipients(selected, [{user_id: selectedContact.userId, public_encaps: keyText}], imported.asymmetricKeyType);
-                                setRows(plugin.getSavedPartners()); onChanged(imported.asymmetricKeyType); setKeyText(""); setNotice(`${imported.asymmetricKeyType.toUpperCase()} contact key saved.`);
-                            }), {disabled: busy || !keyText.trim()}),
-                            button("Use this recipient", () => { onSelect(selected); dialog.current.close(); }, {className: "qc-primary", disabled: busy || !row})))
-                        : h("div", {className: "qc-empty-state"}, h("h3", null, "Choose a contact"), p("Open a one-to-one Discord DM, then choose Add open DM.")))),
-                tab === "public" && h("section", {className: "qc-key-page"}, h("h3", null, "Your encapsulation key · ek"),
-                    p(`Share this ${params.label} public_encaps. Base64 decodes directly to ${params.publicBytes} FIPS 203 key bytes.`),
-                    field("Your public encapsulation key", h("textarea", {readOnly: true, rows: 5, value: keys ? Buffer.from(keys.publicKey.bytes).toString("base64") : "Loading…"})),
-                    keys && button("Copy my public key", () => copy(Buffer.from(keys.publicKey.bytes).toString("base64")), {className: "qc-primary"}),
-                    p("The corresponding private dk stays on this device.")),
-                tab === "private" && h("section", {className: "qc-key-page"}, h("h3", null, "Your decapsulation key · dk"),
-                    p(`Your ${params.label} private key is ${params.privateBytes} raw bytes. It is stored unencrypted in qcord.config.json. Never send it to a contact.`),
-                    keys && button("Copy private key for backup", () => copy(Buffer.from(keys.privateKey.bytes).toString("base64"))),
-                    field("Private decapsulation key to restore", h("textarea", {rows: 3, value: dkText, disabled: busy, onChange: e => { setDkText(e.target.value); setConfirmRestore(false); }})),
-                    confirmRestore && h("div", {className: "qc-note", role: "alert"}, `This replaces only your ${params.label} identity. Back up the current dk first; replacing it changes which older files you can open.`),
-                    button(confirmRestore ? "Confirm replacement" : "Restore decapsulation key", () => {
-                        if (!confirmRestore) { setConfirmRestore(true); return; }
-                        run(async () => {
+                    h("section", {className: "qc-contact-detail"}, profile ? h(R.Fragment, null,
+                        h("div", {className: "qc-person"}, h(Avatar, {profile}), h("div", null, h("h3", null, profile.displayName), p(profile.username))),
+                        field("Recipient public key", h("textarea", {rows: 5, value: keyText, disabled: busy, placeholder: "Paste their ML-KEM-768 public key", onChange: e => setKeyText(e.target.value)})),
+                        p("1184 raw bytes · 1580 Base64 characters. Save once for this DM."),
+                        h("div", {className: "qc-row"}, button(row && keyText === row.public_encaps ? "Saved" : "Save key", () => run(async () => {
+                            const publicKey = PQC.createPublicKey(keyText);
+                            plugin.saveRecipients(selected, [{user_id: selectedContact.userId, public_encaps: raw(publicKey)}]);
+                            setRows(plugin.getSavedPartners()); setKeyText(raw(publicKey)); onChanged(); onSelect(selected); setNotice("Recipient key saved.");
+                        }), {className: "qc-primary", disabled: busy || !keyText.trim() || keyText === row?.public_encaps}),
+                        row && button("Remove", () => { plugin.removePartner(selected); setRows(plugin.getSavedPartners()); setKeyText(""); onChanged(); }, {className: "qc-quiet", disabled: busy}))) : p("Open a one-to-one DM to save a recipient."))) :
+                h("section", {className: "qc-my-keys"},
+                    h("div", {className: "qc-label-row"}, h("h3", null, "Public encapsulation key"), button("Copy", () => copy(raw(keys.publicKey)), {disabled: !keys || busy, className: "qc-quiet"})),
+                    field("Your public encapsulation key", h("textarea", {readOnly: true, rows: 3, value: keys ? raw(keys.publicKey) : "Generating key…"})),
+                    h(KeyParts),
+                    p("Stored in this order: encoded t̂, then ρ. Together: 1184 bytes / 1580 Base64 characters."),
+                    p("KeyGen takes random d and computes (ρ, σ) = G(d ∥ byte(3)). The public seed ρ reconstructs Â; secret s and noise e produce t̂ = Â ∘ ŝ + ê."),
+                    h("div", {className: "qc-secret"},
+                        h("div", {className: "qc-label-row"}, h("strong", null, "Private decapsulation key"), button(revealed ? "Hide" : "Reveal", () => setRevealed(!revealed), {className: "qc-quiet", disabled: !keys, "aria-expanded": revealed})),
+                        revealed ? h(R.Fragment, null, field("Your private decapsulation key", h("textarea", {readOnly: true, rows: 3, value: keys ? raw(keys.privateKey) : ""})), button("Copy private key", () => copy(raw(keys.privateKey)), {className: "qc-quiet", disabled: !keys || busy})) :
+                            button(h(R.Fragment, null, h("span", {className: "qc-secret-mask", "aria-hidden": true}, "•••• •••• •••• •••• •••• ••••"), h("small", null, "Click to reveal · keep private")), () => setRevealed(true), {className: "qc-spoiler", disabled: !keys, "aria-label": "Reveal private key"})),
+                    h("details", {className: "qc-restore"}, h("summary", null, "Restore a private key"),
+                        field("Private key to restore", h("textarea", {rows: 2, value: dkText, onChange: e => { setDkText(e.target.value); setConfirmRestore(false); }})),
+                        confirmRestore && p("This replaces your current identity. Keep a backup of the old key."),
+                        button(confirmRestore ? "Confirm replacement" : "Restore key", () => { if (!confirmRestore) { setConfirmRestore(true); return; } run(async () => {
                             const privateKey = PQC.createPrivateKey(dkText), publicKey = PQC.createPublicKey(privateKey);
-                            const trial = await PQC.encapsulate(publicKey), recovered = await PQC.decapsulate(privateKey, trial.ciphertext);
-                            if (!recovered.equals(trial.sharedKey)) throw new Error("The restored key failed its local check.");
-                            recovered.fill(0); trial.sharedKey.fill(0); trial.m.fill(0);
+                            const test = await PQC.encapsulate(publicKey), recovered = await PQC.decapsulate(privateKey, test.ciphertext);
+                            try { if (!recovered.equals(test.sharedKey)) throw new Error("This key did not pass its local check."); }
+                            finally { recovered.fill(0); test.sharedKey.fill(0); test.m.fill(0); }
                             if (!alive.current || !plugin.running) return;
-                            config.save("public_encaps", Buffer.from(publicKey.bytes).toString("base64"));
-                            config.save("private_decaps", Buffer.from(privateKey.bytes).toString("base64"));
-                            plugin.session = {}; plugin.keyPairs.get(scheme)?.privateKey.bytes.fill(0); plugin.keyPairs.delete(scheme); plugin.keyTasks.clear();
-                            plugin.attachments?.clear(); plugin.scheduleMount?.();
-                            await plugin.generateKeys(scheme); onChanged(); setDkText(""); setConfirmRestore(false); setNotice("Key restored. Share its public key with your contacts.");
-                        });
-                    }, {disabled: busy || !dkText.trim()})),
-                h("div", {className: "qc-feedback"}, h("div", {role: "alert", className: "qc-error"}, error), h("div", {role: "status"}, busy ? "Working locally…" : notice)),
-                h("footer", {className: "qc-source"}, "FIPS 203 · Public keys identify key bytes; they do not prove identity.")));
+                            config.save("public_encaps", raw(publicKey)); config.save("private_decaps", raw(privateKey));
+                            plugin.session = {}; plugin.keyPairs.get(ACTIVE_SCHEME)?.privateKey.bytes.fill(0); plugin.keyPairs.clear(); plugin.keyTasks.clear(); plugin.attachments?.clear();
+                            await plugin.generateKeys(); onChanged(); plugin.scheduleMount(); setDkText(""); setConfirmRestore(false); setNotice("Key restored. Share its public key with your contacts.");
+                        }); }, {disabled: busy || !dkText.trim(), className: "qc-quiet"})),
+                    h("div", {className: "qc-reset-area"}, confirmReset ? h("div", {className: "qc-reset-confirm", role: "alertdialog", "aria-label": "Confirm config reset"},
+                        h("strong", null, "Reset keys and clear config?"), p("This removes your current key, contacts, and saved m values. Old messages need your old backup. A new public key will be generated."),
+                        h("div", {className: "qc-row"}, button("Cancel", () => setConfirmReset(false), {disabled: busy}), button("Reset keys", () => run(() => plugin.clearConfig()), {className: "qc-danger", disabled: busy}))) :
+                        button("Clear config & reset key", () => setConfirmReset(true), {className: "qc-danger", disabled: busy}))),
+                (error || notice || busy) && h("div", {className: "qc-feedback"}, h("div", {role: "alert", className: "qc-error"}, error), h("div", {role: "status"}, busy ? "Working…" : notice))));
     };
 };

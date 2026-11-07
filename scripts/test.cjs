@@ -16,15 +16,18 @@ const fileSchema = ajv.compile(JSON.parse(fs.readFileSync("schemas/qcord.schema.
 const configSchema = ajv.compile(JSON.parse(fs.readFileSync("schemas/config.schema.json", "utf8")));
 const scheme = "ml-kem-768", raw = key => Buffer.from(key.bytes).toString("base64");
 let store = {}, channel = "100", staged = [];
+let sent = [], unpatches = [];
+const actions = {sendMessage: async (channelId, value) => {sent.push({channelId,value});return {shouldClear:true};},editMessage(){}};
 global.document = {querySelectorAll: () => []};
 global.BdApi = {
     Data: {load: (_, key) => structuredClone(store[key]), save: (_, key, value) => { store[key] = structuredClone(value); }, delete: (_, key) => { delete store[key]; }},
     Webpack: {getStore: name => ({ChannelStore: {getChannel: id => id === "300" ? {type: 3, recipients: ["2", "3"]} : {type: 1, recipients: ["2"]}}, SelectedChannelStore: {getChannelId: () => channel}})[name],
-        getByKeys: key => key === "addFiles" ? {addFiles: async value => staged.push(value)} : null},
+        getByKeys: key => key === "sendMessage" ? actions : key === "addFiles" ? {addFiles: async value => staged.push(value)} : null},
+    Patcher:{instead:(_,object,key,callback)=>{const original=object[key];object[key]=function(...args){return callback(this,args,original);};const undo=()=>{object[key]=original;};unpatches.push(undo);return undo;},unpatchAll:()=>{unpatches.splice(0).reverse().forEach(undo=>undo());}},
     UI: {showToast() {}}
 };
-function client(Type = Encapsulation) { return Object.assign(new Type(), {running: true, session: {}, keyPairs: new Map(), keyTasks: new Map(), resets: new Set(), scheme}); }
-function reset() { store = {}; channel = "100"; staged = []; config.initialize(); }
+function client(Type = Encapsulation) { return Object.assign(new Type(), {running: true, session: {}, keyPairs: new Map(), keyTasks: new Map(), resets: new Set(), modeListeners:new Set(),pendingSends:new Map(),outgoingEpoch:{},autoEncrypt:false,autoDecrypt:true,attachments:{clear(){},retry(){},scan(){}},scheme}); }
+function reset() { BdApi.Patcher.unpatchAll();store = {}; channel = "100"; staged = [];sent=[]; config.initialize(); }
 async function pair(Type = Encapsulation) {
     reset(); const sender = client(Type), peer = await PQC.generateKeyPair(scheme);
     await sender.generateKeys();
@@ -176,4 +179,41 @@ test("vector rows round-trip without changing the ciphertext or authenticated me
     assert.deepEqual(packet.parse(wire).packet, file);
     assert.deepEqual(packet.aad(JSON.parse(wire)), packet.aad(file));
     assert.equal(wire, fs.readFileSync("schemas/example.qcord", "utf8"));
+});
+
+test("automatic encryption stages text without sending plaintext, while encryption and decryption toggle independently", async () => {
+    const {sender}=await pair(Qcord);sender.installSendHook();
+    sender.setAutomatic("decrypt",false);assert.equal(sender.autoDecrypt,false);assert.equal(sender.autoEncrypt,false);
+    await actions.sendMessage("100",{content:"Normal text"});assert.equal(sent.length,1);assert.equal(staged.length,0);
+    sender.setAutomatic("encrypt",true);assert.equal(sender.autoDecrypt,false);
+    const result=await actions.sendMessage("100",{content:"Encrypted text"});assert.equal(result.shouldClear,true);assert.equal(sent.length,1);assert.equal(staged.length,1);
+    const wire=await staged[0].files[0].file.text();assert.equal((await sender.openFile(wire,"100")).text,"Encrypted text");
+    assert.ok(!wire.includes("Encrypted text"));
+    await actions.sendMessage("100",{content:""});assert.equal(sent.length,2,"A second send submits the reviewed attachment");
+    const failed=await actions.sendMessage("200",{content:"Keep this draft"});assert.equal(failed.shouldClear,false);assert.equal(sent.length,2);assert.equal(staged.length,1);
+    sender.setAutomatic("decrypt",true);assert.equal(sender.autoEncrypt,true);
+    assert.equal(store.auto_encrypt,true);assert.equal(store.auto_decrypt,true);
+});
+
+test("toggling encryption cancels pending sends, and decryption changes do not cancel outgoing encryption", async () => {
+    const {sender}=await pair(Qcord);sender.installSendHook();sender.setAutomatic("encrypt",true);
+    const pending=actions.sendMessage("100",{content:"Cancelled"});
+    const duplicate=await actions.sendMessage("100",{content:"Cancelled"});assert.equal(duplicate.shouldClear,false);
+    sender.setAutomatic("encrypt",false);sender.setAutomatic("encrypt",true);
+    assert.equal((await pending).shouldClear,false);assert.equal(staged.length,0);assert.equal(sent.length,0);
+    const next=actions.sendMessage("100",{content:"Keep encrypting"});sender.setAutomatic("decrypt",false);
+    assert.equal((await next).shouldClear,true);assert.equal(staged.length,1);assert.equal(sent.length,0);
+    assert.equal(sender.autoDecrypt,false);
+});
+
+test("an unavailable send hook cannot enable automatic encryption", async () => {
+    const {sender}=await pair(Qcord);
+    const patch=BdApi.Patcher.instead;
+    try {
+        BdApi.Patcher.instead=()=>{throw new Error("Unavailable API");};
+        BdApi.Logger={warn(){}};
+        sender.autoEncrypt=true;sender.installSendHook();
+        assert.equal(sender.sendHookReady,false);assert.equal(sender.autoEncrypt,false);assert.equal(sender.autoDecrypt,true);
+        assert.throws(()=>sender.setAutomatic("encrypt",true),/unavailable/);
+    } finally {BdApi.Patcher.instead=patch;}
 });

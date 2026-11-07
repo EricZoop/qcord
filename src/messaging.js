@@ -81,8 +81,11 @@ module.exports = class Encapsulation {
         const previous = this.getRecipients(channelId, scheme)[0];
         const entry = {channel_id: channelId, user_id, public_encaps: encoded,
             encapsulations: previous?.public_encaps === encoded ? previous.encapsulations : []};
-        const others = (config.load("recipients") || []).filter(row => row.channel_id !== channelId || PQC.createPublicKey(row.public_encaps).asymmetricKeyType !== scheme);
-        config.save("recipients", [...others, entry]);
+        const saved = config.load("recipients") || [];
+        const index = saved.findIndex(row => row.channel_id === channelId);
+        if (index >= 0) saved[index] = entry;
+        else saved.push(entry);
+        config.save("recipients", saved);
         this.attachments?.clear(); this.scheduleMount?.();
     }
 
@@ -200,7 +203,10 @@ module.exports = class Encapsulation {
             if (!this.running || this.session !== session) throw new Error("Qcord stopped during reset.");
             config.reset(keys);
             this.keyPairs.set(ACTIVE_SCHEME, keys);
+            this.autoEncrypt = false; this.autoDecrypt = true; this.outgoingEpoch = {};
             this.resetting = false;
+            this.mountButtons?.();
+            for (const notify of this.modeListeners || []) notify();
             for (const reset of this.resets || []) reset(keys);
             this.scheduleMount?.();
             return keys;
