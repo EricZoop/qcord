@@ -6,7 +6,7 @@ The walkthrough starts with the recipient's key:
 
 1. **Recipient key**: save `public_encaps` and inspect `t̂` and `Â`. The 1184-byte key contains 1152 bytes of encoded `t̂` plus the 32-byte seed `ρ`. `t̂` has 3 polynomials; `Â` has 3 × 3. Each polynomial has 256 coefficients modulo 3329.
 2. **Derive K**: sample fresh 32-byte `m`, then compute `(K, r) = SHA3-512(m ∥ SHA3-256(ek))`. The first 32 output bytes are K; the last 32 are the encryption seed r.
-3. **Construct u, v**: inspect actual noise and coefficient calculations. The NTT formulas appear above the worked coefficients. The independent polynomial trace must reproduce the library's 1088-byte ciphertext exactly.
+3. **Construct u, v**: follow the same seed r from the preceding step through PRF₂ and SamplePolyCBD₂. Nonces 0, 1, 2 generate y; 3, 4, 5 generate e₁; 6 generates e₂. Then ŷ = NTT(y) feeds the u/v equations and worked coefficients. Both u and the single polynomial v have overview plots and detailed coefficient inspectors. The independent polynomial trace must reproduce the library's 1088-byte ciphertext exactly.
 4. **Message & attach**: enter the message, encrypt it with AES-256-GCM using K, and review the exact JSON attachment. Attaching saves m locally. Press Send in Discord to share the file.
 
 Open **Your keys** to share your encapsulation key. Both keys use the same field layout. The actual private-key textbox is blurred until revealed; its Copy button is hidden with space reserved so revealing it does not move anything. The separate **Contacts** button opens a panel with one field to paste, edit and save a contact key; saving does not create another field. Only ML-KEM-768 keys are accepted. Keys are raw Base64, with existing ML-KEM-768 DER keys still importable. Supplied key, contact, reset, copy, and upload icons inherit the theme's text color and are bundled with their attribution.
@@ -17,10 +17,10 @@ The UI bundles [Inter](https://github.com/rsms/inter) for offline use and keeps 
 
 The toolbar has two independent switches:
 
-- **Auto encrypt** (off by default): typing in Discord and pressing Enter prepares a `.qcord` attachment and clears the plaintext draft only after successful staging. Review it, then press Send again. A restrained green gradient and border glow mark the Discord composer while this is on. Missing keys, failures, or cancellation keep the draft and do not send plaintext. This encrypts text; existing non-Qcord attachments are not encrypted.
-- **Auto decrypt** (on by default): automatically opens visible `.qcord` attachments using saved sender m values or your private key. The shield is lit while this is on. Switching it off restores original attachments and clears rendered plaintext, including pending decryptions. Manual file opening still works with either switch off.
+- **Auto encrypt** (off by default): typing in Discord and pressing Enter prepares a `.qcord` attachment and clears the plaintext draft only after successful staging. Review it, then press Send again. A bright green gradient and border glow mark the Discord composer while this is on. Missing keys, failures, or cancellation keep the draft and do not send plaintext. This encrypts text; existing non-Qcord attachments are not encrypted.
+- **Auto decrypt** (on by default): automatically opens visible `.qcord` attachments using saved sender m values or your private key. The composer button shows a white logo on a green background while this is on. Switching it off restores original attachments and clears rendered plaintext, including pending decryptions. Manual file opening still works with either switch off.
 
-The switches persist separately. **Previous step** navigates the walkthrough. In a subpanel, **Go Back**, Escape, or an outside click returns to the main popup. Clicking outside again exits Qcord, as does **X** on the main popup. **Open file** in the footer decrypts a `.qcord` file already downloaded to your device; its tooltip explains that action.
+The switches persist separately. **Previous step** navigates the walkthrough. In a subpanel, **Go Back**, Escape, or an outside click returns to the main popup. Clicking outside again exits Qcord, as does **Exit** on the main popup. **Open file** in the footer decrypts a `.qcord` file already downloaded to your device; its tooltip explains that action.
 
 The polynomial equations use column vectors:
 

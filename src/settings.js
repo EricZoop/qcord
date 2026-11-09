@@ -14,7 +14,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
     const R = BdApi.React, ui = createUI(R);
     const {h, p, button, field, formula, code, Icon, Tabs, Switch, Avatar, Variables, Sparkline, KeyParts, Polynomial} = ui;
     const Contacts = createContacts(R, ui);
-    const split = (left, right) => h("div", {className: "qc-split"}, h("section", {className: "qc-explanation"}, left), h("section", {className: "qc-visual"}, right));
+    const split = (left, right, className = "") => h("div", {className: `qc-split ${className}`}, h("section", {className: "qc-explanation"}, left), h("section", {className: "qc-visual"}, right));
 
     function OpenedMessage({result, onDismiss}) {
         const dialog = R.useRef(null);
@@ -114,16 +114,21 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
         if (step === 2 && draft) {
             const t = draft.trace, i = vectorIndex, j = coefficient, values = part === "u" ? t.u[i] : t.v;
             const product = part === "u" ? M.mod(values[j] - t.e1[i][j]) : M.mod(values[j] - t.e2[j] - t.mu[j]);
-            content = split(h(R.Fragment, null, h(Variables, {items: [["Â / t̂", "recipient public polynomials in NTT form"], ["ŷ = NTT(y)", "3 noise polynomials in NTT form"], ["e₁ / e₂", "noise vector / polynomial"], ["μ", "encoded random m"]]}),
-                h("h3", null, "Construct u and v"), formula("u = NTT⁻¹(Âᵀ ∘ ŷ) + e₁"), formula("v = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂"),
-                p("∘ multiplies polynomials in the NTT domain. NTT⁻¹ returns coefficients modulo 3329 before adding noise."),
+            content = split(h(R.Fragment, null, h(Variables, {items: [["r", "32-byte sampling seed from (K, r)"], ["Â / t̂", "recipient public polynomials in NTT form"], ["y / e₁ / e₂", "3 / 3 / 1 polynomials, sampled from r"], ["μ", "m encoded as coefficients 0 or 1665"]]}),
+                h("section", {className: "qc-sampling", "aria-label": "Noise sampling from r"},
+                    h("div", {className: "qc-seed-row"}, h("strong", null, "Seed r"), h("code", {"aria-label": "Sampling seed r"}, derived.r)),
+                    h("div", {className: "qc-noise-paths"}, [["y[0..2]", "0, 1, 2"], ["e₁[0..2]", "3, 4, 5"], ["e₂", "6"]].map(([symbol, nonces]) => h("div", {key: symbol}, h("strong", null, symbol), h("small", null, `Nonce N = ${nonces}`)))),
+                    h("div", {className: "qc-sampling-equation", role: "math"}, "Each polynomial = SamplePolyCBD₂(PRF₂(r, N))"),
+                    h("small", null, "r is a seed, not the vector y. Then compute ŷ = NTT(y).")),
+                h("div", {className: "qc-construction-equations"}, formula("u = NTT⁻¹(Âᵀ ∘ ŷ) + e₁"), formula("v = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂"),
+                    h("small", null, "∘ multiplies in the NTT domain. Coefficients are modulo 3329.")),
                 code(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
                 h("div", {className: "qc-compression"}, h("span", null, "Compressed for the file"), h("strong", null, `${values[j]} → ${M.compress(values[j], part === "u" ? 10 : 4)}`), h("small", null, part === "u" ? "10 bits" : "4 bits")),
-                h("details", null, h("summary", null, "Sampled noise"), code(`y/e₁/e₂ use CBD₂ with successive PRF(r, N) nonces.\ny[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} …`))),
+                h("details", {className: "qc-noise-details"}, h("summary", null, "Sampled coefficients"), code(`y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} …\ne₁[${i}]: ${t.e1[i].slice(0, 12).join(", ")} …\ne₂: ${t.e2.slice(0, 12).join(", ")} …`))),
             h(R.Fragment, null, h(Tabs, {label: "Ciphertext components", items: [["u", "Compute u"], ["v", "Compute v"]], value: part, onChange: setPart}),
-                part === "u" ? vectorTiles(t.u, "u", i, setVectorIndex) : h("div", {className: "qc-vector-summary"}, h("strong", null, "v"), p("One polynomial · 256 coefficients")),
+                part === "u" ? vectorTiles(t.u, "u", i, setVectorIndex) : h("figure", {className: "qc-single-polynomial", "aria-label": "v polynomial overview"}, h("figcaption", null, h("strong", null, "v"), h("small", null, "One polynomial · 256 coefficients")), h(Sparkline, {values: t.v})),
                 h(Polynomial, {values, name: part === "u" ? `u[${i}] · before compression` : "v · before compression", index: j, onIndexChange: setCoefficient}),
-                h("span", {className: "qc-muted"}, "The compressed values match the library's ciphertext byte for byte.")));
+                h("span", {className: "qc-muted"}, "The compressed values match the library's ciphertext byte for byte.")), "qc-construction");
         }
         if (step === 3 && draft) {
             content = split(h(R.Fragment, null, h(Variables, {items: [["K", "32-byte shared secret"], ["nonce", "12 fresh random bytes"], ["tag", "16-byte authentication tag"]]}),
