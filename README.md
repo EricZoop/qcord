@@ -13,6 +13,8 @@ Open **Your keys** to share your encapsulation key. Both keys use the same field
 
 Graphs change their selected coefficient only after a click or during a drag, or through the slider and numbered coefficient buttons. Hovering does not scrub. Static plots and derived values are cached between tab changes. Panels are fully opaque and do not apply background blur; opening a popup hides the underlying walkthrough and its backdrop so surfaces do not stack.
 
+The UI bundles [Inter](https://github.com/rsms/inter) for offline use and keeps the equation typeface. Toolbar controls share a 44 px height, with a bordered Exit button. Button icons use only the supplied SVGs. Vertical scrollbars are hidden while scrolling remains available; the attachment preview keeps a slim horizontal scrollbar. Graph dragging updates once per animation frame, and reduced-motion preferences disable the preview transitions.
+
 The toolbar has two independent switches:
 
 - **Auto encrypt** (off by default): typing in Discord and pressing Enter prepares a `.qcord` attachment and clears the plaintext draft only after successful staging. Review it, then press Send again. A restrained green gradient and border glow mark the Discord composer while this is on. Missing keys, failures, or cancellation keep the draft and do not send plaintext. This encrypts text; existing non-Qcord attachments are not encrypted.

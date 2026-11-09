@@ -2,6 +2,7 @@ import {launchBrowser} from "./browser.mjs";
 import {serveFixture} from "./ui-server.mjs";
 import {writeFile} from "node:fs/promises";
 import assert from "node:assert/strict";
+import icons from "../src/icons.js";
 const {server, url} = await serveFixture();
 let browser;
 try {
@@ -11,6 +12,8 @@ try {
     await page.route("https://cdn.discordapp.com/avatars/**", route => route.fulfill({contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#587451"/></svg>'}));
     await page.goto(url);
     const composer = page.getByRole("dialog", {name: "Qcord encapsulation", exact: true}); await composer.waitFor();
+    await page.evaluate(()=>document.fonts.load('14px "Qcord Inter"'));
+    assert.equal(await page.evaluate(()=>[...document.fonts].some(face=>face.family==='Qcord Inter'&&face.status==='loaded')),true,"Bundled Inter loads in the browser");
     const idle = () => page.waitForFunction(() => !document.querySelector('.qc-main[aria-busy="true"]'));
     const stage = async name => { await composer.getByRole("tab", {name, exact: true}).click(); await idle(); };
     const noOuterOverflow = async () => {
@@ -28,8 +31,13 @@ try {
     assert.ok((await composer.locator("button,button *").evaluateAll(els=>els.map(el=>getComputedStyle(el).userSelect))).every(value=>value==="none"),"Button text and icons cannot be selected");
     assert.equal(await composer.getByRole("button",{name:"Previous step",exact:true}).isDisabled(),true);
     assert.ok(await composer.locator(".qc-variables").first().evaluate(el=>el.getBoundingClientRect().top)<await composer.locator(".qc-equation").first().evaluate(el=>el.getBoundingClientRect().top));
-    const heights=await composer.locator(".qc-recipient,.qc-mode-controls,.qc-panel-button").evaluateAll(els=>els.map(el=>el.getBoundingClientRect().height));
-    assert.ok(heights.every(height=>height===heights[0]),JSON.stringify(heights));
+    const toolbarHeights=()=>composer.locator(".qc-toolbar > *,.qc-toolbar button").evaluateAll(els=>els.map(el=>el.getBoundingClientRect().height));
+    assert.ok((await toolbarHeights()).every(height=>height===44),JSON.stringify(await toolbarHeights()));
+    const exitStyle=await composer.getByRole("button",{name:"Exit Qcord",exact:true}).evaluate(el=>{const s=getComputedStyle(el);return {width:s.borderWidth,style:s.borderStyle,color:s.borderColor};});
+    assert.equal(exitStyle.width,"1px");assert.equal(exitStyle.style,"solid");assert.notEqual(exitStyle.color,"rgba(0, 0, 0, 0)");
+    assert.equal(await composer.getByRole("button",{name:"Exit Qcord",exact:true}).locator("svg").count(),0,"Exit is a bordered text button");
+    assert.ok(await composer.locator(".qc-panel-button").first().evaluate(el=>getComputedStyle(el).fontFamily.includes("Qcord Inter")));
+    assert.ok(await composer.locator(".qc-equation").first().evaluate(el=>getComputedStyle(el).fontFamily.includes("Cambria Math")),"Equation typography is preserved");
     const redundantWrites=await page.evaluate(async()=>{
         let writes=0;const observer=new MutationObserver(records=>{writes+=records.length;});
         observer.observe(document.querySelector(".qcord-button"),{attributes:true});
@@ -38,7 +46,11 @@ try {
     });
     assert.equal(redundantWrites,0,"Repeated composer scans do not rewrite unchanged attributes");
     const graph=composer.locator(".qc-polynomial > svg"),scrubber=composer.getByLabel("Coefficient index");
+    assert.equal(await composer.locator(".qc-scrubber output").count(),0,"No redundant live coefficient readout");
     await scrubber.fill("17");const graphBounds=await graph.boundingBox();
+    await scrubber.press("ArrowRight");assert.equal(await scrubber.inputValue(),"18");
+    await scrubber.press("ArrowLeft");assert.equal(await scrubber.inputValue(),"17");
+    assert.match(await scrubber.getAttribute("aria-valuetext"),/^Coefficient 17: /,"Selected coefficient remains accessible");
     await page.mouse.move(graphBounds.x+graphBounds.width*.8,graphBounds.y+graphBounds.height*.5);
     assert.equal(await scrubber.inputValue(),"17","Hovering never scrubs the graph");
     await page.mouse.move(graphBounds.x+graphBounds.width*.2,graphBounds.y+graphBounds.height*.5);await page.mouse.down();
@@ -73,6 +85,9 @@ try {
     assert.equal(await composer.getByRole("tab",{name:"1. Recipient key",exact:true}).getAttribute("aria-selected"),"true");
     await stage("2. Derive K");
     assert.ok(await composer.getByRole("button",{name:"Sample fresh m",exact:true}).evaluate(el=>!el.classList.contains("qc-quiet")&&getComputedStyle(el).borderStyle==="solid"));
+    assert.equal(await composer.getByRole("button",{name:"Sample fresh m",exact:true}).locator("svg path").getAttribute("d"),icons.filled.reset.path);
+    const allowedPaths=new Set(Object.values(icons.filled).map(icon=>icon.path));
+    assert.ok((await composer.locator("button svg path").evaluateAll(els=>els.map(el=>el.getAttribute("d")))).every(path=>allowedPaths.has(path)),"Only supplied SVGs appear as button icons");
     const oldM = await composer.locator(".qc-code").first().innerText();
     await composer.getByRole("button", {name: "Sample fresh m", exact: true}).click(); await idle();
     assert.notEqual(await composer.locator(".qc-code").first().innerText(), oldM);
@@ -94,6 +109,11 @@ try {
     const focusStyle=await composer.getByRole("textbox",{name:"Message",exact:true}).evaluate(el=>{const s=getComputedStyle(el);return {outline:s.outlineStyle,width:s.outlineWidth,borders:[s.borderTopWidth,s.borderRightWidth,s.borderBottomWidth,s.borderLeftWidth]};});
     assert.equal(focusStyle.outline,"solid");assert.equal(focusStyle.width,"2px");assert.ok(focusStyle.borders.every(width=>width==="1px"),"All four textbox edges receive the focus treatment");
     const wire = await composer.locator(".qc-json").innerText(), file = JSON.parse(wire);
+    const previewStyle=await composer.locator(".qc-json").evaluate(el=>({vertical:getComputedStyle(el,"::-webkit-scrollbar").width,horizontal:getComputedStyle(el,"::-webkit-scrollbar").height,smooth:getComputedStyle(el).scrollBehavior,font:getComputedStyle(el).fontFamily}));
+    assert.equal(previewStyle.vertical,"0px");assert.equal(previewStyle.horizontal,"6px");assert.equal(previewStyle.smooth,"smooth");assert.ok(previewStyle.font.includes("Qcord Inter"));
+    await composer.locator(".qc-json").evaluate(el=>el.scrollTo({left:120}));
+    await page.waitForFunction(()=>document.querySelector(".qc-json").scrollLeft>0);
+    await composer.locator(".qc-json").evaluate(el=>el.scrollTo({left:0,behavior:"instant"}));
     assert.equal(wire.split("\n").filter(line=>/^    \[/.test(line)).length, 3);
     assert.deepEqual(Object.keys(file).sort(), ["encrypted_message", "qcord_version", "u", "v"]);
     assert.deepEqual(file.u, first.u); assert.deepEqual(file.v, first.v);
@@ -203,6 +223,8 @@ try {
     await keysPanel.getByRole("button",{name:"Reveal private key",exact:true}).click();
     assert.equal(await privateBox.evaluate(el=>getComputedStyle(el).filter),"none");
     assert.equal(await privateBox.getAttribute("aria-hidden"),"false");
+    assert.equal(await privateBox.evaluate(el=>getComputedStyle(el,"::-webkit-scrollbar").width),"0px");
+    assert.ok(await privateBox.evaluate(el=>{el.scrollTop=40;return el.scrollTop>0;}),"Keys remain scrollable with hidden vertical scrollbars");
     assert.equal(await privateCopy.isVisible(),true);
     assert.deepEqual(await privateLayout(),hiddenLayout,"Reveal preserves field and action positions");
     await keysPanel.getByRole("button",{name:"Hide private key",exact:true}).click();
@@ -294,6 +316,13 @@ try {
     console.log(`Local fixture tab navigation: p50 ${perf.p50_ms} ms, p95 ${perf.p95_ms} ms (includes two animation frames).`);
     await stage("1. Recipient key");
     await page.setViewportSize({width: 390, height: 844});
+    assert.ok((await toolbarHeights()).every(height=>height===44),JSON.stringify(await toolbarHeights()));
+    await page.emulateMedia({reducedMotion:"reduce"});
+    await stage("4. Message & attach");
+    assert.equal(await composer.locator(".qc-json").evaluate(el=>getComputedStyle(el).scrollBehavior),"auto");
+    await stage("1. Recipient key");
+    assert.equal(await composer.locator(".qc-selection").evaluate(el=>getComputedStyle(el).transitionDuration),"0s");
+    await page.emulateMedia({reducedMotion:"no-preference"});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({path: ".tools/ui/06-narrow.png"});
     const incoming=await page.evaluate(()=>window.qcordTest.incomingWire("New identity **message**"));

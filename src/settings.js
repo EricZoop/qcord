@@ -108,7 +108,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 h("h3", null, "Derive the shared key"), formula("(K, r) = G(m ∥ H(ek))"),
                 p("Hash the entire public key. Split G's 64-byte output: the first 32 bytes are K; the last 32 are the noise seed r."),
                 formula("μ = Decompress₁(ByteDecode₁(m))"), p("μ encodes m as 256 coefficients: a 0 bit becomes 0, a 1 bit becomes 1665."),
-                button(h(R.Fragment, null, h(Icon, {name: "refresh"}), "Sample fresh m"), () => run(() => prepare(1, true)), {disabled: busy, className: "qc-action", title: "Generate fresh randomness and rebuild this encapsulation"})),
+                button(h(R.Fragment, null, h(Icon, {name: "reset"}), "Sample fresh m"), () => run(() => prepare(1, true)), {disabled: busy, className: "qc-action", title: "Generate fresh randomness and rebuild this encapsulation"})),
             h(R.Fragment, null, h("div", {className: "qc-secret-values"}, code(`m · ${hex(draft.trace.m)}`), code(`K · ${derived.k}`), code(`r · ${derived.r}`)), h(Polynomial, {values: draft.trace.mu, name: "μ · encoded m"})));
         }
         if (step === 2 && draft) {
@@ -142,7 +142,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                     h(Switch, {label: "Auto decrypt", checked: autoDecrypt, onChange: value => run(async () => plugin.setAutomatic("decrypt", value))})),
                 button(h(R.Fragment, null, h(Icon, {name: "keys"}), "Your keys"), () => setContactsTab("keys"), {className: "qc-panel-button", "aria-label": "Your keys"}),
                 button(h(R.Fragment, null, h(Icon, {name: "contacts"}), "Contacts"), () => setContactsTab("contacts"), {className: "qc-panel-button", "aria-label": "Contacts"}),
-                onClose && button(h(Icon, {name: "close"}), onClose, {className: "qc-icon-button", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat"})),
+                onClose && button("Exit", onClose, {className: "qc-exit", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat"})),
             h(Tabs, {label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy}),
             h("main", {className: "qc-main", role: "tabpanel", "aria-label": `${stages[step]} stage`, "aria-busy": busy}, content),
             h("footer", {className: "qc-footer"}, button("Previous step", () => navigate(step - 1), {disabled: busy || step === 0}),
