@@ -106,7 +106,7 @@ module.exports = class Encapsulation {
             this.checkSession(session);
             const file = packet.fromCiphertext(result.ciphertext);
             file.encrypted_message = message.seal(text, result.sharedKey, file);
-            return this.serializeDraft({channelId, scheme, public_encaps: row.public_encaps, packet: file, trace: result.trace});
+            return this.serializeDraft({channelId, scheme, public_encaps: row.public_encaps, message_epoch: Date.now(), packet: file, trace: result.trace});
         } catch (error) { require("./mlkem").wipe(result.trace); throw error; }
         finally { result.sharedKey.fill(0); result.m.fill(0); }
     }
@@ -145,10 +145,14 @@ module.exports = class Encapsulation {
             const current = config.load("recipients") || [];
             const target = current.find(r => r.channel_id === row.channel_id && r.public_encaps === row.public_encaps && r.user_id === row.user_id);
             if (!target) throw new Error("The recipient key changed. Prepare a new draft.");
-            const m = Buffer.from(draft.trace.m).toString("base64");
-            target.encapsulations ||= [];
-            if (!target.encapsulations.some(item => item.m === m)) target.encapsulations.push({m});
-            config.save("recipients", current);
+            if (this.saveReceipts !== false) {
+                const k = restored.sharedKey.toString("base64");
+                target.encapsulations ||= [];
+                if (!target.encapsulations.some(item => item.message_epoch === draft.message_epoch && item.k === k)) {
+                    target.encapsulations.push({message_epoch: draft.message_epoch, k});
+                }
+                config.save("recipients", current);
+            }
             this.attachments?.retry(); this.scheduleMount?.();
         } finally { restored.sharedKey.fill(0); }
     }
@@ -168,24 +172,32 @@ module.exports = class Encapsulation {
         } finally { sharedKey.fill(0); }
     }
 
-    async openFile(text, channelId) {
-        const session = this.session;
-        this.checkSession(session);
-        const {packet: file, ciphertext} = packet.parse(text);
-        // Sender replay needs only the saved recipient key and each original m.
-        // No key fingerprint or duplicate ciphertext is stored in the config.
-        for (const row of this.getRecipients(channelId)) {
-            const key = PQC.createPublicKey(row.public_encaps);
-            for (const record of row.encapsulations || []) {
-                const m = Buffer.from(record.m, "base64");
-                let restored;
-                try {
-                    if (m.toString("base64") !== record.m || m.length !== 32) throw new Error("Invalid saved m.");
-                    restored = await PQC.restoreEncapsulation(key, m);
-                    this.checkSession(session);
-                    if (equalBytes(restored.ciphertext, ciphertext)) return {scheme: ACTIVE_SCHEME, key: restored.sharedKey.toString("hex"), text: message.open(file, restored.sharedKey), source: "Saved sender m"};
-                } finally { m.fill(0); restored?.sharedKey.fill(0); }
+    async openFile(text, channelId, messageEpoch = null) {
+        this.checkSession(this.session);
+        const {packet: file} = packet.parse(text);
+        if (this.receiptRevision !== config.receiptsRevision || this.receiptSession !== this.session) {
+            this.receiptSession = this.session;
+            this.receiptIndexes = new Map();
+            this.receiptRevision = config.receiptsRevision;
+        }
+        if (!this.receiptIndexes.has(channelId)) {
+            const records = this.getRecipients(channelId).flatMap(row => row.encapsulations || []);
+            const byEpoch = new Map();
+            for (const record of records) {
+                if (!byEpoch.has(record.message_epoch)) byEpoch.set(record.message_epoch, []);
+                byEpoch.get(record.message_epoch).push(record);
             }
+            this.receiptIndexes.set(channelId, {records, byEpoch});
+        }
+        const {records, byEpoch} = this.receiptIndexes.get(channelId);
+        // Epoch filenames select current receipts; legacy/renamed files can try AES keys.
+        const candidates = messageEpoch == null ? records : [...(byEpoch.get(messageEpoch) || []), ...(byEpoch.get(null) || [])];
+        for (const record of candidates) {
+            const key = packet.decodeBase64(record.k, 32);
+            try {
+                return {scheme: ACTIVE_SCHEME, key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K"};
+            } catch { /* Another receipt may share the filename epoch. */ }
+            finally { key.fill(0); }
         }
         return {...await this.decapsulateFile(text), source: "Recipient dk"};
     }
@@ -197,13 +209,14 @@ module.exports = class Encapsulation {
         this.attachments?.clear();
         for (const pair of this.keyPairs.values()) pair.privateKey.bytes.fill(0);
         this.keyPairs.clear(); this.keyTasks.clear();
+        this.receiptIndexes?.clear();
         let keys;
         try {
             keys = {scheme: ACTIVE_SCHEME, ...await PQC.generateKeyPair(ACTIVE_SCHEME)};
             if (!this.running || this.session !== session) throw new Error("Qcord stopped during reset.");
             config.reset(keys);
             this.keyPairs.set(ACTIVE_SCHEME, keys);
-            this.autoEncrypt = false; this.autoDecrypt = true; this.outgoingEpoch = {};
+            this.autoEncrypt = false; this.autoDecrypt = true; this.saveReceipts = true; this.outgoingEpoch = {};
             this.resetting = false;
             this.mountButtons?.();
             for (const notify of this.modeListeners || []) notify();

@@ -1981,139 +1981,6 @@ var require_pqc = __commonJS({
   }
 });
 
-// src/config.js
-var require_config = __commonJS({
-  "src/config.js"(exports2, module2) {
-    "use strict";
-    var { KEY_STORE, ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
-    var load = (name) => BdApi.Data.load(KEY_STORE, name);
-    var save = (name, value) => BdApi.Data.save(KEY_STORE, name, value);
-    var obsolete = [
-      "learning_key_pairs",
-      "learning_dm_partners",
-      "learning_parameter_set",
-      "learning_config_version",
-      "learning_quantum_conversations",
-      "key_pairs",
-      "dm_partners",
-      "parameter_set",
-      "quantum_conversations",
-      "encrypt_outgoing_messages",
-      "decrypt_incoming_messages"
-    ];
-    function clean3() {
-      for (const name of obsolete) BdApi.Data.delete(KEY_STORE, name);
-    }
-    function initialize() {
-      const version = load("config_version");
-      if (version === 3) {
-        clean3();
-        return;
-      }
-      if (version != null && ![1, 2].includes(version)) throw new Error("Unsupported Qcord configuration.");
-      const { PQC } = require_pqc();
-      const raw = (key) => Buffer.from(key.bytes).toString("base64");
-      const pair = load("key_pairs")?.[ACTIVE_SCHEME2] || load("learning_key_pairs")?.[ACTIVE_SCHEME2];
-      let publicKey, privateKey;
-      if (pair) {
-        publicKey = PQC.createPublicKey(pair.public_encaps || pair.public_key_spki_base64);
-        privateKey = PQC.createPrivateKey(pair.private_decaps || pair.private_key_pkcs8_base64);
-        if (!PQC.createPublicKey(privateKey).equals(publicKey)) throw new Error("Saved public and private keys do not match.");
-      }
-      const rows = [...load("recipients") || [], ...load("learning_dm_partners") || [], ...load("dm_partners") || []];
-      const recipients = [];
-      for (const row of rows) {
-        if (row.key_algorithm && row.key_algorithm !== ACTIVE_SCHEME2) continue;
-        if (recipients.some((r) => r.channel_id === row.channel_id)) continue;
-        let key;
-        try {
-          key = PQC.createPublicKey(row.public_encaps || row.public_key_spki_base64);
-        } catch {
-          continue;
-        }
-        recipients.push({ channel_id: row.channel_id, user_id: row.user_id, public_encaps: raw(key), encapsulations: row.encapsulations || [] });
-      }
-      if (publicKey) {
-        save("public_encaps", raw(publicKey));
-        save("private_decaps", raw(privateKey));
-      }
-      save("recipients", recipients);
-      save("config_version", 3);
-      clean3();
-    }
-    function reset(keys) {
-      clean3();
-      save("public_encaps", Buffer.from(keys.publicKey.bytes).toString("base64"));
-      save("private_decaps", Buffer.from(keys.privateKey.bytes).toString("base64"));
-      save("recipients", []);
-      save("auto_encrypt", false);
-      save("auto_decrypt", true);
-      save("config_version", 3);
-    }
-    module2.exports = { load, save, initialize, reset };
-  }
-});
-
-// src/packet.js
-var require_packet = __commonJS({
-  "src/packet.js"(exports2, module2) {
-    "use strict";
-    var { parameters: parameters2 } = require_parameters();
-    var { encode, decode } = require_mlkem();
-    var { MAX_DECODED_FILE_SIZE } = require_constants();
-    var { k, du, dv, ciphertextBytes } = parameters2();
-    function fromCiphertext(ciphertext) {
-      if (ciphertext.length !== ciphertextBytes) throw new Error("Invalid ML-KEM-768 ciphertext length.");
-      const width = 32 * du;
-      return {
-        qcord_version: 5,
-        u: Array.from({ length: k }, (_, i) => decode(ciphertext.slice(i * width, (i + 1) * width), du)),
-        v: decode(ciphertext.slice(k * width), dv)
-      };
-    }
-    function toCiphertext(file) {
-      if (!file || typeof file !== "object" || Array.isArray(file) || file.qcord_version !== 5) throw new Error("Expected a version-5 ML-KEM-768 Qcord file.");
-      const valid = (p, d) => Array.isArray(p) && p.length === 256 && p.every((x) => Number.isInteger(x) && x >= 0 && x < 2 ** d);
-      if (!Array.isArray(file.u) || file.u.length !== k || !file.u.every((p) => valid(p, du)) || !valid(file.v, dv)) throw new Error("Invalid compressed u or v coefficients.");
-      return Buffer.concat([...file.u.map((p) => Buffer.from(encode(p, du))), Buffer.from(encode(file.v, dv))]);
-    }
-    function decodeBase64(value, size) {
-      if (typeof value !== "string" || value.length > MAX_DECODED_FILE_SIZE || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw new Error("Invalid encrypted message field.");
-      const bytes = Buffer.from(value, "base64");
-      if (bytes.toString("base64") !== value || size !== void 0 && bytes.length !== size) throw new Error("Invalid encrypted message field length or Base64.");
-      return bytes;
-    }
-    function parse(text) {
-      if (typeof text !== "string" || Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large or invalid.");
-      const packet = JSON.parse(text.replace(/^\uFEFF/, ""));
-      const ciphertext = toCiphertext(packet);
-      if (Object.keys(packet).sort().join() !== "encrypted_message,qcord_version,u,v") throw new Error("Unexpected Qcord file fields.");
-      const sealed = packet.encrypted_message;
-      if (!sealed || typeof sealed !== "object" || Array.isArray(sealed) || Object.keys(sealed).sort().join() !== "authentication_tag_base64,ciphertext_base64,nonce_base64") throw new Error("Invalid encrypted_message fields.");
-      decodeBase64(sealed.nonce_base64, 12);
-      decodeBase64(sealed.authentication_tag_base64, 16);
-      decodeBase64(sealed.ciphertext_base64);
-      return { packet, ciphertext };
-    }
-    var aad = (file) => Buffer.from(JSON.stringify({ qcord_version: file.qcord_version, u: file.u, v: file.v }));
-    function stringify(file) {
-      toCiphertext(file);
-      const rows = file.u.map((poly) => "    [" + poly.join(", ") + "]").join(",\n");
-      const sealed = JSON.stringify(file.encrypted_message, null, 2).replace(/\n/g, "\n  ");
-      return `{
-  "qcord_version": ${file.qcord_version},
-  "u": [
-${rows}
-  ],
-  "v": [${file.v.join(", ")}],
-  "encrypted_message": ${sealed}
-}
-`;
-    }
-    module2.exports = { fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify };
-  }
-});
-
 // node_modules/@noble/ciphers/utils.js
 function isBytes2(a) {
   return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
@@ -3647,6 +3514,77 @@ var init_aes = __esm({
   }
 });
 
+// src/packet.js
+var require_packet = __commonJS({
+  "src/packet.js"(exports2, module2) {
+    "use strict";
+    var { parameters: parameters2 } = require_parameters();
+    var { encode, decode } = require_mlkem();
+    var { MAX_DECODED_FILE_SIZE } = require_constants();
+    var { k, du, dv, ciphertextBytes } = parameters2();
+    function fromCiphertext(ciphertext) {
+      if (ciphertext.length !== ciphertextBytes) throw new Error("Invalid ML-KEM-768 ciphertext length.");
+      const width = 32 * du;
+      return {
+        qcord_version: 5,
+        u: Array.from({ length: k }, (_, i) => decode(ciphertext.slice(i * width, (i + 1) * width), du)),
+        v: decode(ciphertext.slice(k * width), dv),
+        signature_sigma: { c_tilde: "", z: [], h: [] }
+      };
+    }
+    function toCiphertext(file) {
+      if (!file || typeof file !== "object" || Array.isArray(file) || file.qcord_version !== 5) throw new Error("Expected a version-5 ML-KEM-768 Qcord file.");
+      const valid = (p, d) => Array.isArray(p) && p.length === 256 && p.every((x) => Number.isInteger(x) && x >= 0 && x < 2 ** d);
+      if (!Array.isArray(file.u) || file.u.length !== k || !file.u.every((p) => valid(p, du)) || !valid(file.v, dv)) throw new Error("Invalid compressed u or v coefficients.");
+      return Buffer.concat([...file.u.map((p) => Buffer.from(encode(p, du))), Buffer.from(encode(file.v, dv))]);
+    }
+    function decodeBase64(value, size) {
+      if (typeof value !== "string" || value.length > MAX_DECODED_FILE_SIZE || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw new Error("Invalid encrypted message field.");
+      const bytes = Buffer.from(value, "base64");
+      if (bytes.toString("base64") !== value || size !== void 0 && bytes.length !== size) throw new Error("Invalid encrypted message field length or Base64.");
+      return bytes;
+    }
+    function parse(text) {
+      if (typeof text !== "string" || Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large or invalid.");
+      const packet = JSON.parse(text.replace(/^\uFEFF/, ""));
+      const ciphertext = toCiphertext(packet);
+      if (Object.keys(packet).filter((key) => key !== "signature_sigma").sort().join() !== "encrypted_message,qcord_version,u,v") throw new Error("Unexpected Qcord file fields.");
+      if (packet.signature_sigma !== void 0) validateSignaturePlaceholder(packet.signature_sigma);
+      const sealed = packet.encrypted_message;
+      if (!sealed || typeof sealed !== "object" || Array.isArray(sealed) || Object.keys(sealed).sort().join() !== "authentication_tag_base64,ciphertext_base64,nonce_base64") throw new Error("Invalid encrypted_message fields.");
+      decodeBase64(sealed.nonce_base64, 12);
+      decodeBase64(sealed.authentication_tag_base64, 16);
+      decodeBase64(sealed.ciphertext_base64);
+      return { packet, ciphertext };
+    }
+    function validateSignaturePlaceholder(sigma) {
+      if (!sigma || typeof sigma !== "object" || Array.isArray(sigma) || Object.keys(sigma).sort().join() !== "c_tilde,h,z" || sigma.c_tilde !== "" || !Array.isArray(sigma.z) || sigma.z.length || !Array.isArray(sigma.h) || sigma.h.length) {
+        throw new Error("Expected blank signature_sigma placeholders; ML-DSA is not implemented.");
+      }
+    }
+    var aad = (file) => Buffer.from(JSON.stringify({ qcord_version: file.qcord_version, u: file.u, v: file.v }));
+    function stringify(file) {
+      toCiphertext(file);
+      const rows = file.u.map((poly) => "    [" + poly.join(", ") + "]").join(",\n");
+      const sealed = JSON.stringify(file.encrypted_message, null, 2).replace(/\n/g, "\n  ");
+      const sigma = file.signature_sigma;
+      if (sigma !== void 0) validateSignaturePlaceholder(sigma);
+      const signature = sigma === void 0 ? "" : `,
+  "signature_sigma": ${JSON.stringify(sigma, null, 2).replace(/\n/g, "\n  ")}`;
+      return `{
+  "qcord_version": ${file.qcord_version},
+  "u": [
+${rows}
+  ],
+  "v": [${file.v.join(", ")}],
+  "encrypted_message": ${sealed}${signature}
+}
+`;
+    }
+    module2.exports = { fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify };
+  }
+});
+
 // src/message.js
 var require_message = __commonJS({
   "src/message.js"(exports2, module2) {
@@ -3693,6 +3631,135 @@ var require_message = __commonJS({
       }
     }
     module2.exports = { keyFromM, seal, open };
+  }
+});
+
+// src/config.js
+var require_config = __commonJS({
+  "src/config.js"(exports2, module2) {
+    "use strict";
+    var { KEY_STORE, ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
+    var load = (name) => BdApi.Data.load(KEY_STORE, name);
+    var receiptsRevision = 0;
+    function save(name, value) {
+      if (name === "recipients") receiptsRevision++;
+      BdApi.Data.save(KEY_STORE, name, value);
+      if (name !== "recipients") {
+        const recipients = load("recipients");
+        if (recipients !== void 0) {
+          BdApi.Data.delete(KEY_STORE, "recipients");
+          BdApi.Data.save(KEY_STORE, "recipients", recipients);
+        }
+      }
+    }
+    var obsolete = [
+      "learning_key_pairs",
+      "learning_dm_partners",
+      "learning_parameter_set",
+      "learning_config_version",
+      "learning_quantum_conversations",
+      "key_pairs",
+      "dm_partners",
+      "parameter_set",
+      "quantum_conversations",
+      "encrypt_outgoing_messages",
+      "decrypt_incoming_messages"
+    ];
+    function clean3() {
+      for (const name of obsolete) BdApi.Data.delete(KEY_STORE, name);
+    }
+    function initialize() {
+      const version = load("config_version");
+      if (version === 4) {
+        if (load("public_signature") === void 0 || load("private_signature") === void 0) finalize();
+        clean3();
+        return;
+      }
+      if (version === 3) {
+        finalize();
+        clean3();
+        return;
+      }
+      if (version != null && ![1, 2].includes(version)) throw new Error("Unsupported Qcord configuration.");
+      const { PQC } = require_pqc();
+      const raw = (key) => Buffer.from(key.bytes).toString("base64");
+      const pair = load("key_pairs")?.[ACTIVE_SCHEME2] || load("learning_key_pairs")?.[ACTIVE_SCHEME2];
+      let publicKey, privateKey;
+      if (pair) {
+        publicKey = PQC.createPublicKey(pair.public_encaps || pair.public_key_spki_base64);
+        privateKey = PQC.createPrivateKey(pair.private_decaps || pair.private_key_pkcs8_base64);
+        if (!PQC.createPublicKey(privateKey).equals(publicKey)) throw new Error("Saved public and private keys do not match.");
+      }
+      const rows = [...load("recipients") || [], ...load("learning_dm_partners") || [], ...load("dm_partners") || []];
+      const recipients = [];
+      for (const row of rows) {
+        if (row.key_algorithm && row.key_algorithm !== ACTIVE_SCHEME2) continue;
+        if (recipients.some((r) => r.channel_id === row.channel_id)) continue;
+        let key;
+        try {
+          key = PQC.createPublicKey(row.public_encaps || row.public_key_spki_base64);
+        } catch {
+          continue;
+        }
+        recipients.push({ channel_id: row.channel_id, user_id: row.user_id, public_encaps: raw(key), encapsulations: row.encapsulations || [] });
+      }
+      if (publicKey) {
+        save("public_encaps", raw(publicKey));
+        save("private_decaps", raw(privateKey));
+      }
+      save("recipients", recipients);
+      finalize();
+      clean3();
+    }
+    function finalize() {
+      const { PQC } = require_pqc();
+      const { keyFromM } = require_message();
+      const recipients = (load("recipients") || []).map((row) => ({
+        ...row,
+        encapsulations: (row.encapsulations || []).map((record) => {
+          if (!record.m) return record;
+          const m = require_packet().decodeBase64(record.m, 32);
+          let key;
+          try {
+            key = keyFromM(m, PQC.createPublicKey(row.public_encaps).bytes);
+            return { message_epoch: null, k: Buffer.from(key).toString("base64") };
+          } finally {
+            m.fill(0);
+            key?.fill(0);
+          }
+        })
+      }));
+      const fields = {
+        config_version: 4,
+        auto_encrypt: load("auto_encrypt") === true,
+        auto_decrypt: load("auto_decrypt") !== false,
+        save_receipts: load("save_receipts") !== false,
+        public_signature: load("public_signature") ?? "",
+        private_signature: load("private_signature") ?? ""
+      };
+      for (const name of ["public_encaps", "private_decaps"]) {
+        const value = load(name);
+        if (value !== void 0) fields[name] = value;
+      }
+      fields.recipients = recipients;
+      for (const name of Object.keys(fields)) BdApi.Data.delete(KEY_STORE, name);
+      for (const [name, value] of Object.entries(fields)) save(name, value);
+    }
+    function reset(keys) {
+      clean3();
+      save("public_encaps", Buffer.from(keys.publicKey.bytes).toString("base64"));
+      save("private_decaps", Buffer.from(keys.privateKey.bytes).toString("base64"));
+      save("recipients", []);
+      save("auto_encrypt", false);
+      save("auto_decrypt", true);
+      save("save_receipts", true);
+      save("public_signature", "");
+      save("private_signature", "");
+      finalize();
+    }
+    module2.exports = { load, save, initialize, reset, get receiptsRevision() {
+      return receiptsRevision;
+    } };
   }
 });
 
@@ -3805,7 +3872,7 @@ var require_messaging = __commonJS({
           this.checkSession(session);
           const file = packet.fromCiphertext(result.ciphertext);
           file.encrypted_message = message.seal(text, result.sharedKey, file);
-          return this.serializeDraft({ channelId, scheme, public_encaps: row.public_encaps, packet: file, trace: result.trace });
+          return this.serializeDraft({ channelId, scheme, public_encaps: row.public_encaps, message_epoch: Date.now(), packet: file, trace: result.trace });
         } catch (error) {
           require_mlkem().wipe(result.trace);
           throw error;
@@ -3847,10 +3914,14 @@ var require_messaging = __commonJS({
           const current = config2.load("recipients") || [];
           const target = current.find((r) => r.channel_id === row.channel_id && r.public_encaps === row.public_encaps && r.user_id === row.user_id);
           if (!target) throw new Error("The recipient key changed. Prepare a new draft.");
-          const m = Buffer.from(draft.trace.m).toString("base64");
-          target.encapsulations || (target.encapsulations = []);
-          if (!target.encapsulations.some((item) => item.m === m)) target.encapsulations.push({ m });
-          config2.save("recipients", current);
+          if (this.saveReceipts !== false) {
+            const k = restored.sharedKey.toString("base64");
+            target.encapsulations || (target.encapsulations = []);
+            if (!target.encapsulations.some((item) => item.message_epoch === draft.message_epoch && item.k === k)) {
+              target.encapsulations.push({ message_epoch: draft.message_epoch, k });
+            }
+            config2.save("recipients", current);
+          }
           this.attachments?.retry();
           this.scheduleMount?.();
         } finally {
@@ -3872,24 +3943,32 @@ var require_messaging = __commonJS({
           sharedKey.fill(0);
         }
       }
-      async openFile(text, channelId) {
-        const session = this.session;
-        this.checkSession(session);
-        const { packet: file, ciphertext } = packet.parse(text);
-        for (const row of this.getRecipients(channelId)) {
-          const key = PQC.createPublicKey(row.public_encaps);
-          for (const record of row.encapsulations || []) {
-            const m = Buffer.from(record.m, "base64");
-            let restored;
-            try {
-              if (m.toString("base64") !== record.m || m.length !== 32) throw new Error("Invalid saved m.");
-              restored = await PQC.restoreEncapsulation(key, m);
-              this.checkSession(session);
-              if (equalBytes3(restored.ciphertext, ciphertext)) return { scheme: ACTIVE_SCHEME2, key: restored.sharedKey.toString("hex"), text: message.open(file, restored.sharedKey), source: "Saved sender m" };
-            } finally {
-              m.fill(0);
-              restored?.sharedKey.fill(0);
-            }
+      async openFile(text, channelId, messageEpoch = null) {
+        this.checkSession(this.session);
+        const { packet: file } = packet.parse(text);
+        if (this.receiptRevision !== config2.receiptsRevision || this.receiptSession !== this.session) {
+          this.receiptSession = this.session;
+          this.receiptIndexes = /* @__PURE__ */ new Map();
+          this.receiptRevision = config2.receiptsRevision;
+        }
+        if (!this.receiptIndexes.has(channelId)) {
+          const records2 = this.getRecipients(channelId).flatMap((row) => row.encapsulations || []);
+          const byEpoch2 = /* @__PURE__ */ new Map();
+          for (const record of records2) {
+            if (!byEpoch2.has(record.message_epoch)) byEpoch2.set(record.message_epoch, []);
+            byEpoch2.get(record.message_epoch).push(record);
+          }
+          this.receiptIndexes.set(channelId, { records: records2, byEpoch: byEpoch2 });
+        }
+        const { records, byEpoch } = this.receiptIndexes.get(channelId);
+        const candidates = messageEpoch == null ? records : [...byEpoch.get(messageEpoch) || [], ...byEpoch.get(null) || []];
+        for (const record of candidates) {
+          const key = packet.decodeBase64(record.k, 32);
+          try {
+            return { scheme: ACTIVE_SCHEME2, key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K" };
+          } catch {
+          } finally {
+            key.fill(0);
           }
         }
         return { ...await this.decapsulateFile(text), source: "Recipient dk" };
@@ -3902,6 +3981,7 @@ var require_messaging = __commonJS({
         for (const pair of this.keyPairs.values()) pair.privateKey.bytes.fill(0);
         this.keyPairs.clear();
         this.keyTasks.clear();
+        this.receiptIndexes?.clear();
         let keys;
         try {
           keys = { scheme: ACTIVE_SCHEME2, ...await PQC.generateKeyPair(ACTIVE_SCHEME2) };
@@ -3910,6 +3990,7 @@ var require_messaging = __commonJS({
           this.keyPairs.set(ACTIVE_SCHEME2, keys);
           this.autoEncrypt = false;
           this.autoDecrypt = true;
+          this.saveReceipts = true;
           this.outgoingEpoch = {};
           this.resetting = false;
           this.mountButtons?.();
@@ -4311,7 +4392,7 @@ var require_contacts = __commonJS({
                 "div",
                 { className: "qc-reset-confirm", role: "alertdialog", "aria-label": "Confirm config reset" },
                 h("strong", null, "Reset keys and clear config?"),
-                p("This removes your current key, contacts, and saved m values. Old messages need your old backup. A new public key will be generated."),
+                p("This removes your current key, contacts, and saved message keys. Old messages need your old backup. A new public key will be generated."),
                 h("div", { className: "qc-row" }, button("Cancel", () => setConfirmReset(false), { disabled: busy }), button(h(R.Fragment, null, h(Icon, { name: "reset" }), "Reset keys"), () => run(() => plugin.clearConfig()), { className: "qc-danger", disabled: busy }))
               ) : button(h(R.Fragment, null, h(Icon, { name: "reset" }), "Clear config & reset key"), () => setConfirmReset(true), { className: "qc-danger", disabled: busy }))
             ),
@@ -4377,6 +4458,7 @@ var require_settings = __commonJS({
         const [opened, setOpened] = R.useState(null), [contactsTab, setContactsTab] = R.useState(null);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
         const [attached, setAttached] = R.useState(false), [stopped, setStopped] = R.useState(!plugin.running);
+        const [saveReceipts, setSaveReceipts] = R.useState(plugin.saveReceipts);
         const [autoEncrypt, setAutoEncrypt] = R.useState(plugin.autoEncrypt), [autoDecrypt, setAutoDecrypt] = R.useState(plugin.autoDecrypt);
         const [keyTab, setKeyTab] = R.useState("matrix"), [part, setPart] = R.useState("u");
         const [vectorIndex, setVectorIndex] = R.useState(0), [matrixCell, setMatrixCell] = R.useState(0), [coefficient, setCoefficient] = R.useState(0);
@@ -4415,6 +4497,7 @@ var require_settings = __commonJS({
           const modes = () => {
             setAutoEncrypt(plugin.autoEncrypt);
             setAutoDecrypt(plugin.autoDecrypt);
+            setSaveReceipts(plugin.saveReceipts);
           };
           plugin.panels.add(stop);
           plugin.resets.add(reset);
@@ -4603,7 +4686,7 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
               h("h3", null, "Write the encrypted message"),
               field("Message", h("textarea", { className: "qc-message-input", rows: 5, maxLength: 64e3, value: text, disabled: busy, placeholder: "Your message\u2026 Discord Markdown is supported.", onChange: (e) => editMessage(e.target.value) })),
               code("AES-256-GCM(K, nonce, message) \u2192 ciphertext + tag"),
-              p("One attachment carries u, v, and the encrypted message. Your saved m reopens sent files; the recipient uses their private key."),
+              p("One attachment carries u, v, and the encrypted message. Your saved K reopens sent files when Save receipts is on; the recipient uses their private key."),
               h("span", { className: "qc-muted" }, "AES-GCM is Qcord's message layer. ML-KEM follows FIPS 203.")
             ),
             h(R.Fragment, null, h("div", { className: "qc-label-row" }, h("strong", null, "Attachment preview"), h("small", { className: "qc-muted" }, `${Buffer.byteLength(draft.wire).toLocaleString()} bytes`)), h("pre", { className: "qc-json", tabIndex: 0, "aria-label": "Exact attachment JSON" }, draft.wire))
@@ -4621,7 +4704,8 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
               "div",
               { className: "qc-mode-controls" },
               h(Switch, { label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: (value) => run(async () => plugin.setAutomatic("encrypt", value)) }),
-              h(Switch, { label: "Auto decrypt", checked: autoDecrypt, onChange: (value) => run(async () => plugin.setAutomatic("decrypt", value)) })
+              h(Switch, { label: "Auto decrypt", checked: autoDecrypt, onChange: (value) => run(async () => plugin.setAutomatic("decrypt", value)) }),
+              h(Switch, { label: "Save receipts", checked: saveReceipts, title: "Save keys to reopen your sent messages on this device", onChange: (value) => run(async () => plugin.setSaveReceipts(value)) })
             ),
             button(h(R.Fragment, null, h(Icon, { name: "keys" }), "Your keys"), () => setContactsTab("keys"), { className: "qc-panel-button", "aria-label": "Your keys" }),
             button(h(R.Fragment, null, h(Icon, { name: "contacts" }), "Contacts"), () => setContactsTab("contacts"), { className: "qc-panel-button", "aria-label": "Contacts" }),
@@ -4640,7 +4724,7 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
               e.target.value = "";
               if (file) run(async () => {
                 if (file.size > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large.");
-                const result = await plugin.openFile(await file.text(), channel);
+                const result = await plugin.openFile(await file.text(), channel, /^\d+\.qcord$/i.test(file.name) ? Number(file.name.split(".")[0]) : null);
                 if (alive.current) setOpened(result);
               });
             } }),
@@ -4725,12 +4809,14 @@ var require_attachments = __commonJS({
       async decode(link) {
         const plugin = this.plugin;
         if (!plugin.running || plugin.resetting || plugin.autoDecrypt === false) return;
-        let url, channelId, card;
+        let url, channelId, card, messageEpoch = null;
         try {
           url = new URL(link.href);
           if (url.protocol !== "https:" || url.port || url.username || url.password || !["cdn.discordapp.com", "media.discordapp.net"].includes(url.hostname)) return;
           const path = url.pathname.match(/^\/attachments\/(\d+)\/\d+\/([^/]+)$/);
           if (!path || !/\.qcord$/i.test(decodeURIComponent(path[2]))) return;
+          const filename = decodeURIComponent(path[2]);
+          if (/^\d+\.qcord$/i.test(filename)) messageEpoch = Number(filename.split(".")[0]);
           channelId = link.closest('[id^="chat-messages-"]')?.id?.match(/^chat-messages-(\d+)-\d+$/)?.[1];
           if (!channelId || path[1] !== channelId) return;
           plugin.getDirectPartner(channelId);
@@ -4748,7 +4834,7 @@ var require_attachments = __commonJS({
           if (Number(response.headers.get("content-length")) > MAX_DECODED_FILE_SIZE) return;
           const wire = await response.text();
           if (Buffer.byteLength(wire) > MAX_DECODED_FILE_SIZE || !current()) return;
-          const result = await plugin.openFile(wire, channelId);
+          const result = await plugin.openFile(wire, channelId, messageEpoch);
           if (!current()) return;
           const element = document.createElement("div");
           element.className = "qcord-decrypted";
@@ -4822,6 +4908,9 @@ module.exports = class Qcord extends Encapsulation {
     this.outgoingEpoch = {};
     this.autoEncrypt = config.load("auto_encrypt") === true;
     this.autoDecrypt = config.load("auto_decrypt") !== false;
+    this.saveReceipts = config.load("save_receipts") !== false;
+    this.receiptIndexes = /* @__PURE__ */ new Map();
+    this.receiptRevision = config.receiptsRevision;
     this.keyPairs = /* @__PURE__ */ new Map();
     this.keyTasks = /* @__PURE__ */ new Map();
     this.session = {};
@@ -4883,6 +4972,12 @@ module.exports = class Qcord extends Encapsulation {
     this.attachments.scan();
     for (const notify of this.modeListeners) notify();
   }
+  setSaveReceipts(enabled) {
+    if (!this.running || this.resetting) throw new Error("Wait until Qcord is ready.");
+    config.save("save_receipts", Boolean(enabled));
+    this.saveReceipts = Boolean(enabled);
+    for (const notify of this.modeListeners) notify();
+  }
   async prepareAutomaticMessage(channelId, text) {
     if (this.pendingSends.has(channelId)) return this.blockSend("Qcord is already preparing this attachment.");
     const session = this.session, epoch = this.outgoingEpoch;
@@ -4918,7 +5013,7 @@ module.exports = class Qcord extends Encapsulation {
     this.checkSession(session);
     if (!stillAllowed()) throw new Error("Automatic encryption was cancelled. Your draft was kept.");
     if (this.currentChannel() !== draft.channelId) throw new Error("Open the selected recipient's DM before attaching.");
-    const file = new File([draft.wire], `${Date.now()}.qcord`, { type: "application/json" });
+    const file = new File([draft.wire], `${draft.message_epoch}.qcord`, { type: "application/json" });
     await attachments.addFiles({
       channelId: draft.channelId,
       draftType: 0,
@@ -5012,6 +5107,7 @@ module.exports = class Qcord extends Encapsulation {
     this.resets?.clear();
     this.modeListeners?.clear();
     for (const pair of this.keyPairs?.values() || []) pair.privateKey.bytes.fill(0);
+    this.receiptIndexes?.clear();
     this.keyPairs?.clear();
     this.keyTasks?.clear();
     if (this.frame !== null && this.frame !== void 0) cancelAnimationFrame(this.frame);

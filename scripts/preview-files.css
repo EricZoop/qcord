@@ -1,0 +1,16 @@
+.qcord-preview-files { position: fixed; left: 12px; bottom: 8px; display: flex; gap: 6px; max-width: calc(100vw - 24px); flex-wrap: wrap; font: 12px/1.4 system-ui; }
+.qcord-preview-files button, .qcord-file-viewer button { color: #dce5ef; background: #292e38; border: 1px solid #536071; border-radius: 6px; padding: 7px 10px; cursor: pointer; font: inherit; user-select: none; }
+.qcord-preview-files button:disabled { opacity: .5; cursor: default; }
+.qcord-file-viewer { width: min(1120px, 94vw); height: min(780px, 90dvh); max-width: 96vw; max-height: 94dvh; box-sizing: border-box; padding: 18px; border: 1px solid #536071; border-radius: 12px; color: #dce5ef; background: #161b22; font: 13px/1.5 system-ui; }
+.qcord-file-viewer[open] { display: flex; flex-direction: column; gap: 12px; }
+.qcord-file-viewer::backdrop { background: #080a0ecc; }
+.qcord-file-viewer header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qcord-file-viewer header strong { flex: 1; overflow-wrap: anywhere; }
+.qcord-file-viewer p { margin: 0; color: #99a8b9; }
+.qcord-file-viewer pre { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 16px; background: #0d1117; border-radius: 6px; white-space: pre; tab-size: 2; font: 12px/1.7 Consolas, monospace; }
+.qcord-file-viewer .json-key { color: #79c0ff; }
+.qcord-file-viewer .json-string { color: #a5d6ff; }
+.qcord-file-viewer .json-number { color: #d2a8ff; }
+.qcord-file-viewer .json-literal { color: #ffab70; }
+.qcord-file-viewer .json-punctuation { color: #c9d1d9; }
+.qcord-preview-files button:focus-visible, .qcord-file-viewer button:focus-visible, .qcord-file-viewer pre:focus-visible { outline: 2px solid #79c0ff; outline-offset: 2px; }

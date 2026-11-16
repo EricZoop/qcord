@@ -30,12 +30,14 @@ module.exports = class AttachmentDecoder {
     async decode(link) {
         const plugin = this.plugin;
         if (!plugin.running || plugin.resetting || plugin.autoDecrypt === false) return;
-        let url, channelId, card;
+        let url, channelId, card, messageEpoch = null;
         try {
             url = new URL(link.href);
             if (url.protocol !== "https:" || url.port || url.username || url.password || !["cdn.discordapp.com", "media.discordapp.net"].includes(url.hostname)) return;
             const path = url.pathname.match(/^\/attachments\/(\d+)\/\d+\/([^/]+)$/);
             if (!path || !/\.qcord$/i.test(decodeURIComponent(path[2]))) return;
+            const filename = decodeURIComponent(path[2]);
+            if (/^\d+\.qcord$/i.test(filename)) messageEpoch = Number(filename.split(".")[0]);
             channelId = link.closest('[id^="chat-messages-"]')?.id?.match(/^chat-messages-(\d+)-\d+$/)?.[1];
             if (!channelId || path[1] !== channelId) return;
             plugin.getDirectPartner(channelId);
@@ -53,7 +55,7 @@ module.exports = class AttachmentDecoder {
             // BdApi.Net buffers the response; bound text parsing after download too.
             const wire = await response.text();
             if (Buffer.byteLength(wire) > MAX_DECODED_FILE_SIZE || !current()) return;
-            const result = await plugin.openFile(wire, channelId);
+            const result = await plugin.openFile(wire, channelId, messageEpoch);
             if (!current()) return;
 
             const element = document.createElement("div");

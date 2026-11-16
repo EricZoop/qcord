@@ -80,7 +80,7 @@ module.exports = function createContacts(R, ui) {
                             await plugin.generateKeys(); onChanged(); plugin.scheduleMount(); setDkText(""); setConfirmRestore(false); setNotice("Key restored. Share its public key with your contacts.");
                         }); }, {disabled: busy || !dkText.trim(), className: "qc-quiet"})),
                     h("div", {className: "qc-reset-area"}, confirmReset ? h("div", {className: "qc-reset-confirm", role: "alertdialog", "aria-label": "Confirm config reset"},
-                        h("strong", null, "Reset keys and clear config?"), p("This removes your current key, contacts, and saved m values. Old messages need your old backup. A new public key will be generated."),
+                        h("strong", null, "Reset keys and clear config?"), p("This removes your current key, contacts, and saved message keys. Old messages need your old backup. A new public key will be generated."),
                         h("div", {className: "qc-row"}, button("Cancel", () => setConfirmReset(false), {disabled: busy}), button(h(R.Fragment, null, h(Icon, {name: "reset"}), "Reset keys"), () => run(() => plugin.clearConfig()), {className: "qc-danger", disabled: busy}))) :
                         button(h(R.Fragment, null, h(Icon, {name: "reset"}), "Clear config & reset key"), () => setConfirmReset(true), {className: "qc-danger", disabled: busy}))),
                 (error || notice || busy) && h("div", {className: "qc-feedback"}, h("div", {role: "alert", className: "qc-error"}, error), h("div", {role: "status"}, busy ? "Working…" : notice))));

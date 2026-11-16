@@ -58,7 +58,7 @@ test("ML-KEM-768 only: reject other raw keys, DER OIDs, generation, parameters a
     assert.throws(() => PQC.createPublicKey(der.toString("base64")), /768 only/);
 });
 
-test("sender saved m and recipient dk decrypt the same single-envelope message, including exact Unicode", async () => {
+test("sender saved K and recipient dk decrypt the same single-envelope message, including exact Unicode", async () => {
     const {sender, receiver, peer} = await pair();
     const params = parameters();
     for (const text of ["Hello 👋\nα + β", "\uFEFFHello", "\uFEFF\uFEFF", "\0\r\n\uFFFD", " "]) {
@@ -75,9 +75,9 @@ test("sender saved m and recipient dk decrypt the same single-envelope message, 
         assert.equal(incoming.text, text); assert.equal(incoming.key, Buffer.from(k).toString("hex"));
         await sender.saveDraft(draft); await sender.saveDraft(draft);
         const outgoing = await client().openFile(draft.wire, "100");
-        assert.equal(outgoing.text, text); assert.equal(outgoing.key, incoming.key); assert.equal(outgoing.source, "Saved sender m");
+        assert.equal(outgoing.text, text); assert.equal(outgoing.key, incoming.key); assert.equal(outgoing.source, "Saved sender K");
         assert.ok(fileSchema(draft.packet), JSON.stringify(fileSchema.errors)); assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
-        assert.deepEqual(Object.keys(draft.packet).sort(), ["encrypted_message", "qcord_version", "u", "v"]);
+        assert.deepEqual(Object.keys(draft.packet).sort(), ["encrypted_message", "qcord_version", "signature_sigma", "u", "v"]);
         assert.ok(!draft.wire.includes(raw(peer.publicKey))); assert.ok(!draft.wire.includes(Buffer.from(t.m).toString("base64")));
         assert.equal(Buffer.from(draft.packet.encrypted_message.nonce_base64, "base64").length, 12);
         assert.equal(Buffer.from(draft.packet.encrypted_message.authentication_tag_base64, "base64").length, 16);
@@ -118,12 +118,13 @@ test("strict runtime parsing and JSON Schema agree on malformed files", () => {
     assert.throws(() => packet.parse("x".repeat(1024 * 1024 + 1)), /too large/);
 });
 
-test("exact reviewed file is staged after m is saved; changed contacts, wrong DM and empty messages are blocked", async () => {
+test("exact reviewed file is staged after K is saved; changed contacts, wrong DM and empty messages are blocked", async () => {
     const {sender} = await pair(Qcord);
     const draft = await sender.prepareEncapsulation("100", scheme, "Attach this");
     channel = "200"; await assert.rejects(sender.stageDraft(draft), /selected recipient/); channel = "100";
     await sender.stageDraft(draft); assert.equal(staged.length, 1); assert.equal(await staged[0].files[0].file.text(), draft.wire);
-    assert.equal(store.recipients[0].encapsulations[0].m, Buffer.from(draft.trace.m).toString("base64"));
+    assert.deepEqual(store.recipients[0].encapsulations[0], {message_epoch: draft.message_epoch, k: Buffer.from(message.keyFromM(draft.trace.m, PQC.createPublicKey(draft.public_encaps).bytes)).toString("base64")});
+    assert.equal(staged[0].files[0].file.name, `${draft.message_epoch}.qcord`);
     const peer = await PQC.generateKeyPair(scheme); sender.saveRecipients("100", [{user_id: "2", public_encaps: raw(peer.publicKey)}]);
     assert.equal(store.recipients[0].encapsulations.length, 0); await assert.rejects(sender.stageDraft(draft), /key changed/);
     await assert.rejects(sender.prepareEncapsulation("300"), /one-to-one/);
@@ -136,7 +137,7 @@ test("migration cleans a version-2 config with stale prefixed fields and retains
         learning_config_version: 1, learning_key_pairs: {[scheme]: {public_key_spki_base64: stale.publicKey.export({type: "spki", format: "base64"}), private_key_pkcs8_base64: stale.privateKey.export({type: "pkcs8", format: "base64"})}},
         learning_parameter_set: "ml-kem-1024", learning_quantum_conversations: true, learning_dm_partners: [], dm_partners: [], recipients: [{channel_id: "100", user_id: "2", public_encaps: raw(stale.publicKey), encapsulations: []}], parameter_set: "ml-kem-768", encrypt_outgoing_messages: false, decrypt_incoming_messages: false};
     config.initialize();
-    assert.deepEqual(Object.keys(store).sort(), ["config_version", "private_decaps", "public_encaps", "recipients"]);
+    assert.deepEqual(Object.keys(store).sort(), ["auto_decrypt", "auto_encrypt", "config_version", "private_decaps", "private_signature", "public_encaps", "public_signature", "recipients", "save_receipts"]);
     assert.equal(store.public_encaps, raw(current.publicKey)); assert.equal(store.private_decaps, raw(current.privateKey)); assert.equal(store.recipients.length, 1);
     assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
     store.learning_key_pairs = {obsolete: true}; config.initialize(); assert.equal(store.learning_key_pairs, undefined);
@@ -216,4 +217,91 @@ test("an unavailable send hook cannot enable automatic encryption", async () => 
         assert.equal(sender.sendHookReady,false);assert.equal(sender.autoEncrypt,false);assert.equal(sender.autoDecrypt,true);
         assert.throws(()=>sender.setAutomatic("encrypt",true),/unavailable/);
     } finally {BdApi.Patcher.instead=patch;}
+});
+
+
+test("receipt preference skips new keys, preserves old receipts, and survives reload/reset", async () => {
+    const {sender, receiver} = await pair(Qcord);
+    const first = await sender.prepareEncapsulation("100", scheme, "Saved");
+    await sender.stageDraft(first);
+    sender.setSaveReceipts(false);
+    const second = await sender.prepareEncapsulation("100", scheme, "Unsaved");
+    await sender.stageDraft(second);
+    assert.equal(store.save_receipts, false);
+    assert.equal(store.recipients[0].encapsulations.length, 1);
+    assert.equal((await sender.openFile(first.wire, "100", first.message_epoch)).text, "Saved");
+    await assert.rejects(sender.openFile(second.wire, "100", second.message_epoch), /Could not decrypt/);
+    assert.equal((await receiver.decapsulateFile(second.wire)).text, "Unsaved");
+    config.initialize(); assert.equal(config.load("save_receipts"), false);
+    assert.deepEqual(Object.keys(store), ["config_version", "auto_encrypt", "auto_decrypt", "save_receipts", "public_signature", "private_signature", "public_encaps", "private_decaps", "recipients"]);
+    sender.setSaveReceipts(true); await sender.stageDraft(second);
+    assert.equal(store.recipients[0].encapsulations.length, 2);
+    await sender.clearConfig(); assert.equal(sender.saveReceipts, true); assert.equal(store.save_receipts, true);
+});
+
+test("version-3 receipts migrate m to K without losing old messages or config order", async () => {
+    const {sender} = await pair();
+    const draft = await sender.prepareEncapsulation("100", scheme, "Legacy");
+    store.config_version = 3;
+    store.recipients[0].encapsulations = [{m: Buffer.from(draft.trace.m).toString("base64")}];
+    config.initialize();
+    assert.equal(store.config_version, 4);
+    assert.equal(store.recipients[0].encapsulations[0].message_epoch, null);
+    assert.equal(store.recipients[0].encapsulations[0].m, undefined);
+    assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
+    assert.equal((await client().openFile(draft.wire, "100", 123)).text, "Legacy");
+    assert.deepEqual(Object.keys(store), ["config_version", "auto_encrypt", "auto_decrypt", "save_receipts", "public_signature", "private_signature", "public_encaps", "private_decaps", "recipients"]);
+});
+
+test("epoch receipt lookup caches its index and reopens directly without ML-KEM replay", async () => {
+    const {sender} = await pair();
+    const first = await sender.prepareEncapsulation("100", scheme, "First");
+    await sender.saveDraft(first);
+    const originalRestore = PQC.restoreEncapsulation;
+    const originalGet = sender.getRecipients.bind(sender);
+    let reads = 0;
+    sender.getRecipients = (...args) => { reads++; return originalGet(...args); };
+    PQC.restoreEncapsulation = () => { throw new Error("Sender replay must not re-encapsulate"); };
+    try {
+        for (let i = 0; i < 3; i++) assert.equal((await sender.openFile(first.wire, "100", first.message_epoch)).text, "First");
+        assert.equal(reads, 1);
+        await assert.rejects(sender.openFile(first.wire, "100", first.message_epoch + 1), /Could not decrypt/);
+        sender.removePartner("100");
+        await assert.rejects(sender.openFile(first.wire, "100", first.message_epoch), /Could not decrypt/);
+        assert.equal(reads, 2);
+    } finally { PQC.restoreEncapsulation = originalRestore; }
+});
+
+
+test("ML-DSA placeholders are blank, separate from ciphertext, and validated without changing legacy authentication", async () => {
+    const {sender, receiver} = await pair();
+    const draft = await sender.prepareEncapsulation("100", scheme, "Unsigned placeholder");
+    assert.deepEqual(draft.packet.signature_sigma, {c_tilde: "", z: [], h: []});
+    assert.ok(draft.wire.indexOf('"signature_sigma"') > draft.wire.indexOf('"encrypted_message"'));
+    assert.equal(store.public_signature, ""); assert.equal(store.private_signature, "");
+    const legacy = structuredClone(draft.packet); delete legacy.signature_sigma;
+    assert.ok(fileSchema(legacy), JSON.stringify(fileSchema.errors));
+    assert.deepEqual(packet.aad(legacy), packet.aad(draft.packet));
+    assert.equal((await receiver.decapsulateFile(packet.stringify(legacy))).text, "Unsigned placeholder");
+    for (const sigma of [null, {}, {c: "", z: [], h: []}, {c_tilde: "AA==", z: [], h: []}, {c_tilde: "", z: [1], h: []}, {c_tilde: "", z: [], h: [1]}, {c_tilde: "", z: [], h: [], extra: ""}]) {
+        const changed = {...draft.packet, signature_sigma: sigma};
+        assert.equal(fileSchema(changed), false);
+        assert.throws(() => packet.parse(JSON.stringify(changed)), /blank signature_sigma/);
+        assert.throws(() => packet.stringify(changed), /blank signature_sigma/);
+    }
+    const changedConfig = {...store, public_signature: "unimplemented"};
+    assert.equal(configSchema(changedConfig), false);
+});
+
+test("existing version-4 configs gain blank signature keys while preserving receipts and identity", async () => {
+    const {sender} = await pair();
+    const draft = await sender.prepareEncapsulation("100", scheme, "Retained receipt");
+    await sender.saveDraft(draft);
+    const before = structuredClone(store);
+    delete store.public_signature; delete store.private_signature;
+    config.initialize();
+    assert.deepEqual(store, before);
+    assert.equal(Object.keys(store).at(-1), "recipients");
+    assert.equal((await sender.openFile(draft.wire, "100", draft.message_epoch)).text, "Retained receipt");
+    await sender.clearConfig(); assert.equal(store.public_signature, ""); assert.equal(store.private_signature, "");
 });

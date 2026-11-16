@@ -21,6 +21,9 @@ module.exports = class Qcord extends Encapsulation {
         this.outgoingEpoch = {};
         this.autoEncrypt = config.load("auto_encrypt") === true;
         this.autoDecrypt = config.load("auto_decrypt") !== false;
+        this.saveReceipts = config.load("save_receipts") !== false;
+        this.receiptIndexes = new Map();
+        this.receiptRevision = config.receiptsRevision;
         this.keyPairs = new Map();
         this.keyTasks = new Map();
         this.session = {};
@@ -74,6 +77,13 @@ module.exports = class Qcord extends Encapsulation {
         for (const notify of this.modeListeners) notify();
     }
 
+    setSaveReceipts(enabled) {
+        if (!this.running || this.resetting) throw new Error("Wait until Qcord is ready.");
+        config.save("save_receipts", Boolean(enabled));
+        this.saveReceipts = Boolean(enabled);
+        for (const notify of this.modeListeners) notify();
+    }
+
     async prepareAutomaticMessage(channelId, text) {
         if (this.pendingSends.has(channelId)) return this.blockSend("Qcord is already preparing this attachment.");
         const session = this.session, epoch = this.outgoingEpoch;
@@ -106,7 +116,7 @@ module.exports = class Qcord extends Encapsulation {
         this.checkSession(session);
         if (!stillAllowed()) throw new Error("Automatic encryption was cancelled. Your draft was kept.");
         if (this.currentChannel() !== draft.channelId) throw new Error("Open the selected recipient's DM before attaching.");
-        const file = new File([draft.wire], `${Date.now()}.qcord`, {type: "application/json"});
+        const file = new File([draft.wire], `${draft.message_epoch}.qcord`, {type: "application/json"});
         await attachments.addFiles({channelId: draft.channelId, draftType: 0, showLargeMessageDialog: false,
             files: [{file, platform: 1, isThumbnail: false}]});
         BdApi.UI.showToast("Encrypted attachment ready. Press Send to share it.", {type: "success"});
@@ -182,6 +192,7 @@ module.exports = class Qcord extends Encapsulation {
         this.resets?.clear();
         this.modeListeners?.clear();
         for (const pair of this.keyPairs?.values() || []) pair.privateKey.bytes.fill(0);
+        this.receiptIndexes?.clear();
         this.keyPairs?.clear();
         this.keyTasks?.clear();
         if (this.frame !== null && this.frame !== undefined) cancelAnimationFrame(this.frame);

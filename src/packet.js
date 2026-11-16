@@ -10,7 +10,7 @@ function fromCiphertext(ciphertext) {
     const width = 32 * du;
     return {qcord_version: 5,
         u: Array.from({length: k}, (_, i) => decode(ciphertext.slice(i * width, (i + 1) * width), du)),
-        v: decode(ciphertext.slice(k * width), dv)};
+        v: decode(ciphertext.slice(k * width), dv), signature_sigma: {c_tilde: "", z: [], h: []}};
 }
 
 function toCiphertext(file) {
@@ -31,7 +31,8 @@ function parse(text) {
     if (typeof text !== "string" || Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large or invalid.");
     const packet = JSON.parse(text.replace(/^\uFEFF/, ""));
     const ciphertext = toCiphertext(packet);
-    if (Object.keys(packet).sort().join() !== "encrypted_message,qcord_version,u,v") throw new Error("Unexpected Qcord file fields.");
+    if (Object.keys(packet).filter(key => key !== "signature_sigma").sort().join() !== "encrypted_message,qcord_version,u,v") throw new Error("Unexpected Qcord file fields.");
+    if (packet.signature_sigma !== undefined) validateSignaturePlaceholder(packet.signature_sigma);
     const sealed = packet.encrypted_message;
     if (!sealed || typeof sealed !== "object" || Array.isArray(sealed) || Object.keys(sealed).sort().join() !== "authentication_tag_base64,ciphertext_base64,nonce_base64") throw new Error("Invalid encrypted_message fields.");
     decodeBase64(sealed.nonce_base64, 12);
@@ -39,6 +40,15 @@ function parse(text) {
     decodeBase64(sealed.ciphertext_base64);
     return {packet, ciphertext};
 }
+// Reserved fields are blank until signing and verification are implemented.
+function validateSignaturePlaceholder(sigma) {
+    if (!sigma || typeof sigma !== "object" || Array.isArray(sigma)
+        || Object.keys(sigma).sort().join() !== "c_tilde,h,z" || sigma.c_tilde !== ""
+        || !Array.isArray(sigma.z) || sigma.z.length || !Array.isArray(sigma.h) || sigma.h.length) {
+        throw new Error("Expected blank signature_sigma placeholders; ML-DSA is not implemented.");
+    }
+}
+
 // Authenticate the canonical ciphertext structure, independent of JSON formatting.
 const aad = file => Buffer.from(JSON.stringify({qcord_version: file.qcord_version, u: file.u, v: file.v}));
 
@@ -47,6 +57,9 @@ function stringify(file) {
     // Keep each polynomial on one line; whitespace does not change authenticated data.
     const rows = file.u.map(poly => "    [" + poly.join(", ") + "]").join(",\n");
     const sealed = JSON.stringify(file.encrypted_message, null, 2).replace(/\n/g, "\n  ");
-    return `{\n  "qcord_version": ${file.qcord_version},\n  "u": [\n${rows}\n  ],\n  "v": [${file.v.join(", ")}],\n  "encrypted_message": ${sealed}\n}\n`;
+    const sigma = file.signature_sigma;
+    if (sigma !== undefined) validateSignaturePlaceholder(sigma);
+    const signature = sigma === undefined ? "" : `,\n  "signature_sigma": ${JSON.stringify(sigma, null, 2).replace(/\n/g, "\n  ")}`;
+    return `{\n  "qcord_version": ${file.qcord_version},\n  "u": [\n${rows}\n  ],\n  "v": [${file.v.join(", ")}],\n  "encrypted_message": ${sealed}${signature}\n}\n`;
 }
 module.exports = {fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify};

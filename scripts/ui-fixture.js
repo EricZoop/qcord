@@ -5,6 +5,7 @@ import Qcord from "../src/plugin.js";
 import {PQC} from "../src/pqc.js";
 import packet from "../src/packet.js";
 import message from "../src/message.js";
+import {installFilePreview} from "./preview-files.js";
 
 globalThis.Buffer = Buffer;
 const data = {};
@@ -74,4 +75,5 @@ window.qcordTest={plugin,state,actions,data,addAttachment,releaseDownload:url=>d
     data.private_decaps=Buffer.from(contact.privateKey.bytes).toString("base64");
     data.recipients=[];plugin.keyPairs.clear();plugin.keyTasks.clear();plugin.session={};
 }};
+installFilePreview(plugin, data);
 plugin.openComposer();

@@ -38,6 +38,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
         const [opened, setOpened] = R.useState(null), [contactsTab, setContactsTab] = R.useState(null);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
         const [attached, setAttached] = R.useState(false), [stopped, setStopped] = R.useState(!plugin.running);
+        const [saveReceipts, setSaveReceipts] = R.useState(plugin.saveReceipts);
         const [autoEncrypt, setAutoEncrypt] = R.useState(plugin.autoEncrypt), [autoDecrypt, setAutoDecrypt] = R.useState(plugin.autoDecrypt);
         const [keyTab, setKeyTab] = R.useState("matrix"), [part, setPart] = R.useState("u");
         const [vectorIndex, setVectorIndex] = R.useState(0), [matrixCell, setMatrixCell] = R.useState(0), [coefficient, setCoefficient] = R.useState(0);
@@ -53,7 +54,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
         R.useEffect(() => {
             const stop = () => { alive.current = false; ticket.current++; M.wipe(preview.current); setDraft(null); setKeys(null); setStopped(true); };
             const reset = value => { invalidate(); setPartners([]); setKeys(value); setText(""); setOpened(null); setContactsTab(null); setStep(0); setNotice("New key ready. Share your public key with contacts."); };
-            const modes = () => { setAutoEncrypt(plugin.autoEncrypt); setAutoDecrypt(plugin.autoDecrypt); };
+            const modes = () => { setAutoEncrypt(plugin.autoEncrypt); setAutoDecrypt(plugin.autoDecrypt); setSaveReceipts(plugin.saveReceipts); };
             plugin.panels.add(stop); plugin.resets.add(reset); plugin.modeListeners.add(modes);
             return () => { alive.current = false; ticket.current++; M.wipe(preview.current); plugin.panels.delete(stop); plugin.resets.delete(reset); plugin.modeListeners.delete(modes); };
         }, []);
@@ -135,7 +136,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 h("h3", null, "Write the encrypted message"),
                 field("Message", h("textarea", {className: "qc-message-input", rows: 5, maxLength: 64000, value: text, disabled: busy, placeholder: "Your message… Discord Markdown is supported.", onChange: e => editMessage(e.target.value)})),
                 code("AES-256-GCM(K, nonce, message) → ciphertext + tag"),
-                p("One attachment carries u, v, and the encrypted message. Your saved m reopens sent files; the recipient uses their private key."),
+                p("One attachment carries u, v, and the encrypted message. Your saved K reopens sent files when Save receipts is on; the recipient uses their private key."),
                 h("span", {className: "qc-muted"}, "AES-GCM is Qcord's message layer. ML-KEM follows FIPS 203.")),
             h(R.Fragment, null, h("div", {className: "qc-label-row"}, h("strong", null, "Attachment preview"), h("small", {className: "qc-muted"}, `${Buffer.byteLength(draft.wire).toLocaleString()} bytes`)), h("pre", {className: "qc-json", tabIndex: 0, "aria-label": "Exact attachment JSON"}, draft.wire)));
         }
@@ -144,7 +145,8 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
             h("header", {className: "qc-toolbar"},
                 button(h(R.Fragment, null, profile && h(Avatar, {profile}), h("span", null, h("strong", null, profile?.displayName || "Choose recipient"), h("small", null, row ? "Public key saved" : "Save their public key"))), () => setContactsTab("contacts"), {className: "qc-recipient", "aria-label": "Choose recipient"}),
                 h("div", {className: "qc-mode-controls"}, h(Switch, {label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: value => run(async () => plugin.setAutomatic("encrypt", value))}),
-                    h(Switch, {label: "Auto decrypt", checked: autoDecrypt, onChange: value => run(async () => plugin.setAutomatic("decrypt", value))})),
+                    h(Switch, {label: "Auto decrypt", checked: autoDecrypt, onChange: value => run(async () => plugin.setAutomatic("decrypt", value))}),
+                    h(Switch, {label: "Save receipts", checked: saveReceipts, title: "Save keys to reopen your sent messages on this device", onChange: value => run(async () => plugin.setSaveReceipts(value))})),
                 button(h(R.Fragment, null, h(Icon, {name: "keys"}), "Your keys"), () => setContactsTab("keys"), {className: "qc-panel-button", "aria-label": "Your keys"}),
                 button(h(R.Fragment, null, h(Icon, {name: "contacts"}), "Contacts"), () => setContactsTab("contacts"), {className: "qc-panel-button", "aria-label": "Contacts"}),
                 onClose && button("Exit", onClose, {className: "qc-exit", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat"})),
@@ -155,7 +157,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 button(h(R.Fragment, null, h(Icon, {name: "upload"}), "Open file"), () => filePicker.current.click(), {className: "qc-quiet qc-open-file", title: "Decrypt a downloaded .qcord file on this device", disabled: busy}),
                 h("input", {ref: filePicker, hidden: true, type: "file", accept: ".qcord,application/json", "aria-label": "Open saved .qcord file", onChange: e => {
                     const file = e.target.files?.[0]; e.target.value = "";
-                    if (file) run(async () => { if (file.size > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large."); const result = await plugin.openFile(await file.text(), channel); if (alive.current) setOpened(result); });
+                    if (file) run(async () => { if (file.size > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large."); const result = await plugin.openFile(await file.text(), channel, /^\d+\.qcord$/i.test(file.name) ? Number(file.name.split(".")[0]) : null); if (alive.current) setOpened(result); });
                 }}),
                 step < 3 ? button("Next", () => navigate(step + 1), {className: "qc-primary", disabled: busy || !row}) : button(attached ? "Attached" : "Attach .qcord", () => run(async () => { await plugin.stageDraft(draft); if (alive.current) { setAttached(true); setNotice("Ready in Discord. Press Send to share."); } }), {className: "qc-primary", disabled: busy || attached || !draft || !messageReady})),
             opened && h(OpenedMessage, {result: opened, onDismiss: () => setOpened(null)}),

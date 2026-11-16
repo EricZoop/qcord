@@ -10,5 +10,10 @@
     "nonce_base64": "yMnKy8zNzs/Q0dLT",
     "ciphertext_base64": "Y/OVZZmEPmsGV3ok6uzX6U0=",
     "authentication_tag_base64": "WvTAcs46g0pq8RoBp48BWA=="
+  },
+  "signature_sigma": {
+    "c_tilde": "",
+    "z": [],
+    "h": []
   }
 }
