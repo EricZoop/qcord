@@ -45,17 +45,32 @@ test("NTT and multiplication match independent negacyclic ring arithmetic", () =
     for (let x = 0; x < 3329; x++) for (const d of [1, 4, 10]) assert.equal(M.compress(x, d), Math.round(2 ** d * x / 3329) % 2 ** d);
 });
 
-test("ML-KEM-768 only: reject other raw keys, DER OIDs, generation, parameters and packet layouts", async () => {
-    const {ml_kem512, ml_kem1024} = require("@noble/post-quantum/ml-kem.js");
-    for (const impl of [ml_kem512, ml_kem1024]) {
-        const keys = impl.keygen(new Uint8Array(64));
-        assert.throws(() => PQC.createPublicKey(Buffer.from(keys.publicKey).toString("base64")));
-        assert.throws(() => PQC.createPrivateKey(Buffer.from(keys.secretKey).toString("base64")));
+test("all three security levels round-trip keys, traces, packets and signature identities", async () => {
+    reset();
+    const sender = client();
+    for (const level of ["ml-kem-512", "ml-kem-768", "ml-kem-1024"]) {
+        const keys = await sender.generateKeys(level), params = parameters(level);
+        assert.equal(keys.publicKey.bytes.length, params.publicBytes);
+        assert.ok(keys.publicSignature.length > 1000);
+        assert.equal(PQC.validateSignatureKey(keys.publicSignature, level), keys.publicSignature);
+        for (const [key, type] of [[keys.publicKey, "spki"], [keys.privateKey, "pkcs8"]]) {
+            const imported = type === "spki" ? PQC.createPublicKey(key.export({type, format: "base64"})) : PQC.createPrivateKey(key.export({type, format: "base64"}));
+            assert.ok(imported.equals(key));
+        }
+        sender.saveRecipients("100", [{user_id: "2", public_encaps: raw(keys.publicKey), public_signature: keys.publicSignature}], level);
+        let draft = await sender.prepareEncapsulation("100", undefined, "Initial draft");
+        draft = sender.updateDraftMessage(draft, "Every level works");
+        assert.equal(draft.scheme, level);
+        assert.equal(draft.trace.u.length, params.k);
+        assert.ok(fileSchema(draft.packet), JSON.stringify(fileSchema.errors));
+        assert.equal((await sender.decapsulateFile(draft.wire)).text, "Every level works");
+        await sender.saveDraft(draft);
+        assert.equal((await sender.openFile(draft.wire, "100", draft.message_epoch)).text, "Every level works");
+        assert.equal((await client().decapsulateFile(draft.wire)).text, "Every level works", "Identity survives reload");
     }
-    for (const s of ["ml-kem-512", "ml-kem-1024"]) { assert.throws(() => parameters(s), /768 only/); await assert.rejects(PQC.generateKeyPair(s), /768 only/); }
-    const keys = await PQC.generateKeyPair(scheme), der = Buffer.from(keys.publicKey.export({type: "spki", format: "base64"}), "base64");
-    const oid = der.indexOf(Buffer.from("608648016503040402", "hex")); der[oid + 8] = 1;
-    assert.throws(() => PQC.createPublicKey(der.toString("base64")), /768 only/);
+    assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
+    await assert.rejects(PQC.generateKeyPair("unknown"), /Unsupported/);
+    assert.throws(() => PQC.validateSignatureKey("AAAA", scheme), /length/);
 });
 
 test("sender saved K and recipient dk decrypt the same single-envelope message, including exact Unicode", async () => {
@@ -65,8 +80,8 @@ test("sender saved K and recipient dk decrypt the same single-envelope message, 
         const draft = await sender.prepareEncapsulation("100", scheme, text), t = draft.trace;
         const c = packet.toCiphertext(draft.packet);
         assert.deepEqual(c, Buffer.from(t.ciphertext)); assert.equal(c.length, 1088);
-        assert.deepEqual(draft.packet.u, t.u.map(p => p.map(x => M.compress(x, params.du))));
-        assert.deepEqual(draft.packet.v, t.v.map(x => M.compress(x, params.dv)));
+        assert.deepEqual(draft.packet.kem.u, t.u.map(p => p.map(x => M.compress(x, params.du))));
+        assert.deepEqual(draft.packet.kem.v, t.v.map(x => M.compress(x, params.dv)));
         assert.equal(t.aHat.length, 3); assert.equal(t.tHat.length, 3);
         assert.deepEqual(M.decapsulationTrace(peer.privateKey.bytes, c).m, t.m);
         const k = message.keyFromM(t.m, peer.publicKey.bytes);
@@ -77,7 +92,7 @@ test("sender saved K and recipient dk decrypt the same single-envelope message, 
         const outgoing = await client().openFile(draft.wire, "100");
         assert.equal(outgoing.text, text); assert.equal(outgoing.key, incoming.key); assert.equal(outgoing.source, "Saved sender K");
         assert.ok(fileSchema(draft.packet), JSON.stringify(fileSchema.errors)); assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
-        assert.deepEqual(Object.keys(draft.packet).sort(), ["encrypted_message", "qcord_version", "signature_sigma", "u", "v"]);
+        assert.deepEqual(Object.keys(draft.packet).sort(), ["encrypted_message", "kem", "qcord_version", "signature_sigma"]);
         assert.ok(!draft.wire.includes(raw(peer.publicKey))); assert.ok(!draft.wire.includes(Buffer.from(t.m).toString("base64")));
         assert.equal(Buffer.from(draft.packet.encrypted_message.nonce_base64, "base64").length, 12);
         assert.equal(Buffer.from(draft.packet.encrypted_message.authentication_tag_base64, "base64").length, 16);
@@ -90,21 +105,21 @@ test("editing text preserves u/v and m while refreshing the nonce; new encapsula
     const {sender, receiver} = await pair();
     const first = await sender.prepareEncapsulation("100", scheme, "First");
     const edited = sender.updateDraftMessage(first, "Edited");
-    assert.deepEqual(edited.packet.u, first.packet.u); assert.deepEqual(edited.packet.v, first.packet.v); assert.deepEqual(edited.trace.m, first.trace.m);
+    assert.deepEqual(edited.packet.kem.u, first.packet.kem.u); assert.deepEqual(edited.packet.kem.v, first.packet.kem.v); assert.deepEqual(edited.trace.m, first.trace.m);
     assert.notEqual(edited.packet.encrypted_message.nonce_base64, first.packet.encrypted_message.nonce_base64);
     assert.equal((await receiver.decapsulateFile(edited.wire)).text, "Edited");
     const second = await sender.prepareEncapsulation("100", scheme, "Edited");
-    assert.notDeepEqual(second.trace.m, first.trace.m); assert.notDeepEqual(second.packet.u, first.packet.u);
+    assert.notDeepEqual(second.trace.m, first.trace.m); assert.notDeepEqual(second.packet.kem.u, first.packet.kem.u);
     assert.equal(store.recipients[0].encapsulations.length, 0);
 });
 
 test("wrong keys and tampered u/v, nonce, ciphertext or tag fail message authentication", async () => {
     const {sender, receiver} = await pair();
     const draft = await sender.prepareEncapsulation("100", scheme, "Secret"); await sender.saveDraft(draft);
-    for (const mutate of [p => p.u[0][0] ^= 1, p => p.v[0] ^= 1, p => p.encrypted_message.nonce_base64 = flip(p.encrypted_message.nonce_base64), p => p.encrypted_message.ciphertext_base64 = flip(p.encrypted_message.ciphertext_base64), p => p.encrypted_message.authentication_tag_base64 = flip(p.encrypted_message.authentication_tag_base64)]) {
+    for (const mutate of [p => p.kem.u[0][0] ^= 1, p => p.kem.v[0] ^= 1, p => p.encrypted_message.nonce_base64 = flip(p.encrypted_message.nonce_base64), p => p.encrypted_message.ciphertext_base64 = flip(p.encrypted_message.ciphertext_base64), p => p.encrypted_message.authentication_tag_base64 = flip(p.encrypted_message.authentication_tag_base64)]) {
         const changed = structuredClone(draft.packet); mutate(changed); const wire = JSON.stringify(changed);
         await assert.rejects(receiver.decapsulateFile(wire), /Could not decrypt/);
-        if (JSON.stringify(changed.u) === JSON.stringify(draft.packet.u) && JSON.stringify(changed.v) === JSON.stringify(draft.packet.v)) await assert.rejects(sender.openFile(wire, "100"), /Could not decrypt/);
+        if (JSON.stringify(changed.kem.u) === JSON.stringify(draft.packet.kem.u) && JSON.stringify(changed.kem.v) === JSON.stringify(draft.packet.kem.v)) await assert.rejects(sender.openFile(wire, "100"), /Could not decrypt/);
     }
     const wrong = client(); wrong.keyPairs.set(scheme, await PQC.generateKeyPair(scheme));
     await assert.rejects(wrong.decapsulateFile(draft.wire), /Could not decrypt/);
@@ -112,7 +127,7 @@ test("wrong keys and tampered u/v, nonce, ciphertext or tag fail message authent
 
 test("strict runtime parsing and JSON Schema agree on malformed files", () => {
     const valid = JSON.parse(fs.readFileSync("schemas/example.qcord", "utf8"));
-    for (const mutate of [p => p.qcord_version = 4, p => p.parameter_set = "ml-kem-512", p => p.u.pop(), p => p.u[0].pop(), p => p.v.pop(), p => p.v[0] = 16, p => p.u[0][0] = 1024, p => p.v[0] = -1, p => p.v[0] = 1.5, p => p.v[0] = "1", p => p.m = "secret", p => delete p.encrypted_message, p => p.encrypted_message.nonce_base64 = "AA==", p => p.encrypted_message.authentication_tag_base64 = "AA==", p => p.encrypted_message.extra = 1, p => p.encrypted_message.ciphertext_base64 = "!bad"]) {
+    for (const mutate of [p => p.qcord_version = 4, p => p.parameter_set = "ml-kem-512", p => p.kem.u.splice(0, 2), p => p.kem.u[0].pop(), p => p.kem.v.pop(), p => p.kem.v[0] = 16, p => p.kem.u[0][0] = 1024, p => p.kem.v[0] = -1, p => p.kem.v[0] = 1.5, p => p.kem.v[0] = "1", p => p.m = "secret", p => delete p.encrypted_message, p => p.encrypted_message.nonce_base64 = "AA==", p => p.encrypted_message.authentication_tag_base64 = "AA==", p => p.encrypted_message.extra = 1, p => p.encrypted_message.ciphertext_base64 = "!bad"]) {
         const copy = structuredClone(valid); mutate(copy); assert.throws(() => packet.parse(JSON.stringify(copy))); assert.equal(fileSchema(copy), false);
     }
     assert.throws(() => packet.parse("x".repeat(1024 * 1024 + 1)), /too large/);
@@ -137,24 +152,24 @@ test("migration cleans a version-2 config with stale prefixed fields and retains
         learning_config_version: 1, learning_key_pairs: {[scheme]: {public_key_spki_base64: stale.publicKey.export({type: "spki", format: "base64"}), private_key_pkcs8_base64: stale.privateKey.export({type: "pkcs8", format: "base64"})}},
         learning_parameter_set: "ml-kem-1024", learning_quantum_conversations: true, learning_dm_partners: [], dm_partners: [], recipients: [{channel_id: "100", user_id: "2", public_encaps: raw(stale.publicKey), encapsulations: []}], parameter_set: "ml-kem-768", encrypt_outgoing_messages: false, decrypt_incoming_messages: false};
     config.initialize();
-    assert.deepEqual(Object.keys(store).sort(), ["auto_decrypt", "auto_encrypt", "config_version", "private_decaps", "private_signature", "public_encaps", "public_signature", "recipients", "save_receipts"]);
-    assert.equal(store.public_encaps, raw(current.publicKey)); assert.equal(store.private_decaps, raw(current.privateKey)); assert.equal(store.recipients.length, 1);
+    assert.deepEqual(Object.keys(store).sort(), ["auto_decrypt", "auto_encrypt", "auto_verify", "config_version", "key_sets", "recipients", "save_receipts"]);
+    assert.equal(store.key_sets[scheme].public_encaps, raw(current.publicKey)); assert.equal(store.key_sets[scheme].private_decaps, raw(current.privateKey)); assert.equal(store.recipients.length, 1);
     assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
     store.learning_key_pairs = {obsolete: true}; config.initialize(); assert.equal(store.learning_key_pairs, undefined);
 });
 
 test("clear config rotates the public/private pair, deletes contacts and m, invalidates pending work and survives reload", async () => {
-    const {sender} = await pair(); const oldPublic = store.public_encaps, oldPrivate = sender.keyPairs.get(scheme).privateKey.bytes;
+    const {sender} = await pair(); const oldPublic = store.key_sets[scheme].public_encaps, oldPrivate = sender.keyPairs.get(scheme).privateKey.bytes;
     const draft = await sender.prepareEncapsulation("100", scheme, "Old text"); await sender.saveDraft(draft);
     const pending = sender.prepareEncapsulation("100", scheme, "Pending");
     const rejected = assert.rejects(pending, /stopped/);
     const resetting = sender.clearConfig();
     await assert.rejects(sender.prepareEncapsulation("100"), /stopped/);
     const fresh = await resetting; await rejected;
-    assert.notEqual(store.public_encaps, oldPublic); assert.equal(store.public_encaps, raw(fresh.publicKey));
+    assert.notEqual(store.key_sets[scheme].public_encaps, oldPublic); assert.equal(store.key_sets[scheme].public_encaps, raw(fresh.publicKey));
     assert.ok(oldPrivate.every(x => x === 0)); assert.deepEqual(store.recipients, []);
-    assert.ok(PQC.createPublicKey(PQC.createPrivateKey(store.private_decaps)).equals(PQC.createPublicKey(store.public_encaps)));
-    assert.equal(raw((await client().generateKeys()).publicKey), store.public_encaps);
+    assert.ok(PQC.createPublicKey(PQC.createPrivateKey(store.key_sets[scheme].private_decaps)).equals(PQC.createPublicKey(store.key_sets[scheme].public_encaps)));
+    assert.equal(raw((await client().generateKeys()).publicKey), store.key_sets[scheme].public_encaps);
     await assert.rejects(sender.saveDraft(draft), /key changed/);
     assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
 });
@@ -172,10 +187,10 @@ test("both published example configs decrypt the complete example message", asyn
 test("vector rows round-trip without changing the ciphertext or authenticated message", () => {
     const file = JSON.parse(fs.readFileSync("schemas/example.qcord", "utf8"));
     const wire = packet.stringify(file), lines = wire.trimEnd().split("\n");
-    const rows = lines.filter(line => /^    \[/.test(line));
+    const rows = lines.filter(line => /^      \[/.test(line));
     assert.equal(rows.length, 3);
     rows.forEach(line => assert.equal(JSON.parse(line.trim().replace(/,$/, "")).length, 256));
-    const v = lines.find(line => line.startsWith('  "v": ['));
+    const v = lines.find(line => line.startsWith('    "v": ['));
     assert.equal(JSON.parse(v.trim().slice(5).replace(/,$/, "")).length, 256);
     assert.deepEqual(packet.parse(wire).packet, file);
     assert.deepEqual(packet.aad(JSON.parse(wire)), packet.aad(file));
@@ -233,7 +248,7 @@ test("receipt preference skips new keys, preserves old receipts, and survives re
     await assert.rejects(sender.openFile(second.wire, "100", second.message_epoch), /Could not decrypt/);
     assert.equal((await receiver.decapsulateFile(second.wire)).text, "Unsaved");
     config.initialize(); assert.equal(config.load("save_receipts"), false);
-    assert.deepEqual(Object.keys(store), ["config_version", "auto_encrypt", "auto_decrypt", "save_receipts", "public_signature", "private_signature", "public_encaps", "private_decaps", "recipients"]);
+    assert.deepEqual(Object.keys(store), ["auto_encrypt", "auto_decrypt", "auto_verify", "save_receipts", "config_version", "key_sets", "recipients"]);
     sender.setSaveReceipts(true); await sender.stageDraft(second);
     assert.equal(store.recipients[0].encapsulations.length, 2);
     await sender.clearConfig(); assert.equal(sender.saveReceipts, true); assert.equal(store.save_receipts, true);
@@ -245,12 +260,12 @@ test("version-3 receipts migrate m to K without losing old messages or config or
     store.config_version = 3;
     store.recipients[0].encapsulations = [{m: Buffer.from(draft.trace.m).toString("base64")}];
     config.initialize();
-    assert.equal(store.config_version, 4);
+    assert.equal(store.config_version, 5);
     assert.equal(store.recipients[0].encapsulations[0].message_epoch, null);
     assert.equal(store.recipients[0].encapsulations[0].m, undefined);
     assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
     assert.equal((await client().openFile(draft.wire, "100", 123)).text, "Legacy");
-    assert.deepEqual(Object.keys(store), ["config_version", "auto_encrypt", "auto_decrypt", "save_receipts", "public_signature", "private_signature", "public_encaps", "private_decaps", "recipients"]);
+    assert.equal(Object.keys(store).at(-1), "recipients");
 });
 
 test("epoch receipt lookup caches its index and reopens directly without ML-KEM replay", async () => {
@@ -278,7 +293,7 @@ test("ML-DSA placeholders are blank, separate from ciphertext, and validated wit
     const draft = await sender.prepareEncapsulation("100", scheme, "Unsigned placeholder");
     assert.deepEqual(draft.packet.signature_sigma, {c_tilde: "", z: [], h: []});
     assert.ok(draft.wire.indexOf('"signature_sigma"') > draft.wire.indexOf('"encrypted_message"'));
-    assert.equal(store.public_signature, ""); assert.equal(store.private_signature, "");
+    assert.ok(store.key_sets[scheme].public_signature); assert.ok(store.key_sets[scheme].private_signature);
     const legacy = structuredClone(draft.packet); delete legacy.signature_sigma;
     assert.ok(fileSchema(legacy), JSON.stringify(fileSchema.errors));
     assert.deepEqual(packet.aad(legacy), packet.aad(draft.packet));
@@ -293,15 +308,42 @@ test("ML-DSA placeholders are blank, separate from ciphertext, and validated wit
     assert.equal(configSchema(changedConfig), false);
 });
 
-test("existing version-4 configs gain blank signature keys while preserving receipts and identity", async () => {
+test("version-4 migration groups every level without changing identities, toggles or receipts", async () => {
     const {sender} = await pair();
+    for (const level of ["ml-kem-512", "ml-kem-1024"]) await sender.generateKeys(level);
     const draft = await sender.prepareEncapsulation("100", scheme, "Retained receipt");
     await sender.saveDraft(draft);
-    const before = structuredClone(store);
-    delete store.public_signature; delete store.private_signature;
+    const before = structuredClone(store), sets = before.key_sets;
+    store = {config_version: 4, auto_encrypt: true, auto_decrypt: false, auto_verify: true, save_receipts: false,
+        public_encaps: sets[scheme].public_encaps, private_decaps: sets[scheme].private_decaps, public_signature: "", private_signature: "",
+        security_keys: Object.fromEntries(["ml-kem-512", "ml-kem-1024"].map(level => [level, {public_encaps: sets[level].public_encaps, private_decaps: sets[level].private_decaps}])),
+        signature_keys: Object.fromEntries(Object.entries(sets).map(([level, keys]) => [level, {public_signature: keys.public_signature, private_signature: keys.private_signature}])), recipients: before.recipients};
     config.initialize();
-    assert.deepEqual(store, before);
-    assert.equal(Object.keys(store).at(-1), "recipients");
-    assert.equal((await sender.openFile(draft.wire, "100", draft.message_epoch)).text, "Retained receipt");
-    await sender.clearConfig(); assert.equal(store.public_signature, ""); assert.equal(store.private_signature, "");
+    assert.equal(store.config_version, 5);
+    assert.deepEqual(store.key_sets, sets);
+    assert.deepEqual(Object.keys(store).slice(0, 4), ["auto_encrypt", "auto_decrypt", "auto_verify", "save_receipts"]);
+    for (const keys of Object.values(store.key_sets)) assert.deepEqual(Object.keys(keys), ["public_encaps", "private_decaps", "public_signature", "private_signature"]);
+    assert.deepEqual([store.auto_encrypt, store.auto_decrypt, store.auto_verify, store.save_receipts], [true, false, true, false]);
+    assert.ok(configSchema(store), JSON.stringify(configSchema.errors));
+    const snapshot = structuredClone(store); config.initialize(); assert.deepEqual(store, snapshot);
+    assert.equal((await client().openFile(draft.wire, "100", draft.message_epoch)).text, "Retained receipt");
+    const oldSignature = store.key_sets[scheme].public_signature;
+    await sender.clearConfig(); assert.notEqual(store.key_sets[scheme].public_signature, oldSignature);
+});
+
+test("legacy version-5 files still decrypt with their original authenticated structure", async () => {
+    const {sender, receiver} = await pair();
+    const draft = await sender.prepareEncapsulation("100", scheme, "Original file");
+    const legacy = {qcord_version: 5, u: draft.packet.kem.u, v: draft.packet.kem.v};
+    const key = message.keyFromM(draft.trace.m, PQC.createPublicKey(draft.public_encaps).bytes);
+    try {
+        legacy.encrypted_message = message.seal("Original file", key, legacy);
+        assert.ok(fileSchema(legacy), JSON.stringify(fileSchema.errors));
+        assert.equal((await receiver.decapsulateFile(packet.stringify(legacy))).text, "Original file");
+        const moved = {qcord_version: 6, kem: {u: legacy.u, v: legacy.v}, encrypted_message: legacy.encrypted_message};
+        await assert.rejects(receiver.decapsulateFile(packet.stringify(moved)), /Could not decrypt/, "Changing authenticated envelope without resealing fails");
+        const mixed = {...draft.packet, u: legacy.u};
+        assert.throws(() => packet.parse(JSON.stringify(mixed)), /Unexpected/);
+        assert.equal(fileSchema(mixed), false);
+    } finally { key.fill(0); }
 });

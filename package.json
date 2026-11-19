@@ -2,7 +2,7 @@
   "name": "qcord",
   "version": "2.4.0",
   "private": true,
-  "description": "Qcord: ML-KEM-768 keys and encrypted message attachments for BetterDiscord",
+  "description": "Qcord: ML-KEM keys, ML-DSA public identities, and encrypted message attachments for BetterDiscord",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node scripts/test.cjs",

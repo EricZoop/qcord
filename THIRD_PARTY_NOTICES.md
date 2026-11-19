@@ -78,6 +78,10 @@ Icons licensed under Creative Commons Attribution 4.0 International:
 https://creativecommons.org/licenses/by/4.0/
 https://fontawesome.com/license/free
 
+Lucide icons: user-search, chevron-down, check, shield-x
+Copyright Lucide Contributors. ISC license: https://lucide.dev/license
+SVG paths supplied by the user; rendered using currentColor.
+
 
 Inter typeface
 

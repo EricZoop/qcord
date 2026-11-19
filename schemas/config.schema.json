@@ -1,27 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Qcord ML-KEM-768 local config",
-  "description": "One local key pair and recipients with optional saved message keys. Keys are raw Base64.",
+  "title": "Qcord local config",
+  "description": "Toggle settings first, followed by each security level with encapsulation, decapsulation, signature public and signature private keys in order. Empty keys are generated when the level is first used.",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "auto_encrypt",
+    "auto_decrypt",
+    "auto_verify",
+    "save_receipts",
     "config_version",
-    "public_signature",
-    "private_signature",
+    "key_sets",
     "recipients"
   ],
-  "dependentRequired": {
-    "public_encaps": [
-      "private_decaps"
-    ],
-    "private_decaps": [
-      "public_encaps"
-    ]
-  },
   "properties": {
-    "config_version": {
-      "const": 4
-    },
     "auto_encrypt": {
       "type": "boolean",
       "default": false
@@ -30,28 +22,219 @@
       "type": "boolean",
       "default": true
     },
+    "auto_verify": {
+      "type": "boolean",
+      "default": false
+    },
     "save_receipts": {
       "type": "boolean",
       "default": true
     },
-    "public_signature": {
-      "type": "string",
-      "const": "",
-      "description": "Reserved ML-DSA public key; no key is generated yet."
+    "config_version": {
+      "const": 5
     },
-    "private_signature": {
-      "type": "string",
-      "const": "",
-      "description": "Reserved ML-DSA private key; no key is generated yet."
-    },
-    "public_encaps": {
-      "$ref": "#/$defs/ek"
-    },
-    "private_decaps": {
-      "type": "string",
-      "minLength": 3200,
-      "maxLength": 3200,
-      "pattern": "^[A-Za-z0-9+/]{3200}$"
+    "key_sets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ml-kem-512",
+        "ml-kem-768",
+        "ml-kem-1024"
+      ],
+      "properties": {
+        "ml-kem-512": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "public_encaps",
+            "private_decaps",
+            "public_signature",
+            "private_signature"
+          ],
+          "properties": {
+            "public_encaps": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 1068,
+                  "maxLength": 1068
+                }
+              ]
+            },
+            "private_decaps": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 2176,
+                  "maxLength": 2176
+                }
+              ]
+            },
+            "public_signature": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 1752,
+                  "maxLength": 1752
+                }
+              ]
+            },
+            "private_signature": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 3416,
+                  "maxLength": 3416
+                }
+              ]
+            }
+          }
+        },
+        "ml-kem-768": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "public_encaps",
+            "private_decaps",
+            "public_signature",
+            "private_signature"
+          ],
+          "properties": {
+            "public_encaps": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 1580,
+                  "maxLength": 1580
+                }
+              ]
+            },
+            "private_decaps": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 3200,
+                  "maxLength": 3200
+                }
+              ]
+            },
+            "public_signature": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 2604,
+                  "maxLength": 2604
+                }
+              ]
+            },
+            "private_signature": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 5376,
+                  "maxLength": 5376
+                }
+              ]
+            }
+          }
+        },
+        "ml-kem-1024": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "public_encaps",
+            "private_decaps",
+            "public_signature",
+            "private_signature"
+          ],
+          "properties": {
+            "public_encaps": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 2092,
+                  "maxLength": 2092
+                }
+              ]
+            },
+            "private_decaps": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 4224,
+                  "maxLength": 4224
+                }
+              ]
+            },
+            "public_signature": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 3456,
+                  "maxLength": 3456
+                }
+              ]
+            },
+            "private_signature": {
+              "anyOf": [
+                {
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                  "minLength": 6528,
+                  "maxLength": 6528
+                }
+              ]
+            }
+          }
+        }
+      }
     },
     "recipients": {
       "type": "array",
@@ -101,6 +284,10 @@
                 }
               }
             }
+          },
+          "public_signature": {
+            "type": "string",
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
           }
         }
       }
@@ -112,10 +299,26 @@
       "pattern": "^[0-9]{1,20}$"
     },
     "ek": {
-      "type": "string",
-      "minLength": 1580,
-      "maxLength": 1580,
-      "pattern": "^[A-Za-z0-9+/]{1578}[AEIMQUYcgkosw048]=$"
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "minLength": 1068,
+          "maxLength": 1068
+        },
+        {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "minLength": 1580,
+          "maxLength": 1580
+        },
+        {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "minLength": 2092,
+          "maxLength": 2092
+        }
+      ]
     }
   }
 }

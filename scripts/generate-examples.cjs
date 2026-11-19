@@ -4,6 +4,7 @@
 const {mkdirSync, writeFileSync} = require("node:fs");
 const {ml_kem768} = require("@noble/post-quantum/ml-kem.js");
 const {fromCiphertext, aad, stringify} = require("../src/packet");
+const {ml_dsa65} = require("@noble/post-quantum/ml-dsa.js");
 const {gcm} = require("@noble/ciphers/aes.js");
 const raw = bytes => Buffer.from(bytes).toString("base64");
 const recipient = ml_kem768.keygen(Uint8Array.from({length: 64}, (_, i) => i));
@@ -17,10 +18,15 @@ const nonce = Uint8Array.from({length: 12}, (_, i) => 200 + i); // PUBLIC exampl
 const sealed = gcm(encapsulated.sharedSecret, nonce, Uint8Array.from(aad(file))).encrypt(new TextEncoder().encode("Hello from Qcord."));
 file.encrypted_message = {nonce_base64: raw(nonce), ciphertext_base64: raw(sealed.slice(0, -16)), authentication_tag_base64: raw(sealed.slice(-16))};
 writeFileSync("schemas/example.qcord", stringify(file));
-write("schemas/example.qcord.config.json", {config_version: 4, auto_encrypt: false, auto_decrypt: true, save_receipts: true,
-    public_signature: "", private_signature: "",
-    public_encaps: raw(sender.publicKey), private_decaps: raw(sender.secretKey),
-    recipients: [{channel_id: "100", user_id: "2", public_encaps: raw(recipient.publicKey), encapsulations: [{message_epoch: 1794690000000, k: raw(encapsulated.sharedSecret)}]}]});
-write("schemas/example.recipient.config.json", {config_version: 4, auto_encrypt: false, auto_decrypt: true, save_receipts: true,
-    public_signature: "", private_signature: "",
-    public_encaps: raw(recipient.publicKey), private_decaps: raw(recipient.secretKey), recipients: []});
+const config = (identity, seed, recipients) => {
+    const signature = ml_dsa65.keygen(new Uint8Array(32).fill(seed));
+    const key_sets = {};
+    for (const level of ["ml-kem-512", "ml-kem-768", "ml-kem-1024"]) key_sets[level] = {
+        public_encaps: level === "ml-kem-768" ? raw(identity.publicKey) : "",
+        private_decaps: level === "ml-kem-768" ? raw(identity.secretKey) : "",
+        public_signature: level === "ml-kem-768" ? raw(signature.publicKey) : "",
+        private_signature: level === "ml-kem-768" ? raw(signature.secretKey) : ""};
+    return {auto_encrypt: false, auto_decrypt: true, auto_verify: false, save_receipts: true, config_version: 5, key_sets, recipients};
+};
+write("schemas/example.qcord.config.json", config(sender, 1, [{channel_id: "100", user_id: "2", public_encaps: raw(recipient.publicKey), encapsulations: [{message_epoch: 1794690000000, k: raw(encapsulated.sharedSecret)}]}]));
+write("schemas/example.recipient.config.json", config(recipient, 2, []));

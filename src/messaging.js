@@ -16,7 +16,8 @@ module.exports = class Encapsulation {
         if (this.keyTasks.has(scheme)) return this.keyTasks.get(scheme);
         const session = this.session;
         const task = (async () => {
-            const publicEncaps = config.load("public_encaps"), privateDecaps = config.load("private_decaps");
+            const saved = config.load("key_sets")?.[scheme] || {};
+            const publicEncaps = saved.public_encaps, privateDecaps = saved.private_decaps;
             let keys;
             if (publicEncaps || privateDecaps) {
                 keys = {scheme, publicKey: PQC.createPublicKey(publicEncaps), privateKey: PQC.createPrivateKey(privateDecaps)};
@@ -24,10 +25,19 @@ module.exports = class Encapsulation {
             } else {
                 keys = {scheme, ...await PQC.generateKeyPair(scheme)};
                 this.checkSession(session);
-                config.save("public_encaps", raw(keys.publicKey));
-                config.save("private_decaps", raw(keys.privateKey));
+                config.saveKeySet(scheme, {public_encaps: raw(keys.publicKey), private_decaps: raw(keys.privateKey)});
             }
             this.checkSession(session);
+            if (!saved.public_signature || !saved.private_signature) {
+                const pair = await PQC.generateSignatureKeys(scheme);
+                try {
+                    this.checkSession(session);
+                    config.saveKeySet(scheme, {public_signature: Buffer.from(pair.publicKey).toString("base64"), private_signature: Buffer.from(pair.privateKey).toString("base64")});
+                } finally { pair.privateKey.fill(0); }
+            }
+            const identity = config.load("key_sets")[scheme];
+            keys.publicSignature = identity.public_signature;
+            keys.privateSignature = identity.private_signature;
             this.keyPairs.set(scheme, keys);
             return keys;
         })();
@@ -46,9 +56,9 @@ module.exports = class Encapsulation {
         return rows.map(row => ({...row, key_algorithm: PQC.createPublicKey(row.public_encaps).asymmetricKeyType}));
     }
 
-    getRecipients(channelId, scheme = ACTIVE_SCHEME) {
-        parameters(scheme);
-        return this.getSavedPartners().filter(row => row.channel_id === channelId && row.key_algorithm === scheme);
+    getRecipients(channelId, scheme) {
+        if (scheme) parameters(scheme);
+        return this.getSavedPartners().filter(row => row.channel_id === channelId && (!scheme || row.key_algorithm === scheme));
     }
 
     getPartnerProfile(userId) {
@@ -73,13 +83,13 @@ module.exports = class Encapsulation {
         const partner = this.getDirectPartner(channelId);
         parameters(scheme);
         if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Save one public key for your DM partner.");
-        const {user_id, public_encaps} = rows[0];
+        const {user_id, public_encaps, public_signature = ""} = rows[0];
         if (user_id !== partner.userId) throw new Error("The user ID must match this DM's recipient.");
         const key = PQC.createPublicKey(public_encaps);
         if (key.asymmetricKeyType !== scheme) throw new Error("The key does not match the selected ML-KEM parameter set.");
         const encoded = raw(key);
         const previous = this.getRecipients(channelId, scheme)[0];
-        const entry = {channel_id: channelId, user_id, public_encaps: encoded,
+        const entry = {channel_id: channelId, user_id, public_encaps: encoded, public_signature: public_signature ? PQC.validateSignatureKey(public_signature, scheme) : "",
             encapsulations: previous?.public_encaps === encoded ? previous.encapsulations : []};
         const saved = config.load("recipients") || [];
         const index = saved.findIndex(row => row.channel_id === channelId);
@@ -95,7 +105,8 @@ module.exports = class Encapsulation {
         this.attachments?.clear(); this.scheduleMount?.();
     }
 
-    async prepareEncapsulation(channelId, scheme = ACTIVE_SCHEME, text = "") {
+    async prepareEncapsulation(channelId, scheme, text = "") {
+        scheme ||= this.getSavedPartners().find(row => row.channel_id === channelId)?.key_algorithm || ACTIVE_SCHEME;
         this.checkSession(this.session);
         const partner = this.getDirectPartner(channelId);
         const row = this.getRecipients(channelId, scheme)[0];
@@ -104,7 +115,7 @@ module.exports = class Encapsulation {
         const result = await PQC.encapsulate(PQC.createPublicKey(row.public_encaps), true);
         try {
             this.checkSession(session);
-            const file = packet.fromCiphertext(result.ciphertext);
+            const file = packet.fromCiphertext(result.ciphertext, scheme);
             file.encrypted_message = message.seal(text, result.sharedKey, file);
             return this.serializeDraft({channelId, scheme, public_encaps: row.public_encaps, message_epoch: Date.now(), packet: file, trace: result.trace});
         } catch (error) { require("./mlkem").wipe(result.trace); throw error; }
@@ -161,8 +172,8 @@ module.exports = class Encapsulation {
         const session = this.session;
         this.checkSession(session);
         const {packet: file, ciphertext} = packet.parse(text);
-        const scheme = ACTIVE_SCHEME;
-        if (!this.keyPairs.has(scheme) && !config.load("private_decaps")) throw new Error("No saved decapsulation key.");
+        const scheme = packet.schemeOf(file);
+        if (!this.keyPairs.has(scheme) && !config.load("key_sets")?.[scheme]?.private_decaps) throw new Error("No saved decapsulation key.");
         const keys = await this.generateKeys(scheme);
         const sharedKey = await PQC.decapsulate(keys.privateKey, ciphertext);
         try {
@@ -195,7 +206,7 @@ module.exports = class Encapsulation {
         for (const record of candidates) {
             const key = packet.decodeBase64(record.k, 32);
             try {
-                return {scheme: ACTIVE_SCHEME, key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K"};
+                return {scheme: packet.schemeOf(file), key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K"};
             } catch { /* Another receipt may share the filename epoch. */ }
             finally { key.fill(0); }
         }
@@ -215,9 +226,11 @@ module.exports = class Encapsulation {
             keys = {scheme: ACTIVE_SCHEME, ...await PQC.generateKeyPair(ACTIVE_SCHEME)};
             if (!this.running || this.session !== session) throw new Error("Qcord stopped during reset.");
             config.reset(keys);
-            this.keyPairs.set(ACTIVE_SCHEME, keys);
-            this.autoEncrypt = false; this.autoDecrypt = true; this.saveReceipts = true; this.outgoingEpoch = {};
+
+            this.autoVerify = false; this.autoEncrypt = false; this.autoDecrypt = true; this.saveReceipts = true; this.outgoingEpoch = {};
             this.resetting = false;
+            keys.privateKey.bytes.fill(0);
+            keys = await this.generateKeys(ACTIVE_SCHEME);
             this.mountButtons?.();
             for (const notify of this.modeListeners || []) notify();
             for (const reset of this.resets || []) reset(keys);

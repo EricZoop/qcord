@@ -4,10 +4,11 @@ const {gcm} = require("@noble/ciphers/aes.js");
 const {sha3_256, sha3_512} = require("@noble/hashes/sha3.js");
 const {randomBytes} = require("./pqc");
 const {decodeBase64, aad} = require("./packet");
+const {PARAMETER_SETS} = require("./parameters");
 const {MAX_DECODED_FILE_SIZE} = require("./constants");
 
 function keyFromM(m, ek) {
-    if (m.length !== 32 || ek.length !== 1184) throw new Error("Expected 32-byte m and ML-KEM-768 public key.");
+    if (m.length !== 32 || !Object.values(PARAMETER_SETS).some(p => p.publicBytes === ek.length)) throw new Error("Expected 32-byte m and a supported ML-KEM public key.");
     const kr = sha3_512(Uint8Array.from([...m, ...sha3_256(ek)]));
     try { return kr.slice(0, 32); } finally { kr.fill(0); }
 }

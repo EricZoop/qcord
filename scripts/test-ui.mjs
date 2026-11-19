@@ -14,6 +14,15 @@ try {
     const composer = page.getByRole("dialog", {name: "Qcord encapsulation", exact: true}); await composer.waitFor();
     await page.evaluate(()=>document.fonts.load('14px "Qcord Inter"'));
     assert.equal(await page.evaluate(()=>[...document.fonts].some(face=>face.family==='Qcord Inter'&&face.status==='loaded')),true,"Bundled Inter loads in the browser");
+    const favicon = await page.request.get(new URL('/favicon.svg', url).href);
+    assert.match(favicon.headers()['content-type'], /image\/svg/);
+    assert.match(await favicon.text(), /fill="white"/);
+    assert.equal(await composer.locator('.qc-toolbar > button').first().getAttribute('aria-label'), 'Choose recipient');
+    assert.equal(await composer.getByRole('button', {name:'Contacts', exact:true}).count(), 0);
+    assert.deepEqual(await composer.locator('.qc-toolbar button').evaluateAll(els => els.map(el => el.getAttribute('aria-label') || el.textContent)), ['Choose recipient', 'Your keys', 'Auto encrypt', 'Auto decrypt', 'Auto verify', 'Save receipts', 'Exit Qcord']);
+    const toolbarFill = await composer.locator('.qc-toolbar').evaluate(el => ({right:el.getBoundingClientRect().right, exit:el.lastElementChild.getBoundingClientRect().right, recipient:el.firstElementChild.getBoundingClientRect().width}));
+    assert.ok(Math.abs(toolbarFill.right - toolbarFill.exit) < 1);
+    assert.ok(toolbarFill.recipient > 140, 'Recipient fills remaining toolbar space');
     const idle = () => page.waitForFunction(() => !document.querySelector('.qc-main[aria-busy="true"]'));
     const stage = async name => { await composer.getByRole("tab", {name, exact: true}).click(); await idle(); };
     const noOuterOverflow = async () => {
@@ -40,22 +49,24 @@ try {
     await filesDock.getByRole("button", {name: "qcord.config.json", exact: true}).click();
     await fileViewer.waitFor();
     const previewConfig = JSON.parse(await fileViewer.getByLabel("File contents").textContent());
-    assert.equal(previewConfig.public_signature, ""); assert.equal(previewConfig.private_signature, "");
+    assert.deepEqual(Object.keys(previewConfig).slice(0,4), ['auto_encrypt','auto_decrypt','auto_verify','save_receipts']);
+    for (const keys of Object.values(previewConfig.key_sets)) assert.deepEqual(Object.keys(keys), ['public_encaps','private_decaps','public_signature','private_signature']);
+    assert.equal(previewConfig.config_version, 5); assert.ok(previewConfig.key_sets["ml-kem-768"].public_signature);
     assert.ok(await fileViewer.locator(".json-key").count() > 0);
     assert.equal(await fileViewer.locator(".json-key").first().evaluate(el => getComputedStyle(el).color), "rgb(121, 192, 255)");
     await fileViewer.getByRole("button", {name: "Refresh", exact: true}).click();
     assert.equal(await fileViewer.getByLabel("File contents").textContent(), await page.evaluate(() => JSON.stringify(window.qcordTest.data, null, 2) + "\n"));
     await fileViewer.getByRole("button", {name: "Close file", exact: true}).click();
     await fileViewer.waitFor({state: "detached"});
-    assert.equal(await composer.evaluate(el=>getComputedStyle(el).backgroundColor),"rgb(32, 34, 38)","Panel surface is fully opaque");
+    assert.equal(await composer.evaluate(el=>getComputedStyle(el).backgroundColor),"rgb(17, 17, 17)","Panel surface is fully opaque");
     assert.ok((await composer.locator("button,button *").evaluateAll(els=>els.map(el=>getComputedStyle(el).userSelect))).every(value=>value==="none"),"Button text and icons cannot be selected");
     assert.equal(await composer.getByRole("button",{name:"Previous step",exact:true}).isDisabled(),true);
     assert.ok(await composer.locator(".qc-variables").first().evaluate(el=>el.getBoundingClientRect().top)<await composer.locator(".qc-equation").first().evaluate(el=>el.getBoundingClientRect().top));
-    const toolbarHeights=()=>composer.locator(".qc-toolbar > *,.qc-toolbar button").evaluateAll(els=>els.map(el=>el.getBoundingClientRect().height));
+    const toolbarHeights=()=>composer.locator(".qc-toolbar > button,.qc-toolbar button").evaluateAll(els=>els.map(el=>el.getBoundingClientRect().height));
     assert.ok((await toolbarHeights()).every(height=>height===44),JSON.stringify(await toolbarHeights()));
     const exitStyle=await composer.getByRole("button",{name:"Exit Qcord",exact:true}).evaluate(el=>{const s=getComputedStyle(el);return {width:s.borderWidth,style:s.borderStyle,color:s.borderColor};});
-    assert.equal(exitStyle.width,"1px");assert.equal(exitStyle.style,"solid");assert.notEqual(exitStyle.color,"rgba(0, 0, 0, 0)");
-    assert.equal(await composer.getByRole("button",{name:"Exit Qcord",exact:true}).locator("svg").count(),0,"Exit is a bordered text button");
+    assert.equal(exitStyle.width,"1px");assert.equal(exitStyle.style,"solid");assert.equal(exitStyle.color,"rgba(0, 0, 0, 0)");
+    assert.equal(await composer.getByRole("button",{name:"Exit Qcord",exact:true}).locator("svg").count(),0,"Exit is a quiet text button");
     assert.ok(await composer.locator(".qc-panel-button").first().evaluate(el=>getComputedStyle(el).fontFamily.includes("Qcord Inter")));
     assert.ok(await composer.locator(".qc-equation").first().evaluate(el=>getComputedStyle(el).fontFamily.includes("Cambria Math")),"Equation typography is preserved");
     const redundantWrites=await page.evaluate(async()=>{
@@ -78,6 +89,20 @@ try {
     const dragged=Number(await scrubber.inputValue());assert.ok(dragged>=152&&dragged<=155,"Click and drag updates the selected coefficient");
     await page.mouse.move(graphBounds.x+graphBounds.width*.9,graphBounds.y+graphBounds.height*.5);
     assert.equal(Number(await scrubber.inputValue()),dragged,"Releasing the pointer stops scrubbing");
+    for (const index of [0, 1, 128, 254, 255]) {
+        await scrubber.fill(String(index));
+        assert.equal(await composer.locator('.qc-coefficient-strip > :nth-child(4)').getAttribute('aria-pressed'), 'true');
+        assert.equal(await composer.locator('.qc-coefficient-strip > :nth-child(4) small').textContent(), String(index));
+    }
+    const toolbarGaps = await composer.locator('.qc-toolbar button').evaluateAll(elements => {
+        const rects = elements.map(el => el.getBoundingClientRect());
+        return rects.slice(1).map((rect, i) => rect.left - rects[i].right);
+    });
+    assert.ok(toolbarGaps.every(gap => Math.abs(gap - 8) < 1), JSON.stringify(toolbarGaps));
+    const verifySwitch = composer.getByRole('switch', {name: 'Auto verify', exact: true});
+    await verifySwitch.click(); await idle();
+    assert.equal(await page.evaluate(() => window.qcordTest.data.auto_verify), true);
+    await verifySwitch.click(); await idle();
     const contactPublic=await page.evaluate(()=>window.qcordTest.data.recipients[0].public_encaps);
     await composer.getByRole("button",{name:"Choose recipient",exact:true}).click();
     const contactEditor=page.getByRole("dialog",{name:"Contacts",exact:true});
@@ -86,16 +111,25 @@ try {
     assert.equal(await composer.evaluate(el=>getComputedStyle(el).backdropFilter),"none");
     assert.equal(await composer.evaluate(el=>getComputedStyle(el,"::backdrop").backgroundColor),"rgba(0, 0, 0, 0)");
     assert.equal(await contactEditor.evaluate(el=>getComputedStyle(el).backdropFilter),"none");
-    assert.equal(await contactEditor.evaluate(el=>getComputedStyle(el).backgroundColor),"rgb(32, 34, 38)");
+    assert.equal(await contactEditor.evaluate(el=>getComputedStyle(el).backgroundColor),"rgb(17, 17, 17)");
     assert.equal(await contactEditor.evaluate(el=>getComputedStyle(el,"::backdrop").backdropFilter),"none");
-    assert.equal(await contactEditor.getByRole("textbox").count(),1,"One field edits the saved contact key");
-    await contactEditor.getByLabel("Recipient public key").fill(contactPublic+"\n");
+    assert.equal(await contactEditor.getByRole("textbox").count(),2,"One field edits the saved contact key");
+    const contactKeyBounds = await contactEditor.getByLabel('Recipient public key').boundingBox();
+    const contactSignatureBounds = await contactEditor.getByLabel('Public signature key', {exact:true}).boundingBox();
+    assert.equal(contactKeyBounds.y, contactSignatureBounds.y, 'Recipient public keys sit side by side');
+    assert.ok(contactSignatureBounds.x > contactKeyBounds.x);
+    const fieldBeforeFocus = await contactEditor.getByLabel('Recipient public key').evaluate(el => ({border:getComputedStyle(el).borderColor, outline:getComputedStyle(el).outlineWidth}));
+    await contactEditor.getByLabel('Recipient public key').focus();
+    assert.deepEqual(await contactEditor.getByLabel('Recipient public key').evaluate(el => ({border:getComputedStyle(el).borderColor, outline:getComputedStyle(el).outlineWidth})), fieldBeforeFocus, 'Text interaction adds no border or outline');
+    const publicSignature = await page.evaluate(() => window.qcordTest.data.key_sets['ml-kem-768'].public_signature);
+    await contactEditor.getByLabel("Recipient public key").fill(JSON.stringify({public_encaps: contactPublic, public_signature: publicSignature}));
+    assert.equal(await contactEditor.getByLabel('Public signature key', {exact: true}).inputValue(), publicSignature);
     await contactEditor.getByRole("button",{name:"Save key",exact:true}).click();
     await contactEditor.getByRole("button",{name:"Saved",exact:true}).waitFor();
-    assert.equal(await contactEditor.getByRole("textbox").count(),1,"Saving does not add a second key field");
+    assert.equal(await contactEditor.getByRole("textbox").count(),2,"Saving does not add a second key field");
     await page.screenshot({path:".tools/ui/11-contact-editor.png"});
     assert.equal(await contactEditor.getByRole("button",{name:"Exit Qcord",exact:true}).count(),0,"Subpanels only offer Go Back");
-    await contactEditor.getByRole("button",{name:"Go Back",exact:true}).click();
+    await contactEditor.getByRole("button",{name:"Select",exact:true}).click();
     await contactEditor.waitFor({state:"detached"});
     await page.waitForFunction(()=>!document.querySelector('[aria-label="Qcord encapsulation"]').hasAttribute("data-covered"));
     assert.equal(await composer.getAttribute("data-covered"),null,"Returning reveals the walkthrough");
@@ -115,7 +149,7 @@ try {
     await stage("3. Construct u, v");
     assert.equal(await composer.getByLabel("Sampling seed r",{exact:true}).innerText(),seedR,"Construction uses the same r derived alongside K");
     assert.deepEqual(await composer.locator(".qc-noise-paths small").allTextContents(),["Nonce N = 0, 1, 2","Nonce N = 3, 4, 5","Nonce N = 6"]);
-    assert.equal(await composer.locator(".qc-sampling-equation").innerText(),"Each polynomial = SamplePolyCBD₂(PRF₂(r, N))");
+    assert.equal(await composer.locator(".qc-sampling-equation").innerText(),"y uses CBD with eta=2; e₁ and e₂ use eta=2. Each has its own nonce.");
     const formulas=await composer.locator(".qc-equation").allTextContents();
     assert.deepEqual(formulas,["u = NTT⁻¹(Âᵀ ∘ ŷ) + e₁","v = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂"]);
     await composer.getByRole("button",{name:"u[2]",exact:true}).click(); await composer.getByLabel("Coefficient index").fill("17");
@@ -144,10 +178,10 @@ try {
     await composer.locator(".qc-json").evaluate(el=>el.scrollTo({left:120}));
     await page.waitForFunction(()=>document.querySelector(".qc-json").scrollLeft>0);
     await composer.locator(".qc-json").evaluate(el=>el.scrollTo({left:0,behavior:"instant"}));
-    assert.equal(wire.split("\n").filter(line=>/^    \[/.test(line)).length, 3);
-    assert.deepEqual(Object.keys(file).sort(), ["encrypted_message", "qcord_version", "signature_sigma", "u", "v"]);
+    assert.equal(wire.split("\n").filter(line=>/^      \[/.test(line)).length, 3);
+    assert.deepEqual(Object.keys(file).sort(), ["encrypted_message", "kem", "qcord_version", "signature_sigma"]);
     assert.deepEqual(file.signature_sigma, {c_tilde: "", z: [], h: []});
-    assert.deepEqual(file.u, first.u); assert.deepEqual(file.v, first.v);
+    assert.deepEqual(file.kem.u, first.kem.u); assert.deepEqual(file.kem.v, first.kem.v);
     assert.notEqual(file.encrypted_message.nonce_base64, first.encrypted_message.nonce_base64);
     assert.ok(!wire.includes("Hello from both sides")); await noOuterOverflow();
     await attach.click(); await idle();
@@ -173,6 +207,8 @@ try {
     const senderURL=await add(autoWire,{id:"900"});
     const senderAuto=page.locator("#chat-messages-100-900 .qcord-decrypted");await senderAuto.waitFor();
     assert.equal(await senderAuto.locator("strong").innerText(),"white");
+    assert.equal(await senderAuto.getByRole('button', {name: 'Check Signature Challenge: signature not checked', exact:true}).count(), 1);
+    assert.equal(await senderAuto.getAttribute('data-signature'), 'unchecked');
     assert.equal(await senderAuto.locator(".qcord-message").evaluate(el=>getComputedStyle(el).color),"rgb(255, 255, 255)");
     assert.equal(await senderAuto.locator("code").evaluate(el=>getComputedStyle(el).color),"rgb(255, 255, 255)");
     assert.equal(await senderAuto.locator("img").count(),0,"Decrypted HTML stays inert text");
@@ -215,7 +251,7 @@ try {
     assert.equal(await recovered.locator(".qcord-message").evaluate(el=>getComputedStyle(el).color),"rgb(255, 255, 255)");
     await page.screenshot({path:".tools/ui/08-markdown-message.png"});
     await recovered.getByRole("button", {name: "Go Back", exact: true}).click(); await recovered.waitFor({state:"detached"});
-    const damaged = structuredClone(file); damaged.v[0] ^= 1;
+    const damaged = structuredClone(file); damaged.kem.v[0] ^= 1;
     await upload(JSON.stringify(damaged)); await idle();
     await composer.getByRole("alert").filter({hasText: "Could not decrypt"}).waitFor(); assert.equal(await recovered.count(), 0);
 
@@ -240,12 +276,27 @@ try {
     const pendingResetURL=await add(autoWire,{id:"905",delay:true});
     await page.waitForFunction(url=>window.qcordTest.state.downloads.some(item=>item.url===url),pendingResetURL);
 
-    const beforeReset = await page.evaluate(() => window.qcordTest.data.public_encaps);
+    const beforeReset = await page.evaluate(() => window.qcordTest.data.key_sets["ml-kem-768"].public_encaps);
     await composer.getByRole("button",{name:"Your keys",exact:true}).click();
     const keysPanel=page.getByRole("dialog",{name:"Your keys",exact:true});await keysPanel.waitFor();
     const contacts=page.getByRole("dialog",{name:"Contacts",exact:true});
     assert.equal(await keysPanel.getByRole("tab").count(),0,"Keys is its own panel");
+    const publicBoxes = await keysPanel.locator('.qc-public-keys:not(.qc-private-keys) textarea').evaluateAll(els => els.map(el => {const {x,y}=el.getBoundingClientRect();return {x,y};}));
+    assert.equal(publicBoxes[0].y, publicBoxes[1].y);
+    assert.ok(publicBoxes[1].x > publicBoxes[0].x);
+    assert.ok((await keysPanel.getByRole('button').evaluateAll(els => els.filter(el => el.textContent.includes('Copy')).map(el => Boolean(el.querySelector('svg'))))).every(Boolean), 'Every copy action has its icon');
+    assert.ok((await keysPanel.locator('button').evaluateAll(els => els.map(el => el.getBoundingClientRect().width < el.closest('.qc-my-keys, .qc-contact-header').getBoundingClientRect().width - 20))).every(Boolean), 'Actions stay compact');
     const privateBox=keysPanel.getByLabel("Private decapsulation key",{exact:true}),privateCopy=keysPanel.locator(".qc-private-copy");
+    const privateSignatureBox = keysPanel.getByLabel('Private signature key', {exact:true});
+    assert.equal(Buffer.from(await privateSignatureBox.inputValue(), 'base64').length, 4032);
+    assert.equal(await privateSignatureBox.evaluate(el => getComputedStyle(el).filter), 'blur(5px)');
+    assert.equal((await privateBox.boundingBox()).x, (await keysPanel.getByLabel('Public encapsulation key', {exact:true}).boundingBox()).x);
+    assert.equal((await privateSignatureBox.boundingBox()).x, (await keysPanel.getByLabel('Public signature key', {exact:true}).boundingBox()).x);
+    await keysPanel.getByRole('button', {name:'Reveal private signature key',exact:true}).click();
+    assert.equal(await privateSignatureBox.evaluate(el => getComputedStyle(el).filter), 'none');
+    assert.equal(await privateBox.evaluate(el => getComputedStyle(el).filter), 'blur(5px)', 'Reveal controls are independent');
+    await keysPanel.getByRole('button', {name:'Hide private signature key',exact:true}).click();
+    assert.deepEqual(await keysPanel.locator('.qc-keyparts > div').evaluateAll(els => els.map(el => getComputedStyle(el).backgroundColor)), ['rgb(23, 80, 106)','rgb(43, 106, 109)']);
     const privateBytes=Buffer.from(await privateBox.inputValue(),"base64");
     assert.equal(privateBytes.length,2400,"The real private key is in the blurred textbox");
     assert.equal(privateBytes.subarray(1152,2336).toString("base64"),await keysPanel.getByLabel("Public encapsulation key",{exact:true}).inputValue(),"The displayed keys are paired");
@@ -253,7 +304,7 @@ try {
     assert.equal(await privateBox.getAttribute("aria-hidden"),"true");
     assert.equal(await privateBox.getAttribute("tabindex"),"-1");
     assert.equal(await privateCopy.isVisible(),false,"Copy is hidden until the private key is revealed");
-    assert.equal(await keysPanel.locator(".qc-key-field").count(),2,"Both keys use the same field layout");
+    assert.equal(await keysPanel.locator(".qc-key-field").count(),4,"Both keys use the same field layout");
     assert.equal(await keysPanel.getByText("Your public encapsulation key",{exact:true}).count(),0,"No repeated key label");
     const privateLayout=()=>keysPanel.locator(".qc-key-field,.qc-private-key,.qc-reveal,.qc-private-copy").evaluateAll(els=>els.map(el=>{const {x,y,width,height}=el.getBoundingClientRect();return {x,y,width,height};}));
     const hiddenLayout=await privateLayout();
@@ -268,19 +319,27 @@ try {
     assert.equal(await privateBox.evaluate(el=>getComputedStyle(el).filter),"blur(5px)");
     assert.equal(await privateCopy.isVisible(),false);
     assert.deepEqual(await privateLayout(),hiddenLayout,"Hiding preserves field and action positions");
-    assert.equal(await keysPanel.getByRole("button",{name:"Copy",exact:true}).locator("svg").getAttribute("fill"),"currentColor");
-    assert.deepEqual(await keysPanel.getByRole("button",{name:"Copy",exact:true}).locator("svg").evaluate(el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})),{width:14,height:14});
+    assert.equal(await keysPanel.getByRole("button",{name:"Copy",exact:true}).first().locator("svg").getAttribute("fill"),"currentColor");
+    assert.deepEqual(await keysPanel.getByRole("button",{name:"Copy",exact:true}).first().locator("svg").evaluate(el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})),{width:14,height:14});
+    const cycle = keysPanel.getByRole('button', {name: 'Cycle security level', exact: true});
+    for (const [label, kemBytes, sigBytes] of [['ML-KEM 1024 / ML-DSA-87',1568,2592], ['ML-KEM 512 / ML-DSA-44',800,1312], ['ML-KEM 768 / ML-DSA-65',1184,1952]]) {
+        await cycle.click();
+        await page.waitForFunction(text => document.querySelector('[aria-label="Cycle security level"]').textContent === text, label);
+        assert.equal(Buffer.from(await keysPanel.getByLabel('Public encapsulation key', {exact:true}).inputValue(), 'base64').length, kemBytes);
+        assert.equal(Buffer.from(await keysPanel.getByLabel('Public signature key', {exact:true}).inputValue(), 'base64').length, sigBytes);
+    }
+    assert.equal(await keysPanel.getByLabel('Public encapsulation key', {exact:true}).inputValue(), beforeReset, 'Cycling retains existing identities');
     await page.screenshot({path:".tools/ui/10-my-keys.png"});
     await keysPanel.getByRole("button",{name:"Clear config & reset key",exact:true}).click();
     const warning=keysPanel.getByRole("alertdialog",{name:"Confirm config reset",exact:true});await warning.waitFor();
-    assert.equal(await page.evaluate(()=>window.qcordTest.data.public_encaps),beforeReset,"Opening reset confirmation does not reset keys");
+    assert.equal(await page.evaluate(()=>window.qcordTest.data.key_sets["ml-kem-768"].public_encaps),beforeReset,"Opening reset confirmation does not reset keys");
     await warning.getByRole("button",{name:"Cancel",exact:true}).click();
     await keysPanel.getByRole("button",{name:"Clear config & reset key",exact:true}).click();
     await warning.getByRole("button",{name:"Reset keys",exact:true}).click();await keysPanel.waitFor({state:"detached"});await idle();
-    const afterReset = await page.evaluate(() => window.qcordTest.data.public_encaps);
+    const afterReset = await page.evaluate(() => window.qcordTest.data.key_sets["ml-kem-768"].public_encaps);
     assert.notEqual(afterReset, beforeReset);
     assert.deepEqual(await page.evaluate(() => window.qcordTest.data.recipients), []);
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.qcordTest.data).sort()), ["auto_decrypt","auto_encrypt","config_version", "private_decaps", "private_signature", "public_encaps", "public_signature", "recipients", "save_receipts"]);
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.qcordTest.data).sort()), ["auto_decrypt","auto_encrypt","auto_verify","config_version", "key_sets", "recipients", "save_receipts"]);
     assert.equal(await composer.getByRole("tab", {name: "1. Recipient key", exact: true}).getAttribute("aria-selected"), "true");
     assert.equal(await composer.getByRole("button", {name: "Next", exact: true}).isDisabled(), true);
     assert.equal(await composer.getByRole("button",{name:"Add recipient's public key",exact:true}).count(),1);
@@ -299,7 +358,7 @@ try {
     await contacts.getByRole("button",{name:"Go Back",exact:true}).click();
     await composer.getByRole("switch",{name:"Auto encrypt",exact:true}).click();await idle();
     assert.equal(await page.locator(".channelTextArea_fixture.qcord-encrypt-enabled").count(),1);
-    assert.equal(await page.locator(".channelTextArea_fixture").evaluate(el=>getComputedStyle(el).outlineWidth),"3px");
+    assert.equal(await page.locator(".channelTextArea_fixture").evaluate(el=>getComputedStyle(el).outlineWidth),"1px");
     assert.notEqual(await page.locator(".channelTextArea_fixture").evaluate(el=>getComputedStyle(el).boxShadow),"none");
     assert.match(await page.locator(".channelTextArea_fixture").evaluate(el=>getComputedStyle(el).backgroundImage),/linear-gradient/);
     await page.locator(".channelTextArea_fixture").screenshot({path:".tools/ui/14-brighter-composer.png"});
@@ -310,7 +369,7 @@ try {
     const discordDraft=page.getByRole("textbox",{name:"Discord draft",exact:true});
     await discordDraft.fill("Automatically encrypted chat text");await discordDraft.press("Enter");
     const composerOutline=await page.locator(".channelTextArea_fixture").evaluate(el=>({style:getComputedStyle(el).outlineStyle,width:getComputedStyle(el).outlineWidth}));
-    assert.deepEqual(composerOutline,{style:"solid",width:"4px"});
+    assert.deepEqual(composerOutline,{style:"solid",width:"1px"});
     await page.waitForFunction(()=>window.qcordTest.state.staged.length===2);
     await page.waitForFunction(()=>!document.querySelector('[aria-label="Discord draft"]').textContent);
     assert.equal(await page.evaluate(()=>window.qcordTest.state.sent.length),1,"Automatic mode never sends the plaintext draft");
@@ -323,12 +382,12 @@ try {
     assert.equal(await page.locator(".channelTextArea_fixture.qcord-encrypt-enabled").count(),0);
     assert.equal(await page.locator(".qcord-button.qcord-decrypt-enabled").count(),1);
     const decryptCue=await page.locator(".qcord-button.qcord-decrypt-enabled").evaluate(el=>({color:getComputedStyle(el).color,background:getComputedStyle(el).backgroundColor}));
-    assert.deepEqual(decryptCue,{color:"rgb(255, 255, 255)",background:"rgb(54, 123, 80)"});
+    assert.deepEqual(decryptCue,{color:"rgb(255, 255, 255)",background:"rgb(40, 106, 145)"});
     await composer.getByRole("button",{name:"Your keys",exact:true}).click();await keysPanel.waitFor();
     await page.mouse.click(10,10);await keysPanel.waitFor({state:"detached"});
     await page.waitForFunction(()=>document.querySelector('[aria-label="Qcord encapsulation"][open]:not([data-covered])'));
     assert.equal(await composer.isVisible(),true,"First outside click returns from Keys to the main panel");
-    await composer.getByRole("button",{name:"Contacts",exact:true}).click();await contacts.waitFor();
+    await composer.getByRole("button",{name:"Choose recipient",exact:true}).click();await contacts.waitFor();
     await page.mouse.click(10,10);await contacts.waitFor({state:"detached"});
     await page.waitForFunction(()=>document.querySelector('[aria-label="Qcord encapsulation"][open]:not([data-covered])'));
     assert.equal(await composer.isVisible(),true,"First outside click returns from Contacts to the main panel");
@@ -378,5 +437,5 @@ try {
     await page.waitForFunction(()=>!window.qcordTest.pendingAtStop.pending);
     assert.equal(await page.locator(".qcord-decrypted,.qcord-file-hidden").count(),0,"Stopping restores every attachment and clears plaintext");
     assert.deepEqual(errors, []);
-    console.log("Browser checks passed: independent switches and encryption send hook, thicker composer border, opaque panels, nonselectable buttons, back/exit navigation, compact chat spacing, single-field contacts, blurred private textbox, reset confirmation, backdrop dismissal, laptop fit, vector scrubbing, Markdown, crypto/attachment failures and teardown.");
+    console.log("Browser checks passed: independent switches and encryption send hook, stable text-field focus, dark gradient panels, nonselectable buttons, back/exit navigation, compact chat spacing, adjacent public key fields, blurred private textbox, reset confirmation, backdrop dismissal, laptop fit, vector scrubbing, Markdown, crypto/attachment failures and teardown.");
 } finally { await browser?.close(); await new Promise(r => server.close(r)); }

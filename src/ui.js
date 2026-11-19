@@ -1,6 +1,6 @@
 "use strict";
 
-const {filled} = require("./icons");
+const {filled, outlined} = require("./icons");
 
 module.exports = function createUI(R) {
     const h = R.createElement;
@@ -10,6 +10,8 @@ module.exports = function createUI(R) {
     const code = text => h("code", {className: "qc-code"}, text);
     const p = text => h("p", null, text);
     function Icon({name}) {
+
+        if (outlined[name]) return h("svg", {viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true}, h("path", {d: outlined[name]}));
         const icon = filled[name];
         if (!icon) throw new Error(`Unknown Qcord icon: ${name}`);
         return h("svg", {viewBox: icon.viewBox, width: 14, height: 14, fill: "currentColor", "aria-hidden": true}, h("path", {d: icon.path}));
@@ -41,8 +43,8 @@ module.exports = function createUI(R) {
         const points = values.filter((_, i) => i % 4 === 0).map((v, i, a) => `${i / Math.max(1, a.length - 1) * 100},${25 - (v - min) / span * 23}`).join(" ");
         return h("svg", {viewBox: "0 0 100 28", preserveAspectRatio: "none", "aria-hidden": true}, h("polyline", {points, fill: "none", stroke: "currentColor", strokeWidth: 1.2}));
     }
-    function KeyParts() {
-        return h("div", {className: "qc-keyparts", "aria-label": "Public key byte order"}, h("div", null, h("strong", null, "Encoded t̂"), h("span", null, "1152 bytes · 1536 Base64 characters")), h("div", null, h("strong", null, "ρ seed"), h("span", null, "32 bytes · 44 Base64 characters")));
+    function KeyParts({k = 3}) {
+        return h("div", {className: "qc-keyparts", "aria-label": "Public key byte order"}, h("div", null, h("strong", null, "Encoded t̂"), h("span", null, `${384 * k} bytes · ${512 * k} Base64 characters`)), h("div", null, h("strong", null, "ρ seed"), h("span", null, "32 bytes · 44 Base64 characters")));
     }
     function Polynomial({values, name, signed = false, index, onIndexChange}) {
         const [localIndex, setLocalIndex] = R.useState(0);
@@ -77,7 +79,7 @@ module.exports = function createUI(R) {
             }, h("line", {x1: 0, x2: 640, y1: baseline, y2: baseline, stroke: "currentColor", opacity: .15}), bars,
                 h("line", {className: "qc-selection", style: {transform: `translateX(${i * 2.5 + .9}px)`}, x1: 0, x2: 0, y1: 5, y2: 113, stroke: "var(--qc-text)", strokeWidth: 1.2, opacity: .8, pointerEvents: "none"})),
             h("div", {className: "qc-scrubber"}, field("Coefficient index", h("input", {type: "range", min: 0, max: values.length - 1, value: i, "aria-valuetext": `Coefficient ${i}: ${values[i] ?? 0}`, style: {"--qc-progress": `${i / Math.max(1, values.length - 1) * 100}%`}, onChange: e => choose(Number(e.target.value))}))),
-            h("div", {className: "qc-coefficient-strip", "aria-label": "Nearby coefficients"}, Array.from({length: 7}, (_, j) => Math.max(0, Math.min(values.length - 7, i - 3)) + j).filter(j => j < values.length).map(j => button(h(R.Fragment, null, h("small", null, j), values[j]), () => choose(j), {key: j, "aria-pressed": j === i, title: `Coefficient ${j}`}))));
+            h("div", {className: "qc-coefficient-strip", "aria-label": "Nearby coefficients"}, Array.from({length: 7}, (_, offset) => i + offset - 3).map(j => j < 0 || j >= values.length ? h("span", {key: j, "aria-hidden": true}) : button(h(R.Fragment, null, h("small", null, j), values[j]), () => choose(j), {key: j, "aria-pressed": j === i, title: `Coefficient ${j}`}))));
     }
     return {h, button, field, formula, code, p, Icon, Tabs, Switch, Avatar, Variables, Sparkline: R.memo(Sparkline), KeyParts, Polynomial: R.memo(Polynomial)};
 };

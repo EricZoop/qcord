@@ -19,6 +19,7 @@ module.exports = class Qcord extends Encapsulation {
         this.modeListeners = new Set();
         this.pendingSends = new Map();
         this.outgoingEpoch = {};
+        this.autoVerify = config.load("auto_verify") === true;
         this.autoEncrypt = config.load("auto_encrypt") === true;
         this.autoDecrypt = config.load("auto_decrypt") !== false;
         this.saveReceipts = config.load("save_receipts") !== false;
@@ -68,10 +69,11 @@ module.exports = class Qcord extends Encapsulation {
 
     setAutomatic(mode, enabled) {
         if (!this.running || this.resetting) throw new Error("Wait until Qcord is ready.");
-        if (!["encrypt", "decrypt"].includes(mode)) throw new Error("Unknown automatic mode.");
+        if (!["encrypt", "decrypt", "verify"].includes(mode)) throw new Error("Unknown automatic mode.");
         if (mode === "encrypt" && enabled && !this.sendHookReady) throw new Error("Automatic encryption is unavailable in this Discord build.");
         config.save(`auto_${mode}`, Boolean(enabled));
         if (mode === "encrypt") { this.autoEncrypt = Boolean(enabled); this.outgoingEpoch = {}; }
+        else if (mode === "verify") { this.autoVerify = Boolean(enabled); this.attachments.clear(); }
         else { this.autoDecrypt = Boolean(enabled); this.attachments.clear(); }
         this.mountButtons(); this.attachments.scan();
         for (const notify of this.modeListeners) notify();
@@ -90,7 +92,7 @@ module.exports = class Qcord extends Encapsulation {
         this.pendingSends.set(channelId, true);
         let draft;
         try {
-            draft = await this.prepareEncapsulation(channelId, ACTIVE_SCHEME, text);
+            draft = await this.prepareEncapsulation(channelId, undefined, text);
             if (!this.running || !this.autoEncrypt || this.session !== session || this.outgoingEpoch !== epoch) throw new Error("Automatic encryption was cancelled. Your draft was kept.");
             await this.stageDraft(draft, () => this.autoEncrypt && this.outgoingEpoch === epoch);
             return {shouldClear: true, shouldRefocus: true};

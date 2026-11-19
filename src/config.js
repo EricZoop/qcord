@@ -21,11 +21,8 @@ function clean() { for (const name of obsolete) BdApi.Data.delete(KEY_STORE, nam
 
 function initialize() {
     const version = load("config_version");
-    if (version === 4) {
-        if (load("public_signature") === undefined || load("private_signature") === undefined) finalize();
-        clean(); return;
-    }
-    if (version === 3) { finalize(); clean(); return; }
+    if (version === 5) { clean(); return; }
+    if (version === 4 || version === 3) { finalize(); clean(); return; }
     if (version != null && ![1, 2].includes(version)) throw new Error("Unsupported Qcord configuration.");
     const {PQC} = require("./pqc");
     const raw = key => Buffer.from(key.bytes).toString("base64");
@@ -68,28 +65,40 @@ function finalize() {
                 return {message_epoch: null, k: Buffer.from(key).toString("base64")};
             } finally { m.fill(0); key?.fill(0); }
         })}));
-    const fields = {config_version: 4, auto_encrypt: load("auto_encrypt") === true,
-        auto_decrypt: load("auto_decrypt") !== false, save_receipts: load("save_receipts") !== false,
-        public_signature: load("public_signature") ?? "", private_signature: load("private_signature") ?? ""};
-    for (const name of ["public_encaps", "private_decaps"]) {
-        const value = load(name);
-        if (value !== undefined) fields[name] = value;
+    const levels = require("./parameters").PARAMETER_SETS;
+    const existing = load("key_sets") || {}, encryption = load("security_keys") || {}, signatures = load("signature_keys") || {};
+    const keySets = {};
+    for (const scheme of Object.keys(levels)) {
+        const enc = existing[scheme] || (scheme === ACTIVE_SCHEME ? {public_encaps: load("public_encaps"), private_decaps: load("private_decaps")} : encryption[scheme]) || {};
+        const sig = existing[scheme] || signatures[scheme] || {};
+        keySets[scheme] = {public_encaps: enc.public_encaps || "", private_decaps: enc.private_decaps || "",
+            public_signature: sig.public_signature || "", private_signature: sig.private_signature || ""};
     }
-    fields.recipients = recipients;
-    for (const name of Object.keys(fields)) BdApi.Data.delete(KEY_STORE, name);
+    writeConfig({auto_encrypt: load("auto_encrypt") === true, auto_decrypt: load("auto_decrypt") !== false,
+        auto_verify: load("auto_verify") === true, save_receipts: load("save_receipts") !== false,
+        config_version: 5, key_sets: keySets, recipients});
+}
+
+function writeConfig(fields) {
+    for (const name of [...Object.keys(fields), "public_encaps", "private_decaps", "public_signature", "private_signature", "security_keys", "signature_keys"]) BdApi.Data.delete(KEY_STORE, name);
     for (const [name, value] of Object.entries(fields)) save(name, value);
+}
+
+function saveKeySet(scheme, updates) {
+    const sets = load("key_sets") || {};
+    const value = {...sets[scheme], ...updates};
+    sets[scheme] = {public_encaps: value.public_encaps || "", private_decaps: value.private_decaps || "",
+        public_signature: value.public_signature || "", private_signature: value.private_signature || ""};
+    save("key_sets", sets);
 }
 
 function reset(keys) {
     clean();
-    save("public_encaps", Buffer.from(keys.publicKey.bytes).toString("base64"));
-    save("private_decaps", Buffer.from(keys.privateKey.bytes).toString("base64"));
-    save("recipients", []);
-    save("auto_encrypt", false);
-    save("auto_decrypt", true);
-    save("save_receipts", true);
-    save("public_signature", "");
-    save("private_signature", "");
-    finalize();
+    const sets = {};
+    for (const scheme of Object.keys(require("./parameters").PARAMETER_SETS)) {
+        sets[scheme] = {public_encaps: scheme === ACTIVE_SCHEME ? Buffer.from(keys.publicKey.bytes).toString("base64") : "",
+            private_decaps: scheme === ACTIVE_SCHEME ? Buffer.from(keys.privateKey.bytes).toString("base64") : "", public_signature: "", private_signature: ""};
+    }
+    writeConfig({auto_encrypt: false, auto_decrypt: true, auto_verify: false, save_receipts: true, config_version: 5, key_sets: sets, recipients: []});
 }
-module.exports = {load, save, initialize, reset, get receiptsRevision() { return receiptsRevision; }};
+module.exports = {load, save, saveKeySet, initialize, reset, get receiptsRevision() { return receiptsRevision; }};

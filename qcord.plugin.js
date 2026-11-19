@@ -3,7 +3,7 @@
  * @author Eric, Arsh, Yasser
  * @authorId 215269534540496896
  * @version 2.4.0
- * @description ML-KEM-768 encrypted messages with independent automatic modes, Discord Markdown, and a compact visual walkthrough.
+ * @description ML-KEM encrypted messages with independent automatic modes, Discord Markdown, and a compact visual walkthrough.
  * @invite GSdMfMBW5g
  * @source https://github.com/EricZoop/qcord
  */
@@ -89,6 +89,10 @@ SVG paths supplied by the user; rendered using currentColor.
 Icons licensed under Creative Commons Attribution 4.0 International:
 https://creativecommons.org/licenses/by/4.0/
 https://fontawesome.com/license/free
+
+Lucide icons: user-search, chevron-down, check, shield-x
+Copyright Lucide Contributors. ISC license: https://lucide.dev/license
+SVG paths supplied by the user; rendered using currentColor.
 
 
 Inter typeface
@@ -687,6 +691,11 @@ function aobject2(value, title = "object") {
     throw new TypeError(title === "object" ? "expected valid options object" : `"${title}" expected object, got type=${typeof value}`);
   return value;
 }
+function abool2(value, title = "") {
+  if (typeof value !== "boolean")
+    throw new TypeError(atitle2(title) + "expected boolean, got type=" + typeof value);
+  return value;
+}
 function validateObject(object, fields = {}, optFields = {}, title = "object") {
   aobject2(object, title);
   aobject2(fields, "fields");
@@ -707,9 +716,11 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
   iter(fields, false);
   iter(optFields, true);
 }
+var atitle2;
 var init_utils2 = __esm({
   "node_modules/@noble/curves/utils.js"() {
     /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+    atitle2 = (title) => title ? `"${title}" ` : "";
   }
 });
 
@@ -761,22 +772,22 @@ var FFTCore;
 var init_fft = __esm({
   "node_modules/@noble/curves/abstract/fft.js"() {
     init_utils2();
-    FFTCore = (F2, coreOpts) => {
+    FFTCore = (F3, coreOpts) => {
       validateObject(coreOpts, { N: "number", roots: "object", dit: "boolean" }, { invertButterflies: "boolean", skipStages: "number", brp: "boolean" }, "coreOpts");
-      const { N: N2, roots, dit, invertButterflies = false, skipStages = 0, brp = true } = coreOpts;
-      checkU32(N2, "coreOpts.N");
-      const bits = log2(N2);
-      if (!isPowerOfTwo(N2))
+      const { N: N3, roots, dit, invertButterflies = false, skipStages = 0, brp = true } = coreOpts;
+      checkU32(N3, "coreOpts.N");
+      const bits = log2(N3);
+      if (!isPowerOfTwo(N3))
         throw new Error("FFT: Polynomial size should be power of two");
       checkU32(skipStages, "coreOpts.skipStages");
       const maxSkipStages = bits === 0 ? 0 : bits - 1;
       if (skipStages > maxSkipStages)
         throw new Error(`FFT: wrong skipStages: expected 0 <= skipStages <= ${maxSkipStages}`);
-      if (roots.length !== N2)
-        throw new Error(`FFT: wrong roots length: expected ${N2}, got ${roots.length}`);
+      if (roots.length !== N3)
+        throw new Error(`FFT: wrong roots length: expected ${N3}, got ${roots.length}`);
       const isDit = dit !== invertButterflies;
       return (values) => {
-        if (values.length !== N2)
+        if (values.length !== N3)
           throw new Error("FFT: wrong Polynomial length");
         if (dit && brp)
           bitReversalInplace(values);
@@ -784,25 +795,25 @@ var init_fft = __esm({
           const s = dit ? i + 1 + skipStages : bits - i;
           const m = 1 << s;
           const m2 = m >> 1;
-          const stride = N2 >> s;
-          for (let k = 0; k < N2; k += m) {
+          const stride = N3 >> s;
+          for (let k = 0; k < N3; k += m) {
             for (let j = 0, grp = g++; j < m2; j++) {
-              const rootPos = invertButterflies ? dit ? N2 - grp : grp : j * stride;
+              const rootPos = invertButterflies ? dit ? N3 - grp : grp : j * stride;
               const i0 = k + j;
               const i1 = k + j + m2;
               const omega = roots[rootPos];
               const b = values[i1];
               const a = values[i0];
               if (isDit) {
-                const t = F2.mul(b, omega);
-                values[i0] = F2.add(a, t);
-                values[i1] = F2.sub(a, t);
+                const t = F3.mul(b, omega);
+                values[i0] = F3.add(a, t);
+                values[i1] = F3.sub(a, t);
               } else if (invertButterflies) {
-                values[i0] = F2.add(b, a);
-                values[i1] = F2.mul(F2.sub(b, a), omega);
+                values[i0] = F3.add(b, a);
+                values[i1] = F3.mul(F3.sub(b, a), omega);
               } else {
-                values[i0] = F2.add(a, b);
-                values[i1] = F2.mul(F2.sub(a, b), omega);
+                values[i0] = F3.add(a, b);
+                values[i1] = F3.mul(F3.sub(a, b), omega);
               }
             }
           }
@@ -1063,7 +1074,7 @@ var init_utils3 = __esm({
 });
 
 // node_modules/@noble/post-quantum/_crystals.js
-var genCrystals, createXofShake, XOF128;
+var genCrystals, createXofShake, XOF128, XOF256;
 var init_crystals = __esm({
   "node_modules/@noble/post-quantum/_crystals.js"() {
     init_fft();
@@ -1071,20 +1082,20 @@ var init_crystals = __esm({
     init_utils3();
     /*! noble-post-quantum - MIT License (c) 2024 Paul Miller (paulmillr.com) */
     genCrystals = (opts2) => {
-      const { newPoly, N: N2, Q: Q2, F: F2, ROOT_OF_UNITY: ROOT_OF_UNITY2, brvBits, isKyber } = opts2;
-      const mod = (a, modulo = Q2) => {
+      const { newPoly: newPoly2, N: N3, Q: Q3, F: F3, ROOT_OF_UNITY: ROOT_OF_UNITY3, brvBits, isKyber } = opts2;
+      const mod = (a, modulo = Q3) => {
         const result = a % modulo | 0;
         return (result >= 0 ? result | 0 : modulo + result | 0) | 0;
       };
-      const smod = (a, modulo = Q2) => {
+      const smod = (a, modulo = Q3) => {
         const r = mod(a, modulo) | 0;
         return (r > modulo >> 1 ? r - modulo | 0 : r) | 0;
       };
       function getZettas() {
-        const out = newPoly(N2);
-        for (let i = 0; i < N2; i++) {
+        const out = newPoly2(N3);
+        for (let i = 0; i < N3; i++) {
           const b = reverseBits(i, brvBits);
-          const p = BigInt(ROOT_OF_UNITY2) ** BigInt(b) % BigInt(Q2);
+          const p = BigInt(ROOT_OF_UNITY3) ** BigInt(b) % BigInt(Q3);
           out[i] = Number(p) | 0;
         }
         return out;
@@ -1096,11 +1107,11 @@ var init_crystals = __esm({
       const field = isKyber ? {
         add: (a, b) => {
           const r = a + b | 0;
-          return r >= Q2 ? r - Q2 | 0 : r;
+          return r >= Q3 ? r - Q3 | 0 : r;
         },
         sub: (a, b) => {
           const r = a - b | 0;
-          return r < 0 ? r + Q2 | 0 : r;
+          return r < 0 ? r + Q3 | 0 : r;
         },
         mul: (a, b) => mod((a | 0) * (b | 0)) | 0,
         inv
@@ -1111,7 +1122,7 @@ var init_crystals = __esm({
         inv
       };
       const nttOpts = {
-        N: N2,
+        N: N3,
         roots: nttZetas,
         invertButterflies: true,
         skipStages: isKyber ? 1 : 0,
@@ -1126,19 +1137,19 @@ var init_crystals = __esm({
         decode: (r) => {
           dit(r);
           for (let i = 0; i < r.length; i++)
-            r[i] = mod(F2 * r[i]);
+            r[i] = mod(F3 * r[i]);
           return r;
         }
       };
       const bitsCoder = (d, c) => {
-        for (let i = 0, bufLen = 0; i < N2; i++) {
+        for (let i = 0, bufLen = 0; i < N3; i++) {
           bufLen += d;
           if (bufLen > 32)
             getMask(bufLen);
           bufLen %= 8;
         }
         const mask = getMask(d);
-        const bytesLen = d * (N2 / 8);
+        const bytesLen = d * (N3 / 8);
         return {
           bytesLen,
           encode: (poly_) => {
@@ -1153,7 +1164,7 @@ var init_crystals = __esm({
             return r;
           },
           decode: (bytes) => {
-            const r = newPoly(N2);
+            const r = newPoly2(N3);
             for (let i = 0, buf = 0, bufLen = 0, pos = 0; i < bytes.length; i++) {
               buf |= bytes[i] << bufLen;
               bufLen += 8;
@@ -1205,6 +1216,7 @@ var init_crystals = __esm({
       };
     };
     XOF128 = /* @__PURE__ */ createXofShake(shake128);
+    XOF256 = /* @__PURE__ */ createXofShake(shake256);
   }
 });
 
@@ -1618,10 +1630,10 @@ var init_ml_kem = __esm({
           throw new Error(`Decompress_d: expected d in [1..11], got ${d}`);
         return compress(d).decode(y);
       },
-      ByteEncode_d: (F2, d) => {
+      ByteEncode_d: (F3, d) => {
         if (d < 1 || d > 12)
           throw new Error(`ByteEncode_d: expected d in [1..12], got ${d}`);
-        return byteCoder(d).encode(F2);
+        return byteCoder(d).encode(F3);
       },
       ByteDecode_d: (B2, d) => {
         if (d < 1 || d > 12)
@@ -1644,6 +1656,603 @@ var init_ml_kem = __esm({
           xof.clean();
         }
       }
+    }))();
+  }
+});
+
+// node_modules/@noble/post-quantum/ml-dsa.js
+var ml_dsa_exports = {};
+__export(ml_dsa_exports, {
+  PARAMS: () => PARAMS2,
+  ml_dsa44: () => ml_dsa44,
+  ml_dsa65: () => ml_dsa65,
+  ml_dsa87: () => ml_dsa87
+});
+function validateInternalOpts(opts2, allowed) {
+  const normalized = checkOptKeys(opts2, allowed);
+  if (normalized.externalMu !== void 0)
+    abool2(normalized.externalMu, "opts.externalMu");
+  return normalized;
+}
+function RejNTTPoly(xof_) {
+  const xof = xof_;
+  const r = newPoly(N2);
+  for (let j = 0; j < N2; ) {
+    const b = xof();
+    if (b.length % 3)
+      throw new Error("RejNTTPoly: unaligned block");
+    for (let i = 0; j < N2 && i <= b.length - 3; i += 3) {
+      const t = (b[i + 0] | b[i + 1] << 8 | b[i + 2] << 16) & 8388607;
+      if (t < Q2)
+        r[j++] = t;
+    }
+  }
+  return r;
+}
+function getDilithium(opts_) {
+  const opts2 = opts_;
+  const { K, L, GAMMA1, GAMMA2, TAU, ETA, OMEGA } = opts2;
+  const { CRH_BYTES, TR_BYTES, C_TILDE_BYTES, XOF128: XOF1282, XOF256: XOF2562, securityLevel } = opts2;
+  if (![2, 4].includes(ETA))
+    throw new Error("Wrong ETA");
+  if (![1 << 17, 1 << 19].includes(GAMMA1))
+    throw new Error("Wrong GAMMA1");
+  if (![GAMMA2_1, GAMMA2_2].includes(GAMMA2))
+    throw new Error("Wrong GAMMA2");
+  const BETA = TAU * ETA;
+  const decompose = (r) => {
+    const rPlus = crystals2.mod(r);
+    const r0 = crystals2.smod(rPlus, 2 * GAMMA2) | 0;
+    if (rPlus - r0 === Q2 - 1)
+      return { r1: 0 | 0, r0: r0 - 1 | 0 };
+    const r1 = Math.floor((rPlus - r0) / (2 * GAMMA2)) | 0;
+    return { r1, r0 };
+  };
+  const HighBits = (r) => decompose(r).r1;
+  const LowBits = (r) => decompose(r).r0;
+  const MakeHint = (z, r) => {
+    const res0 = z <= GAMMA2 || z > Q2 - GAMMA2 || z === Q2 - GAMMA2 && r === 0 ? 0 : 1;
+    return res0;
+  };
+  const HINT_M = Math.floor((Q2 - 1) / (2 * GAMMA2));
+  const UseHint = (h, r) => {
+    const { r1, r0 } = decompose(r);
+    if (h === 1)
+      return r0 > 0 ? crystals2.mod(r1 + 1, HINT_M) | 0 : crystals2.mod(r1 - 1, HINT_M) | 0;
+    return r1 | 0;
+  };
+  const Power2Round = (r) => {
+    const rPlus = crystals2.mod(r);
+    const r0 = crystals2.smod(rPlus, 2 ** D) | 0;
+    return { r1: Math.floor((rPlus - r0) / 2 ** D) | 0, r0 };
+  };
+  const hintCoder = {
+    bytesLen: OMEGA + K,
+    encode: (h_) => {
+      const h = h_;
+      if (h === false)
+        throw new Error("hint.encode: hint is false");
+      const res = new Uint8Array(OMEGA + K);
+      for (let i = 0, k = 0; i < K; i++) {
+        for (let j = 0; j < N2; j++)
+          if (h[i][j] !== 0)
+            res[k++] = j;
+        res[OMEGA + i] = k;
+      }
+      return res;
+    },
+    decode: (buf) => {
+      const h = [];
+      let k = 0;
+      for (let i = 0; i < K; i++) {
+        const hi = newPoly(N2);
+        if (buf[OMEGA + i] < k || buf[OMEGA + i] > OMEGA)
+          return false;
+        for (let j = k; j < buf[OMEGA + i]; j++) {
+          if (j > k && buf[j] <= buf[j - 1])
+            return false;
+          hi[buf[j]] = 1;
+        }
+        k = buf[OMEGA + i];
+        h.push(hi);
+      }
+      for (let j = k; j < OMEGA; j++)
+        if (buf[j] !== 0)
+          return false;
+      return h;
+    }
+  };
+  const ETACoder = polyCoder2(ETA === 2 ? 3 : 4, (i) => ETA - i, (i) => {
+    if (!(-ETA <= i && i <= ETA))
+      throw new Error(`malformed key s1/s3 ${i} outside of ETA range [${-ETA}, ${ETA}]`);
+    return i;
+  });
+  const T0Coder = polyCoder2(13, (i) => (1 << D - 1) - i);
+  const T1Coder = polyCoder2(10);
+  const ZCoder = polyCoder2(GAMMA1 === 1 << 17 ? 18 : 20, (i) => crystals2.smod(GAMMA1 - i));
+  const W1Coder = polyCoder2(GAMMA2 === GAMMA2_1 ? 6 : 4);
+  const W1Vec = vecCoder(W1Coder, K);
+  const publicCoder = splitCoder("publicKey", 32, vecCoder(T1Coder, K));
+  const secretCoder = splitCoder("secretKey", 32, 32, TR_BYTES, vecCoder(ETACoder, L), vecCoder(ETACoder, K), vecCoder(T0Coder, K));
+  const sigCoder = splitCoder("signature", C_TILDE_BYTES, vecCoder(ZCoder, L), hintCoder);
+  const CoefFromHalfByte = ETA === 2 ? (n) => n < 15 ? 2 - n % 5 : false : (n) => n < 9 ? 4 - n : false;
+  function RejBoundedPoly(xof_) {
+    const xof = xof_;
+    const r = newPoly(N2);
+    for (let j = 0; j < N2; ) {
+      const b = xof();
+      for (let i = 0; j < N2 && i < b.length; i += 1) {
+        const d1 = CoefFromHalfByte(b[i] & 15);
+        const d2 = CoefFromHalfByte(b[i] >> 4 & 15);
+        if (d1 !== false)
+          r[j++] = d1;
+        if (j < N2 && d2 !== false)
+          r[j++] = d2;
+      }
+    }
+    return r;
+  }
+  const SampleInBall = (seed) => {
+    const pre = newPoly(N2);
+    const s = shake256.create({}).update(seed);
+    const buf = new Uint8Array(shake256.blockLen);
+    s.xofInto(buf);
+    const masks = buf.slice(0, 8);
+    for (let i = N2 - TAU, pos = 8, maskPos = 0, maskBit = 0; i < N2; i++) {
+      let b = i + 1;
+      for (; b > i; ) {
+        b = buf[pos++];
+        if (pos < shake256.blockLen)
+          continue;
+        s.xofInto(buf);
+        pos = 0;
+      }
+      pre[i] = pre[b];
+      pre[b] = 1 - ((masks[maskPos] >> maskBit++ & 1) << 1);
+      if (maskBit >= 8) {
+        maskPos++;
+        maskBit = 0;
+      }
+    }
+    return pre;
+  };
+  const polyPowerRound = (p_) => {
+    const p = p_;
+    const res0 = newPoly(N2);
+    const res1 = newPoly(N2);
+    for (let i = 0; i < p.length; i++) {
+      const { r0, r1 } = Power2Round(p[i]);
+      res0[i] = r0;
+      res1[i] = r1;
+    }
+    return { r0: res0, r1: res1 };
+  };
+  const polyUseHint = (u_, h_) => {
+    const u = u_;
+    const h = h_;
+    for (let i = 0; i < N2; i++)
+      u[i] = UseHint(h[i], u[i]);
+    return u;
+  };
+  const polyMakeHint = (a_, b_) => {
+    const a = a_;
+    const b = b_;
+    const v = newPoly(N2);
+    let cnt = 0;
+    for (let i = 0; i < N2; i++) {
+      const h = MakeHint(a[i], b[i]);
+      v[i] = h;
+      cnt += h;
+    }
+    return { v, cnt };
+  };
+  const signRandBytes = 32;
+  const seedCoder = splitCoder("seed", 32, 64, 32);
+  const internal = Object.freeze({
+    info: Object.freeze({ type: "internal-ml-dsa" }),
+    lengths: Object.freeze({
+      secretKey: secretCoder.bytesLen,
+      publicKey: publicCoder.bytesLen,
+      seed: 32,
+      signature: sigCoder.bytesLen,
+      signRand: signRandBytes
+    }),
+    keygen: (seed) => {
+      const seedDst = new Uint8Array(32 + 2);
+      const randSeed = seed === void 0;
+      if (randSeed)
+        seed = randomBytes2(32);
+      abytesDoc(seed, 32, "seed");
+      seedDst.set(seed);
+      if (randSeed)
+        cleanBytes(seed);
+      seedDst[32] = K;
+      seedDst[33] = L;
+      const [rho, rhoPrime, K_] = seedCoder.decode(shake256(seedDst, { dkLen: seedCoder.bytesLen }));
+      const xofPrime = XOF2562(rhoPrime);
+      const s1 = [];
+      for (let i = 0; i < L; i++)
+        s1.push(RejBoundedPoly(xofPrime.get(i & 255, i >> 8 & 255)));
+      const s2 = [];
+      for (let i = L; i < L + K; i++)
+        s2.push(RejBoundedPoly(xofPrime.get(i & 255, i >> 8 & 255)));
+      const s1Hat = s1.map((i) => crystals2.NTT.encode(i.slice()));
+      const t0 = [];
+      const t1 = [];
+      const xof = XOF1282(rho);
+      const t = newPoly(N2);
+      for (let i = 0; i < K; i++) {
+        cleanBytes(t);
+        for (let j = 0; j < L; j++) {
+          const aij = RejNTTPoly(xof.get(j, i));
+          polyAdd2(t, MultiplyNTTs2(aij, s1Hat[j]));
+        }
+        crystals2.NTT.decode(t);
+        const { r0, r1 } = polyPowerRound(polyAdd2(t, s2[i]));
+        t0.push(r0);
+        t1.push(r1);
+      }
+      const publicKey = publicCoder.encode([rho, t1]);
+      const tr = shake256(publicKey, { dkLen: TR_BYTES });
+      const secretKey = secretCoder.encode([rho, K_, tr, s1, s2, t0]);
+      xof.clean();
+      xofPrime.clean();
+      cleanBytes(rho, rhoPrime, K_, s1, s2, s1Hat, t, t0, t1, tr, seedDst);
+      return {
+        publicKey,
+        secretKey
+      };
+    },
+    getPublicKey: (secretKey) => {
+      const [rho, _K, _tr, s1, s2, _t0] = secretCoder.decode(secretKey);
+      const xof = XOF1282(rho);
+      const s1Hat = s1.map((p) => crystals2.NTT.encode(p.slice()));
+      const t1 = [];
+      const tmp = newPoly(N2);
+      for (let i = 0; i < K; i++) {
+        tmp.fill(0);
+        for (let j = 0; j < L; j++) {
+          const aij = RejNTTPoly(xof.get(j, i));
+          polyAdd2(tmp, MultiplyNTTs2(aij, s1Hat[j]));
+        }
+        crystals2.NTT.decode(tmp);
+        polyAdd2(tmp, s2[i]);
+        const { r1 } = polyPowerRound(tmp);
+        t1.push(r1);
+      }
+      xof.clean();
+      cleanBytes(tmp, s1Hat, _t0, s1, s2);
+      return publicCoder.encode([rho, t1]);
+    },
+    // NOTE: random is optional.
+    sign: (msg, secretKey, opts3 = {}) => {
+      opts3 = validateSigOpts(opts3, INTERNAL_SIG_OPT_KEYS);
+      opts3 = validateInternalOpts(opts3, INTERNAL_SIG_OPT_KEYS);
+      const { extraEntropy: random, externalMu = false } = opts3;
+      if (externalMu)
+        abytesDoc(msg, CRH_BYTES, "mu");
+      const ownRnd = random === false || random === void 0;
+      const rnd = random === false ? new Uint8Array(32) : random === void 0 ? randomBytes2(signRandBytes) : random;
+      abytesDoc(rnd, 32, "extraEntropy");
+      const decoded = (() => {
+        try {
+          return secretCoder.decode(secretKey);
+        } catch (error) {
+          if (ownRnd)
+            cleanBytes(rnd);
+          throw error;
+        }
+      })();
+      const [rho, _K, tr, s1, s2, t0] = decoded;
+      const A = [];
+      const xof = XOF1282(rho);
+      for (let i = 0; i < K; i++) {
+        const pv = [];
+        for (let j = 0; j < L; j++)
+          pv.push(RejNTTPoly(xof.get(j, i)));
+        A.push(pv);
+      }
+      xof.clean();
+      for (let i = 0; i < L; i++)
+        crystals2.NTT.encode(s1[i]);
+      for (let i = 0; i < K; i++) {
+        crystals2.NTT.encode(s2[i]);
+        crystals2.NTT.encode(t0[i]);
+      }
+      const mu = externalMu ? msg : (
+        // 6: µ ← H(tr||M, 512)
+        //    ▷ Compute message representative µ
+        shake256.create({ dkLen: CRH_BYTES }).update(tr).update(msg).digest()
+      );
+      const rhoprime = shake256.create({ dkLen: CRH_BYTES }).update(_K).update(rnd).update(mu).digest();
+      if (ownRnd)
+        cleanBytes(rnd);
+      abytesDoc(rhoprime, CRH_BYTES);
+      const x256 = XOF2562(rhoprime, ZCoder.bytesLen);
+      main_loop: for (let kappa = 0; ; ) {
+        const y = [];
+        for (let i = 0; i < L; i++, kappa++)
+          y.push(ZCoder.decode(x256.get(kappa & 255, kappa >> 8)()));
+        const z = y.map((i) => crystals2.NTT.encode(i.slice()));
+        const w = [];
+        for (let i = 0; i < K; i++) {
+          const wi = newPoly(N2);
+          for (let j = 0; j < L; j++)
+            polyAdd2(wi, MultiplyNTTs2(A[i][j], z[j]));
+          crystals2.NTT.decode(wi);
+          w.push(wi);
+        }
+        const w1 = w.map((j) => j.map(HighBits));
+        const cTilde = shake256.create({ dkLen: C_TILDE_BYTES }).update(mu).update(W1Vec.encode(w1)).digest();
+        const cHat = crystals2.NTT.encode(SampleInBall(cTilde));
+        const cs1 = s1.map((i) => MultiplyNTTs2(i, cHat));
+        for (let i = 0; i < L; i++) {
+          polyAdd2(crystals2.NTT.decode(cs1[i]), y[i]);
+          if (polyChknorm(cs1[i], GAMMA1 - BETA)) {
+            cleanBytes(cTilde, cs1, cHat, w1, w, z, y);
+            continue main_loop;
+          }
+        }
+        let cnt = 0;
+        const h = [];
+        for (let i = 0; i < K; i++) {
+          const cs2 = crystals2.NTT.decode(MultiplyNTTs2(s2[i], cHat));
+          const r0 = polySub2(w[i], cs2).map(LowBits);
+          if (polyChknorm(r0, GAMMA2 - BETA)) {
+            cleanBytes(cTilde, cs1, cHat, w1, w, z, y, h, cs2, r0);
+            continue main_loop;
+          }
+          const ct0 = crystals2.NTT.decode(MultiplyNTTs2(t0[i], cHat));
+          if (polyChknorm(ct0, GAMMA2)) {
+            cleanBytes(cTilde, cs1, cHat, w1, w, z, y, h, cs2, r0, ct0);
+            continue main_loop;
+          }
+          polyAdd2(r0, ct0);
+          const hint = polyMakeHint(r0, w1[i]);
+          h.push(hint.v);
+          cnt += hint.cnt;
+        }
+        if (cnt > OMEGA) {
+          cleanBytes(cTilde, cs1, cHat, w1, w, z, y, h);
+          continue;
+        }
+        x256.clean();
+        const res = sigCoder.encode([cTilde, cs1, h]);
+        cleanBytes(cTilde, cs1, h, cHat, w1, w, z, y, rhoprime, s1, s2, t0, ...A);
+        if (!externalMu)
+          cleanBytes(mu);
+        return res;
+      }
+      throw new Error("Unreachable code path reached, report this error");
+    },
+    verify: (sig, msg, publicKey, opts3 = {}) => {
+      opts3 = validateInternalOpts(opts3, INTERNAL_VER_OPT_KEYS);
+      const { externalMu = false } = opts3;
+      if (externalMu)
+        abytesDoc(msg, CRH_BYTES, "mu");
+      const [rho, t1] = publicCoder.decode(publicKey);
+      const tr = shake256(publicKey, { dkLen: TR_BYTES });
+      if (sig.length !== sigCoder.bytesLen)
+        return false;
+      const [cTilde, z, h] = sigCoder.decode(sig);
+      if (h === false)
+        return false;
+      for (let i = 0; i < L; i++)
+        if (polyChknorm(z[i], GAMMA1 - BETA))
+          return false;
+      const mu = externalMu ? msg : (
+        // 7: µ ← H(tr||M, 512)
+        shake256.create({ dkLen: CRH_BYTES }).update(tr).update(msg).digest()
+      );
+      const c = crystals2.NTT.encode(SampleInBall(cTilde));
+      const zNtt = z.map((i) => i.slice());
+      for (let i = 0; i < L; i++)
+        crystals2.NTT.encode(zNtt[i]);
+      const wTick1 = [];
+      const xof = XOF1282(rho);
+      for (let i = 0; i < K; i++) {
+        const ct12d = MultiplyNTTs2(crystals2.NTT.encode(polyShiftl(t1[i])), c);
+        const Az = newPoly(N2);
+        for (let j = 0; j < L; j++) {
+          const aij = RejNTTPoly(xof.get(j, i));
+          polyAdd2(Az, MultiplyNTTs2(aij, zNtt[j]));
+        }
+        const wApprox = crystals2.NTT.decode(polySub2(Az, ct12d));
+        wTick1.push(polyUseHint(wApprox, h[i]));
+      }
+      xof.clean();
+      const c2 = shake256.create({ dkLen: C_TILDE_BYTES }).update(mu).update(W1Vec.encode(wTick1)).digest();
+      for (const t of h) {
+        const sum = t.reduce((acc, i) => acc + i, 0);
+        if (!(sum <= OMEGA))
+          return false;
+      }
+      for (const t of z)
+        if (polyChknorm(t, GAMMA1 - BETA))
+          return false;
+      return equalBytes(cTilde, c2);
+    }
+  });
+  return Object.freeze({
+    info: Object.freeze({ type: "ml-dsa" }),
+    internal,
+    securityLevel,
+    keygen: internal.keygen,
+    lengths: internal.lengths,
+    getPublicKey: internal.getPublicKey,
+    sign: (msg, secretKey, opts3 = {}) => {
+      opts3 = validateSigOpts(opts3);
+      const M = getMessage(msg, opts3.context);
+      const res = internal.sign(M, secretKey, {
+        extraEntropy: opts3.extraEntropy,
+        externalMu: false
+      });
+      cleanBytes(M);
+      return res;
+    },
+    verify: (sig, msg, publicKey, opts3 = {}) => {
+      opts3 = validateVerOpts(opts3);
+      abytesDoc(sig, void 0, "signature");
+      return internal.verify(sig, getMessage(msg, opts3.context), publicKey, { externalMu: false });
+    },
+    prehash: (hash) => {
+      checkHash(hash, securityLevel);
+      const rawHash = hash;
+      return Object.freeze({
+        info: Object.freeze({ type: "hashml-dsa" }),
+        securityLevel,
+        lengths: internal.lengths,
+        keygen: internal.keygen,
+        getPublicKey: internal.getPublicKey,
+        sign: (msg, secretKey, opts3 = {}) => {
+          opts3 = validateSigOpts(opts3);
+          const M = getMessagePrehash(rawHash, msg, opts3.context);
+          const res = internal.sign(M, secretKey, {
+            extraEntropy: opts3.extraEntropy,
+            externalMu: false
+          });
+          cleanBytes(M);
+          return res;
+        },
+        verify: (sig, msg, publicKey, opts3 = {}) => {
+          opts3 = validateVerOpts(opts3);
+          abytesDoc(sig, void 0, "signature");
+          return internal.verify(sig, getMessagePrehash(rawHash, msg, opts3.context), publicKey, {
+            externalMu: false
+          });
+        }
+      });
+    }
+  });
+}
+var INTERNAL_SIG_OPT_KEYS, INTERNAL_VER_OPT_KEYS, N2, Q2, ROOT_OF_UNITY2, F2, D, GAMMA2_1, GAMMA2_2, PARAMS2, newPoly, crystals2, id, polyCoder2, polyAdd2, polySub2, polyShiftl, polyChknorm, MultiplyNTTs2, ml_dsa44, ml_dsa65, ml_dsa87;
+var init_ml_dsa = __esm({
+  "node_modules/@noble/post-quantum/ml-dsa.js"() {
+    init_utils2();
+    init_sha3();
+    init_crystals();
+    init_utils3();
+    /*! noble-post-quantum - MIT License (c) 2024 Paul Miller (paulmillr.com) */
+    INTERNAL_SIG_OPT_KEYS = /* @__PURE__ */ Object.freeze([
+      "extraEntropy",
+      "externalMu"
+    ]);
+    INTERNAL_VER_OPT_KEYS = /* @__PURE__ */ Object.freeze(["externalMu"]);
+    N2 = 256;
+    Q2 = 8380417;
+    ROOT_OF_UNITY2 = 1753;
+    F2 = 8347681;
+    D = 13;
+    GAMMA2_1 = Math.floor((Q2 - 1) / 88) | 0;
+    GAMMA2_2 = Math.floor((Q2 - 1) / 32) | 0;
+    PARAMS2 = /* @__PURE__ */ (() => Object.freeze({
+      2: Object.freeze({
+        K: 4,
+        L: 4,
+        D,
+        GAMMA1: 2 ** 17,
+        GAMMA2: GAMMA2_1,
+        TAU: 39,
+        ETA: 2,
+        OMEGA: 80
+      }),
+      3: Object.freeze({
+        K: 6,
+        L: 5,
+        D,
+        GAMMA1: 2 ** 19,
+        GAMMA2: GAMMA2_2,
+        TAU: 49,
+        ETA: 4,
+        OMEGA: 55
+      }),
+      5: Object.freeze({
+        K: 8,
+        L: 7,
+        D,
+        GAMMA1: 2 ** 19,
+        GAMMA2: GAMMA2_2,
+        TAU: 60,
+        ETA: 2,
+        OMEGA: 75
+      })
+    }))();
+    newPoly = (n) => new Int32Array(n);
+    crystals2 = /* @__PURE__ */ genCrystals({
+      N: N2,
+      Q: Q2,
+      F: F2,
+      ROOT_OF_UNITY: ROOT_OF_UNITY2,
+      newPoly,
+      isKyber: false,
+      brvBits: 8
+    });
+    id = (n) => n;
+    polyCoder2 = (d, compress2 = id, verify = id) => crystals2.bitsCoder(d, {
+      encode: (i) => compress2(verify(i)),
+      decode: (i) => verify(compress2(i))
+    });
+    polyAdd2 = (a_, b_) => {
+      const a = a_;
+      const b = b_;
+      for (let i = 0; i < a.length; i++)
+        a[i] = crystals2.mod(a[i] + b[i]);
+      return a;
+    };
+    polySub2 = (a_, b_) => {
+      const a = a_;
+      const b = b_;
+      for (let i = 0; i < a.length; i++)
+        a[i] = crystals2.mod(a[i] - b[i]);
+      return a;
+    };
+    polyShiftl = (p_) => {
+      const p = p_;
+      for (let i = 0; i < N2; i++)
+        p[i] <<= D;
+      return p;
+    };
+    polyChknorm = (p_, B2) => {
+      const p = p_;
+      for (let i = 0; i < N2; i++)
+        if (Math.abs(crystals2.smod(p[i])) >= B2)
+          return true;
+      return false;
+    };
+    MultiplyNTTs2 = (a_, b_) => {
+      const a = a_;
+      const b = b_;
+      const c = newPoly(N2);
+      for (let i = 0; i < a.length; i++)
+        c[i] = crystals2.mod(a[i] * b[i]);
+      return c;
+    };
+    ml_dsa44 = /* @__PURE__ */ (() => getDilithium({
+      ...PARAMS2[2],
+      CRH_BYTES: 64,
+      TR_BYTES: 64,
+      C_TILDE_BYTES: 32,
+      XOF128,
+      XOF256,
+      securityLevel: 128
+    }))();
+    ml_dsa65 = /* @__PURE__ */ (() => getDilithium({
+      ...PARAMS2[3],
+      CRH_BYTES: 64,
+      TR_BYTES: 64,
+      C_TILDE_BYTES: 48,
+      XOF128,
+      XOF256,
+      securityLevel: 192
+    }))();
+    ml_dsa87 = /* @__PURE__ */ (() => getDilithium({
+      ...PARAMS2[5],
+      CRH_BYTES: 64,
+      TR_BYTES: 64,
+      C_TILDE_BYTES: 64,
+      XOF128,
+      XOF256,
+      securityLevel: 256
     }))();
   }
 });
@@ -1694,10 +2303,12 @@ var require_parameters = __commonJS({
   "src/parameters.js"(exports2, module2) {
     "use strict";
     var PARAMETER_SETS = Object.freeze({
-      "ml-kem-768": Object.freeze({ label: "ML-KEM-768", k: 3, eta1: 2, eta2: 2, du: 10, dv: 4, publicBytes: 1184, privateBytes: 2400, ciphertextBytes: 1088, category: 3 })
+      "ml-kem-512": Object.freeze({ label: "ML-KEM-512", signature: "ML-DSA-44", k: 2, eta1: 3, eta2: 2, du: 10, dv: 4, publicBytes: 800, privateBytes: 1632, ciphertextBytes: 768, category: 1 }),
+      "ml-kem-768": Object.freeze({ label: "ML-KEM-768", signature: "ML-DSA-65", k: 3, eta1: 2, eta2: 2, du: 10, dv: 4, publicBytes: 1184, privateBytes: 2400, ciphertextBytes: 1088, category: 3 }),
+      "ml-kem-1024": Object.freeze({ label: "ML-KEM-1024", signature: "ML-DSA-87", k: 4, eta1: 2, eta2: 2, du: 11, dv: 5, publicBytes: 1568, privateBytes: 3168, ciphertextBytes: 1568, category: 5 })
     });
     function parameters2(scheme = "ml-kem-768") {
-      if (!Object.hasOwn(PARAMETER_SETS, scheme)) throw new Error("Qcord supports ML-KEM-768 only.");
+      if (!Object.hasOwn(PARAMETER_SETS, scheme)) throw new Error("Unsupported ML-KEM parameter set.");
       return PARAMETER_SETS[scheme];
     }
     module2.exports = { PARAMETER_SETS, parameters: parameters2 };
@@ -1726,19 +2337,19 @@ var require_mlkem = __commonJS({
     var { sha3_256: sha3_2562, sha3_512: sha3_5122, shake128: shake1282, shake256: shake2562 } = (init_sha3(), __toCommonJS(sha3_exports));
     var { parameters: parameters2 } = require_parameters();
     var { ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
-    var Q2 = 3329;
-    var N2 = 256;
-    var mod = (n) => (n % Q2 + Q2) % Q2;
+    var Q3 = 3329;
+    var N3 = 256;
+    var mod = (n) => (n % Q3 + Q3) % Q3;
     var concat = (...arrays) => Uint8Array.from(arrays.flatMap((a) => Array.from(a)));
     var bits = (bytes) => Array.from(bytes).flatMap((b) => Array.from({ length: 8 }, (_, i) => b >> i & 1));
-    var compress2 = (x, d) => Math.floor((mod(x) * 2 ** d + 1664) / Q2) % 2 ** d;
-    var decompress = (x, d) => Math.floor((Q2 * x + 2 ** (d - 1)) / 2 ** d);
+    var compress2 = (x, d) => Math.floor((mod(x) * 2 ** d + 1664) / Q3) % 2 ** d;
+    var decompress = (x, d) => Math.floor((Q3 * x + 2 ** (d - 1)) / 2 ** d);
     var add = (a, b) => a.map((v, i) => mod(v + b[i]));
     var sub = (a, b) => a.map((v, i) => mod(v - b[i]));
-    var centered = (x) => x > 1664 ? x - Q2 : x;
+    var centered = (x) => x > 1664 ? x - Q3 : x;
     function decode(bytes, d) {
       const stream = bits(bytes);
-      return Array.from({ length: N2 }, (_, i) => {
+      return Array.from({ length: N3 }, (_, i) => {
         let v = 0;
         for (let j = 0; j < d; j++) v += stream[i * d + j] * 2 ** j;
         return v;
@@ -1762,7 +2373,7 @@ var require_mlkem = __commonJS({
       const f = Array.from(input);
       let k = inverse ? 127 : 1;
       for (let len = inverse ? 2 : 128; inverse ? len <= 128 : len >= 2; len = inverse ? len * 2 : len / 2) {
-        for (let start = 0; start < N2; start += 2 * len) {
+        for (let start = 0; start < N3; start += 2 * len) {
           const z = zetas[inverse ? k-- : k++];
           for (let j = start; j < start + len; j++) {
             const t = f[j];
@@ -1788,17 +2399,17 @@ var require_mlkem = __commonJS({
       }
       return out;
     }
-    var dot = (a, b) => a.reduce((sum, poly, i) => add(sum, multiply(poly, b[i])), Array(N2).fill(0));
+    var dot = (a, b) => a.reduce((sum, poly, i) => add(sum, multiply(poly, b[i])), Array(N3).fill(0));
     function sampleNTT(rho, i, j) {
       const xof = shake1282.create().update(concat(rho, [j, i]));
       const out = [];
-      while (out.length < N2) {
+      while (out.length < N3) {
         const block = xof.xof(168);
-        for (let p = 0; p < block.length && out.length < N2; p += 3) {
+        for (let p = 0; p < block.length && out.length < N3; p += 3) {
           const d1 = block[p] + 256 * (block[p + 1] & 15);
           const d2 = (block[p + 1] >> 4) + 16 * block[p + 2];
-          if (d1 < Q2) out.push(d1);
-          if (d2 < Q2 && out.length < N2) out.push(d2);
+          if (d1 < Q3) out.push(d1);
+          if (d2 < Q3 && out.length < N3) out.push(d2);
         }
       }
       xof.destroy();
@@ -1806,7 +2417,7 @@ var require_mlkem = __commonJS({
     }
     function cbd(seed, nonce, eta) {
       const stream = bits(shake2562(concat(seed, [nonce]), { dkLen: 64 * eta }));
-      return Array.from({ length: N2 }, (_, i) => {
+      return Array.from({ length: N3 }, (_, i) => {
         let sum = 0;
         for (let j = 0; j < eta; j++) sum += stream[2 * eta * i + j] - stream[2 * eta * i + eta + j];
         return mod(sum);
@@ -1854,7 +2465,7 @@ var require_mlkem = __commonJS({
         value.fill(0);
       } else if (value && typeof value === "object") Object.values(value).forEach(wipe);
     }
-    module2.exports = { Q: Q2, N: N2, mod, bits, compress: compress2, decompress, ntt, multiply, encode, decode, publicTrace, encapsulationTrace, decapsulationTrace, wipe };
+    module2.exports = { Q: Q3, N: N3, mod, bits, compress: compress2, decompress, ntt, multiply, encode, decode, publicTrace, encapsulationTrace, decapsulationTrace, wipe };
   }
 });
 
@@ -1862,14 +2473,18 @@ var require_mlkem = __commonJS({
 var require_pqc = __commonJS({
   "src/pqc.js"(exports2, module2) {
     "use strict";
-    var { ml_kem768: ml_kem7682 } = (init_ml_kem(), __toCommonJS(ml_kem_exports));
+    var { ml_kem512: ml_kem5122, ml_kem768: ml_kem7682, ml_kem1024: ml_kem10242 } = (init_ml_kem(), __toCommonJS(ml_kem_exports));
+    var { ml_dsa44: ml_dsa442, ml_dsa65: ml_dsa652, ml_dsa87: ml_dsa872 } = (init_ml_dsa(), __toCommonJS(ml_dsa_exports));
+    var signatures = { "ml-kem-512": ml_dsa442, "ml-kem-768": ml_dsa652, "ml-kem-1024": ml_dsa872 };
     var { equalBytes: equalBytes3 } = (init_utils3(), __toCommonJS(utils_exports));
     var { pack, unpack, readKeyData } = require_der();
     var algorithms = {
+      "ml-kem-512": { impl: ml_kem5122, oid: "608648016503040401" },
+      "ml-kem-1024": { impl: ml_kem10242, oid: "608648016503040403" },
       "ml-kem-768": { impl: ml_kem7682, oid: "608648016503040402" }
     };
     function algorithm(scheme) {
-      if (!Object.hasOwn(algorithms, scheme)) throw new Error("Qcord supports ML-KEM-768 only.");
+      if (!Object.hasOwn(algorithms, scheme)) throw new Error("Unsupported ML-KEM parameter set.");
       return algorithms[scheme];
     }
     function randomBytes3(size) {
@@ -1939,6 +2554,21 @@ var require_pqc = __commonJS({
       return algorithm(key.asymmetricKeyType).impl;
     }
     var PQC = {
+      generateSignatureKeys: (scheme) => run(() => {
+        algorithm(scheme);
+        const seed = randomBytes3(32);
+        try {
+          const pair = signatures[scheme].keygen(seed);
+          return { publicKey: pair.publicKey, privateKey: pair.secretKey };
+        } finally {
+          seed.fill(0);
+        }
+      }),
+      validateSignatureKey: (text, scheme) => {
+        const bytes = readKeyData(text);
+        if (bytes.length !== signatures[scheme].lengths.publicKey) throw new Error("Signature key length does not match the recipient's security level.");
+        return Buffer.from(bytes).toString("base64");
+      },
       backend: "bundled @noble/post-quantum 0.7.1",
       generateKeyPair: (scheme) => run(() => {
         const { impl } = algorithm(scheme);
@@ -1985,16 +2615,16 @@ var require_pqc = __commonJS({
 function isBytes2(a) {
   return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 }
-function abool2(value, title = "") {
+function abool3(value, title = "") {
   if (typeof value !== "boolean")
-    throw new TypeError(atitle2(title) + "expected boolean, got type=" + typeof value);
+    throw new TypeError(atitle3(title) + "expected boolean, got type=" + typeof value);
   return value;
 }
 function anumber2(n, title = "") {
   if (typeof n !== "number")
-    throw new TypeError(atitle2(title) + "expected number, got " + typeof n);
+    throw new TypeError(atitle3(title) + "expected number, got " + typeof n);
   if (!Number.isSafeInteger(n) || n < 0)
-    throw new RangeError(atitle2(title) + "expected integer >= 0, got " + n);
+    throw new RangeError(atitle3(title) + "expected integer >= 0, got " + n);
   return n;
 }
 function abytes2(value, length, title = "") {
@@ -2005,7 +2635,7 @@ function abytes2(value, length, title = "") {
   const bytes = isBytes2(value);
   const ofLen = length !== void 0 ? ` of length ${length}` : "";
   const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
-  const message = atitle2(title) + "expected Uint8Array" + ofLen + ", got " + got;
+  const message = atitle3(title) + "expected Uint8Array" + ofLen + ", got " + got;
   if (!bytes)
     throw new TypeError(message);
   throw new RangeError(message);
@@ -2108,7 +2738,7 @@ function getOutput(expectedLength, out, onlyAligned = true) {
 function u64Lengths(dataLength, aadLength, isLE3) {
   anumber2(dataLength);
   anumber2(aadLength);
-  abool2(isLE3);
+  abool3(isLE3);
   const num = new Uint8Array(16);
   const view = createView(num);
   view.setBigUint64(0, BigInt(aadLength), isLE3);
@@ -2121,11 +2751,11 @@ function isAligned32(bytes) {
 function copyBytes2(bytes) {
   return Uint8Array.from(abytes2(bytes));
 }
-var atitle2, isLE2, swap8IfBE, swap32IfBE2, wrapCipher;
+var atitle3, isLE2, swap8IfBE, swap32IfBE2, wrapCipher;
 var init_utils4 = __esm({
   "node_modules/@noble/ciphers/utils.js"() {
     /*! noble-ciphers - MIT License (c) 2023 Paul Miller (paulmillr.com) */
-    atitle2 = (title) => title ? `"${title}" ` : "";
+    atitle3 = (title) => title ? `"${title}" ` : "";
     isLE2 = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
     swap8IfBE = isLE2 ? (n) => n : (n) => byteSwap2(n) >>> 0;
     swap32IfBE2 = isLE2 ? (u) => u : byteSwap322;
@@ -3518,25 +4148,30 @@ var init_aes = __esm({
 var require_packet = __commonJS({
   "src/packet.js"(exports2, module2) {
     "use strict";
-    var { parameters: parameters2 } = require_parameters();
+    var { parameters: parameters2, PARAMETER_SETS } = require_parameters();
     var { encode, decode } = require_mlkem();
     var { MAX_DECODED_FILE_SIZE } = require_constants();
-    var { k, du, dv, ciphertextBytes } = parameters2();
-    function fromCiphertext(ciphertext) {
-      if (ciphertext.length !== ciphertextBytes) throw new Error("Invalid ML-KEM-768 ciphertext length.");
+    var coefficients = (file) => file?.qcord_version === 6 ? file.kem : file;
+    var schemeOf = (file) => Object.keys(PARAMETER_SETS).find((name) => parameters2(name).k === coefficients(file)?.u?.length);
+    function fromCiphertext(ciphertext, scheme = "ml-kem-768") {
+      const { k, du, dv, ciphertextBytes } = parameters2(scheme);
+      if (ciphertext.length !== ciphertextBytes) throw new Error("Invalid ML-KEM ciphertext length.");
       const width = 32 * du;
-      return {
-        qcord_version: 5,
+      return { qcord_version: 6, kem: {
         u: Array.from({ length: k }, (_, i) => decode(ciphertext.slice(i * width, (i + 1) * width), du)),
-        v: decode(ciphertext.slice(k * width), dv),
-        signature_sigma: { c_tilde: "", z: [], h: [] }
-      };
+        v: decode(ciphertext.slice(k * width), dv)
+      }, signature_sigma: { c_tilde: "", z: [], h: [] } };
     }
     function toCiphertext(file) {
-      if (!file || typeof file !== "object" || Array.isArray(file) || file.qcord_version !== 5) throw new Error("Expected a version-5 ML-KEM-768 Qcord file.");
+      if (!file || typeof file !== "object" || Array.isArray(file) || ![5, 6].includes(file.qcord_version)) throw new Error("Expected a version-5 or version-6 Qcord file.");
+      const scheme = schemeOf(file);
+      if (!scheme) throw new Error("Invalid compressed u or v coefficients.");
+      const { k, du, dv } = parameters2(scheme);
+      const kem = coefficients(file);
+      if (file.qcord_version === 6 && (!kem || Array.isArray(kem) || Object.keys(kem).sort().join() !== "u,v")) throw new Error("Invalid kem fields.");
       const valid = (p, d) => Array.isArray(p) && p.length === 256 && p.every((x) => Number.isInteger(x) && x >= 0 && x < 2 ** d);
-      if (!Array.isArray(file.u) || file.u.length !== k || !file.u.every((p) => valid(p, du)) || !valid(file.v, dv)) throw new Error("Invalid compressed u or v coefficients.");
-      return Buffer.concat([...file.u.map((p) => Buffer.from(encode(p, du))), Buffer.from(encode(file.v, dv))]);
+      if (!Array.isArray(kem.u) || kem.u.length !== k || !kem.u.every((p) => valid(p, du)) || !valid(kem.v, dv)) throw new Error("Invalid compressed u or v coefficients.");
+      return Buffer.concat([...kem.u.map((p) => Buffer.from(encode(p, du))), Buffer.from(encode(kem.v, dv))]);
     }
     function decodeBase64(value, size) {
       if (typeof value !== "string" || value.length > MAX_DECODED_FILE_SIZE || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw new Error("Invalid encrypted message field.");
@@ -3548,7 +4183,8 @@ var require_packet = __commonJS({
       if (typeof text !== "string" || Buffer.byteLength(text) > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file is too large or invalid.");
       const packet = JSON.parse(text.replace(/^\uFEFF/, ""));
       const ciphertext = toCiphertext(packet);
-      if (Object.keys(packet).filter((key) => key !== "signature_sigma").sort().join() !== "encrypted_message,qcord_version,u,v") throw new Error("Unexpected Qcord file fields.");
+      const expected = packet.qcord_version === 6 ? "encrypted_message,kem,qcord_version" : "encrypted_message,qcord_version,u,v";
+      if (Object.keys(packet).filter((key) => key !== "signature_sigma").sort().join() !== expected) throw new Error("Unexpected Qcord file fields.");
       if (packet.signature_sigma !== void 0) validateSignaturePlaceholder(packet.signature_sigma);
       const sealed = packet.encrypted_message;
       if (!sealed || typeof sealed !== "object" || Array.isArray(sealed) || Object.keys(sealed).sort().join() !== "authentication_tag_base64,ciphertext_base64,nonce_base64") throw new Error("Invalid encrypted_message fields.");
@@ -3562,10 +4198,21 @@ var require_packet = __commonJS({
         throw new Error("Expected blank signature_sigma placeholders; ML-DSA is not implemented.");
       }
     }
-    var aad = (file) => Buffer.from(JSON.stringify({ qcord_version: file.qcord_version, u: file.u, v: file.v }));
+    var aad = (file) => Buffer.from(JSON.stringify(file.qcord_version === 6 ? { qcord_version: 6, kem: { u: file.kem.u, v: file.kem.v } } : { qcord_version: 5, u: file.u, v: file.v }));
     function stringify(file) {
       toCiphertext(file);
-      const rows = file.u.map((poly) => "    [" + poly.join(", ") + "]").join(",\n");
+      const kem = coefficients(file), nested = file.qcord_version === 6;
+      const indent = nested ? "      " : "    ";
+      const rows = kem.u.map((poly) => indent + "[" + poly.join(", ") + "]").join(",\n");
+      const vectors = nested ? `  "kem": {
+    "u": [
+${rows}
+    ],
+    "v": [${kem.v.join(", ")}]
+  }` : `  "u": [
+${rows}
+  ],
+  "v": [${kem.v.join(", ")}]`;
       const sealed = JSON.stringify(file.encrypted_message, null, 2).replace(/\n/g, "\n  ");
       const sigma = file.signature_sigma;
       if (sigma !== void 0) validateSignaturePlaceholder(sigma);
@@ -3573,15 +4220,12 @@ var require_packet = __commonJS({
   "signature_sigma": ${JSON.stringify(sigma, null, 2).replace(/\n/g, "\n  ")}`;
       return `{
   "qcord_version": ${file.qcord_version},
-  "u": [
-${rows}
-  ],
-  "v": [${file.v.join(", ")}],
+${vectors},
   "encrypted_message": ${sealed}${signature}
 }
 `;
     }
-    module2.exports = { fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify };
+    module2.exports = { schemeOf, fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify };
   }
 });
 
@@ -3593,9 +4237,10 @@ var require_message = __commonJS({
     var { sha3_256: sha3_2562, sha3_512: sha3_5122 } = (init_sha3(), __toCommonJS(sha3_exports));
     var { randomBytes: randomBytes3 } = require_pqc();
     var { decodeBase64, aad } = require_packet();
+    var { PARAMETER_SETS } = require_parameters();
     var { MAX_DECODED_FILE_SIZE } = require_constants();
     function keyFromM(m, ek) {
-      if (m.length !== 32 || ek.length !== 1184) throw new Error("Expected 32-byte m and ML-KEM-768 public key.");
+      if (m.length !== 32 || !Object.values(PARAMETER_SETS).some((p) => p.publicBytes === ek.length)) throw new Error("Expected 32-byte m and a supported ML-KEM public key.");
       const kr = sha3_5122(Uint8Array.from([...m, ...sha3_2562(ek)]));
       try {
         return kr.slice(0, 32);
@@ -3670,12 +4315,11 @@ var require_config = __commonJS({
     }
     function initialize() {
       const version = load("config_version");
-      if (version === 4) {
-        if (load("public_signature") === void 0 || load("private_signature") === void 0) finalize();
+      if (version === 5) {
         clean3();
         return;
       }
-      if (version === 3) {
+      if (version === 4 || version === 3) {
         finalize();
         clean3();
         return;
@@ -3729,35 +4373,58 @@ var require_config = __commonJS({
           }
         })
       }));
-      const fields = {
-        config_version: 4,
+      const levels = require_parameters().PARAMETER_SETS;
+      const existing = load("key_sets") || {}, encryption = load("security_keys") || {}, signatures = load("signature_keys") || {};
+      const keySets = {};
+      for (const scheme of Object.keys(levels)) {
+        const enc = existing[scheme] || (scheme === ACTIVE_SCHEME2 ? { public_encaps: load("public_encaps"), private_decaps: load("private_decaps") } : encryption[scheme]) || {};
+        const sig = existing[scheme] || signatures[scheme] || {};
+        keySets[scheme] = {
+          public_encaps: enc.public_encaps || "",
+          private_decaps: enc.private_decaps || "",
+          public_signature: sig.public_signature || "",
+          private_signature: sig.private_signature || ""
+        };
+      }
+      writeConfig({
         auto_encrypt: load("auto_encrypt") === true,
         auto_decrypt: load("auto_decrypt") !== false,
+        auto_verify: load("auto_verify") === true,
         save_receipts: load("save_receipts") !== false,
-        public_signature: load("public_signature") ?? "",
-        private_signature: load("private_signature") ?? ""
-      };
-      for (const name of ["public_encaps", "private_decaps"]) {
-        const value = load(name);
-        if (value !== void 0) fields[name] = value;
-      }
-      fields.recipients = recipients;
-      for (const name of Object.keys(fields)) BdApi.Data.delete(KEY_STORE, name);
+        config_version: 5,
+        key_sets: keySets,
+        recipients
+      });
+    }
+    function writeConfig(fields) {
+      for (const name of [...Object.keys(fields), "public_encaps", "private_decaps", "public_signature", "private_signature", "security_keys", "signature_keys"]) BdApi.Data.delete(KEY_STORE, name);
       for (const [name, value] of Object.entries(fields)) save(name, value);
+    }
+    function saveKeySet(scheme, updates) {
+      const sets = load("key_sets") || {};
+      const value = { ...sets[scheme], ...updates };
+      sets[scheme] = {
+        public_encaps: value.public_encaps || "",
+        private_decaps: value.private_decaps || "",
+        public_signature: value.public_signature || "",
+        private_signature: value.private_signature || ""
+      };
+      save("key_sets", sets);
     }
     function reset(keys) {
       clean3();
-      save("public_encaps", Buffer.from(keys.publicKey.bytes).toString("base64"));
-      save("private_decaps", Buffer.from(keys.privateKey.bytes).toString("base64"));
-      save("recipients", []);
-      save("auto_encrypt", false);
-      save("auto_decrypt", true);
-      save("save_receipts", true);
-      save("public_signature", "");
-      save("private_signature", "");
-      finalize();
+      const sets = {};
+      for (const scheme of Object.keys(require_parameters().PARAMETER_SETS)) {
+        sets[scheme] = {
+          public_encaps: scheme === ACTIVE_SCHEME2 ? Buffer.from(keys.publicKey.bytes).toString("base64") : "",
+          private_decaps: scheme === ACTIVE_SCHEME2 ? Buffer.from(keys.privateKey.bytes).toString("base64") : "",
+          public_signature: "",
+          private_signature: ""
+        };
+      }
+      writeConfig({ auto_encrypt: false, auto_decrypt: true, auto_verify: false, save_receipts: true, config_version: 5, key_sets: sets, recipients: [] });
     }
-    module2.exports = { load, save, initialize, reset, get receiptsRevision() {
+    module2.exports = { load, save, saveKeySet, initialize, reset, get receiptsRevision() {
       return receiptsRevision;
     } };
   }
@@ -3782,7 +4449,8 @@ var require_messaging = __commonJS({
         if (this.keyTasks.has(scheme)) return this.keyTasks.get(scheme);
         const session = this.session;
         const task = (async () => {
-          const publicEncaps = config2.load("public_encaps"), privateDecaps = config2.load("private_decaps");
+          const saved = config2.load("key_sets")?.[scheme] || {};
+          const publicEncaps = saved.public_encaps, privateDecaps = saved.private_decaps;
           let keys;
           if (publicEncaps || privateDecaps) {
             keys = { scheme, publicKey: PQC.createPublicKey(publicEncaps), privateKey: PQC.createPrivateKey(privateDecaps) };
@@ -3790,10 +4458,21 @@ var require_messaging = __commonJS({
           } else {
             keys = { scheme, ...await PQC.generateKeyPair(scheme) };
             this.checkSession(session);
-            config2.save("public_encaps", raw(keys.publicKey));
-            config2.save("private_decaps", raw(keys.privateKey));
+            config2.saveKeySet(scheme, { public_encaps: raw(keys.publicKey), private_decaps: raw(keys.privateKey) });
           }
           this.checkSession(session);
+          if (!saved.public_signature || !saved.private_signature) {
+            const pair = await PQC.generateSignatureKeys(scheme);
+            try {
+              this.checkSession(session);
+              config2.saveKeySet(scheme, { public_signature: Buffer.from(pair.publicKey).toString("base64"), private_signature: Buffer.from(pair.privateKey).toString("base64") });
+            } finally {
+              pair.privateKey.fill(0);
+            }
+          }
+          const identity = config2.load("key_sets")[scheme];
+          keys.publicSignature = identity.public_signature;
+          keys.privateSignature = identity.private_signature;
           this.keyPairs.set(scheme, keys);
           return keys;
         })();
@@ -3812,9 +4491,9 @@ var require_messaging = __commonJS({
         if (!Array.isArray(rows)) throw new Error("Invalid saved recipients.");
         return rows.map((row) => ({ ...row, key_algorithm: PQC.createPublicKey(row.public_encaps).asymmetricKeyType }));
       }
-      getRecipients(channelId, scheme = ACTIVE_SCHEME2) {
-        parameters2(scheme);
-        return this.getSavedPartners().filter((row) => row.channel_id === channelId && row.key_algorithm === scheme);
+      getRecipients(channelId, scheme) {
+        if (scheme) parameters2(scheme);
+        return this.getSavedPartners().filter((row) => row.channel_id === channelId && (!scheme || row.key_algorithm === scheme));
       }
       getPartnerProfile(userId) {
         const user = BdApi.Webpack.getStore?.("UserStore")?.getUser(userId);
@@ -3835,7 +4514,7 @@ var require_messaging = __commonJS({
         const partner = this.getDirectPartner(channelId);
         parameters2(scheme);
         if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Save one public key for your DM partner.");
-        const { user_id, public_encaps } = rows[0];
+        const { user_id, public_encaps, public_signature = "" } = rows[0];
         if (user_id !== partner.userId) throw new Error("The user ID must match this DM's recipient.");
         const key = PQC.createPublicKey(public_encaps);
         if (key.asymmetricKeyType !== scheme) throw new Error("The key does not match the selected ML-KEM parameter set.");
@@ -3845,6 +4524,7 @@ var require_messaging = __commonJS({
           channel_id: channelId,
           user_id,
           public_encaps: encoded,
+          public_signature: public_signature ? PQC.validateSignatureKey(public_signature, scheme) : "",
           encapsulations: previous?.public_encaps === encoded ? previous.encapsulations : []
         };
         const saved = config2.load("recipients") || [];
@@ -3861,7 +4541,8 @@ var require_messaging = __commonJS({
         this.attachments?.clear();
         this.scheduleMount?.();
       }
-      async prepareEncapsulation(channelId, scheme = ACTIVE_SCHEME2, text = "") {
+      async prepareEncapsulation(channelId, scheme, text = "") {
+        scheme || (scheme = this.getSavedPartners().find((row2) => row2.channel_id === channelId)?.key_algorithm || ACTIVE_SCHEME2);
         this.checkSession(this.session);
         const partner = this.getDirectPartner(channelId);
         const row = this.getRecipients(channelId, scheme)[0];
@@ -3870,7 +4551,7 @@ var require_messaging = __commonJS({
         const result = await PQC.encapsulate(PQC.createPublicKey(row.public_encaps), true);
         try {
           this.checkSession(session);
-          const file = packet.fromCiphertext(result.ciphertext);
+          const file = packet.fromCiphertext(result.ciphertext, scheme);
           file.encrypted_message = message.seal(text, result.sharedKey, file);
           return this.serializeDraft({ channelId, scheme, public_encaps: row.public_encaps, message_epoch: Date.now(), packet: file, trace: result.trace });
         } catch (error) {
@@ -3932,8 +4613,8 @@ var require_messaging = __commonJS({
         const session = this.session;
         this.checkSession(session);
         const { packet: file, ciphertext } = packet.parse(text);
-        const scheme = ACTIVE_SCHEME2;
-        if (!this.keyPairs.has(scheme) && !config2.load("private_decaps")) throw new Error("No saved decapsulation key.");
+        const scheme = packet.schemeOf(file);
+        if (!this.keyPairs.has(scheme) && !config2.load("key_sets")?.[scheme]?.private_decaps) throw new Error("No saved decapsulation key.");
         const keys = await this.generateKeys(scheme);
         const sharedKey = await PQC.decapsulate(keys.privateKey, ciphertext);
         try {
@@ -3965,7 +4646,7 @@ var require_messaging = __commonJS({
         for (const record of candidates) {
           const key = packet.decodeBase64(record.k, 32);
           try {
-            return { scheme: ACTIVE_SCHEME2, key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K" };
+            return { scheme: packet.schemeOf(file), key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K" };
           } catch {
           } finally {
             key.fill(0);
@@ -3987,12 +4668,14 @@ var require_messaging = __commonJS({
           keys = { scheme: ACTIVE_SCHEME2, ...await PQC.generateKeyPair(ACTIVE_SCHEME2) };
           if (!this.running || this.session !== session) throw new Error("Qcord stopped during reset.");
           config2.reset(keys);
-          this.keyPairs.set(ACTIVE_SCHEME2, keys);
+          this.autoVerify = false;
           this.autoEncrypt = false;
           this.autoDecrypt = true;
           this.saveReceipts = true;
           this.outgoingEpoch = {};
           this.resetting = false;
+          keys.privateKey.bytes.fill(0);
+          keys = await this.generateKeys(ACTIVE_SCHEME2);
           this.mountButtons?.();
           for (const notify of this.modeListeners || []) notify();
           for (const reset of this.resets || []) reset(keys);
@@ -4020,7 +4703,8 @@ var require_icons = __commonJS({
       keys: { viewBox: "0 0 512 512", path: "M336 352c97.2 0 176-78.8 176-176S433.2 0 336 0 160 78.8 160 176c0 18.7 2.9 36.8 8.3 53.7L7 391c-4.5 4.5-7 10.6-7 17l0 80c0 13.3 10.7 24 24 24l80 0c13.3 0 24-10.7 24-24l0-40 40 0c13.3 0 24-10.7 24-24l0-40 40 0c6.4 0 12.5-2.5 17-7l33.3-33.3c16.9 5.4 35 8.3 53.7 8.3zM376 96a40 40 0 1 1 0 80 40 40 0 1 1 0-80z" },
       contacts: { viewBox: "0 0 576 512", path: "M64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l448 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32zm80 256l64 0c44.2 0 80 35.8 80 80 0 8.8-7.2 16-16 16L80 384c-8.8 0-16-7.2-16-16 0-44.2 35.8-80 80-80zm-24-96a56 56 0 1 1 112 0 56 56 0 1 1-112 0zm240-48l112 0c13.3 0 24 10.7 24 24s-10.7 24-24 24l-112 0c-13.3 0-24-10.7-24-24s10.7-24 24-24zm0 96l112 0c13.3 0 24 10.7 24 24s-10.7 24-24 24l-112 0c-13.3 0-24-10.7-24-24s10.7-24 24-24z" }
     };
-    module2.exports = { filled };
+    var outlined = { chevron: "m6 9 6 6 6-6", search: "M14 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M10.3 15H7a4 4 0 0 0-4 4v2 M20 17a3 3 0 1 1-6 0 3 3 0 0 1 6 0 m1 4-1.9-1.9", check: "M20 6 9 17l-5-5", shieldX: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z m-5.5-3.5-5 5 m0-5 5 5" };
+    module2.exports = { filled, outlined };
   }
 });
 
@@ -4028,7 +4712,7 @@ var require_icons = __commonJS({
 var require_ui = __commonJS({
   "src/ui.js"(exports2, module2) {
     "use strict";
-    var { filled } = require_icons();
+    var { filled, outlined } = require_icons();
     module2.exports = function createUI(R) {
       const h = R.createElement;
       const button = (label, onClick, props = {}) => h("button", { type: "button", onClick, ...props }, label);
@@ -4037,16 +4721,17 @@ var require_ui = __commonJS({
       const code = (text) => h("code", { className: "qc-code" }, text);
       const p = (text) => h("p", null, text);
       function Icon({ name }) {
+        if (outlined[name]) return h("svg", { viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, h("path", { d: outlined[name] }));
         const icon = filled[name];
         if (!icon) throw new Error(`Unknown Qcord icon: ${name}`);
         return h("svg", { viewBox: icon.viewBox, width: 14, height: 14, fill: "currentColor", "aria-hidden": true }, h("path", { d: icon.path }));
       }
       function Tabs({ items, value, onChange, label, disabled = false }) {
-        const id = R.useId();
+        const id2 = R.useId();
         return h("div", { role: "tablist", "aria-label": label, className: "qc-tabs" }, items.map(([key, name]) => button(name, () => onChange(key), {
           key,
           role: "tab",
-          id: `${id}-${key}`,
+          id: `${id2}-${key}`,
           "aria-selected": key === value,
           tabIndex: key === value ? 0 : -1,
           disabled,
@@ -4077,8 +4762,8 @@ var require_ui = __commonJS({
         const points = values.filter((_, i) => i % 4 === 0).map((v, i, a) => `${i / Math.max(1, a.length - 1) * 100},${25 - (v - min) / span * 23}`).join(" ");
         return h("svg", { viewBox: "0 0 100 28", preserveAspectRatio: "none", "aria-hidden": true }, h("polyline", { points, fill: "none", stroke: "currentColor", strokeWidth: 1.2 }));
       }
-      function KeyParts() {
-        return h("div", { className: "qc-keyparts", "aria-label": "Public key byte order" }, h("div", null, h("strong", null, "Encoded t\u0302"), h("span", null, "1152 bytes \xB7 1536 Base64 characters")), h("div", null, h("strong", null, "\u03C1 seed"), h("span", null, "32 bytes \xB7 44 Base64 characters")));
+      function KeyParts({ k = 3 }) {
+        return h("div", { className: "qc-keyparts", "aria-label": "Public key byte order" }, h("div", null, h("strong", null, "Encoded t\u0302"), h("span", null, `${384 * k} bytes \xB7 ${512 * k} Base64 characters`)), h("div", null, h("strong", null, "\u03C1 seed"), h("span", null, "32 bytes \xB7 44 Base64 characters")));
       }
       function Polynomial({ values, name, signed = false, index, onIndexChange }) {
         const [localIndex, setLocalIndex] = R.useState(0);
@@ -4154,7 +4839,7 @@ var require_ui = __commonJS({
             h("line", { className: "qc-selection", style: { transform: `translateX(${i * 2.5 + 0.9}px)` }, x1: 0, x2: 0, y1: 5, y2: 113, stroke: "var(--qc-text)", strokeWidth: 1.2, opacity: 0.8, pointerEvents: "none" })
           ),
           h("div", { className: "qc-scrubber" }, field("Coefficient index", h("input", { type: "range", min: 0, max: values.length - 1, value: i, "aria-valuetext": `Coefficient ${i}: ${values[i] ?? 0}`, style: { "--qc-progress": `${i / Math.max(1, values.length - 1) * 100}%` }, onChange: (e) => choose(Number(e.target.value)) }))),
-          h("div", { className: "qc-coefficient-strip", "aria-label": "Nearby coefficients" }, Array.from({ length: 7 }, (_, j) => Math.max(0, Math.min(values.length - 7, i - 3)) + j).filter((j) => j < values.length).map((j) => button(h(R.Fragment, null, h("small", null, j), values[j]), () => choose(j), { key: j, "aria-pressed": j === i, title: `Coefficient ${j}` })))
+          h("div", { className: "qc-coefficient-strip", "aria-label": "Nearby coefficients" }, Array.from({ length: 7 }, (_, offset) => i + offset - 3).map((j) => j < 0 || j >= values.length ? h("span", { key: j, "aria-hidden": true }) : button(h(R.Fragment, null, h("small", null, j), values[j]), () => choose(j), { key: j, "aria-pressed": j === i, title: `Coefficient ${j}` })))
         );
       }
       return { h, button, field, formula, code, p, Icon, Tabs, Switch, Avatar, Variables, Sparkline: R.memo(Sparkline), KeyParts, Polynomial: R.memo(Polynomial) };
@@ -4198,22 +4883,27 @@ var require_contacts = __commonJS({
     "use strict";
     var { PQC } = require_pqc();
     var { ACTIVE_SCHEME: ACTIVE_SCHEME2 } = require_constants();
+    var { parameters: parameters2, PARAMETER_SETS } = require_parameters();
     var config2 = require_config();
     var dismissOnBackdrop2 = require_dialog();
     var raw = (key) => Buffer.from(key.bytes).toString("base64");
     module2.exports = function createContacts(R, ui) {
       const { h, button, field, code, p, Icon, Avatar, KeyParts } = ui;
       return function Contacts({ plugin, channel, keys, view = "contacts", onSelect, onChanged, onClose }) {
+        const [ownKeys, setOwnKeys] = R.useState(keys), [level, setLevel] = R.useState(ACTIVE_SCHEME2);
+        const keyParams = parameters2(level);
+        const [signatureText, setSignatureText] = R.useState("");
         const tab = view, [query, setQuery] = R.useState("");
         const [rows, setRows] = R.useState(() => plugin.getSavedPartners()), [selected, setSelected] = R.useState(channel || plugin.currentChannel());
         const [keyText, setKeyText] = R.useState(""), [dkText, setDkText] = R.useState("");
+        const [signatureRevealed, setSignatureRevealed] = R.useState(false);
         const [revealed, setRevealed] = R.useState(false), [confirmReset, setConfirmReset] = R.useState(false), [confirmRestore, setConfirmRestore] = R.useState(false);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
         const dialog = R.useRef(null), alive = R.useRef(true), pending = R.useRef(false);
         const row = rows.find((r) => r.channel_id === selected);
-        const contact = (id) => {
+        const contact = (id2) => {
           try {
-            return { id, userId: rows.find((r) => r.channel_id === id)?.user_id || plugin.getDirectPartner(id).userId };
+            return { id: id2, userId: rows.find((r) => r.channel_id === id2)?.user_id || plugin.getDirectPartner(id2).userId };
           } catch {
             return null;
           }
@@ -4233,9 +4923,13 @@ var require_contacts = __commonJS({
         }, []);
         R.useEffect(() => {
           setKeyText(row?.public_encaps || "");
+          setSignatureText(row?.public_signature || "");
           setError("");
           setNotice("");
-        }, [selected, row?.public_encaps]);
+        }, [selected, row?.public_encaps, row?.public_signature]);
+        R.useEffect(() => {
+          if (level === ACTIVE_SCHEME2) setOwnKeys(keys);
+        }, [keys]);
         async function run(task) {
           if (pending.current || !alive.current || !plugin.running) return;
           pending.current = true;
@@ -4273,13 +4967,12 @@ var require_contacts = __commonJS({
               h(
                 "aside",
                 { className: "qc-contact-sidebar" },
-                field("Search contacts", h("input", { type: "search", value: query, onChange: (e) => setQuery(e.target.value), placeholder: "Find a contact\u2026" })),
+                h("div", { className: "qc-contact-search" }, h(Icon, { name: "search" }), h("input", { type: "search", "aria-label": "Search contact", value: query, onChange: (e) => setQuery(e.target.value), placeholder: "Search contact" })),
                 button("Current DM", () => run(async () => {
-                  const id = plugin.currentChannel();
-                  plugin.getDirectPartner(id);
-                  setSelected(id);
+                  const id2 = plugin.currentChannel();
+                  plugin.getDirectPartner(id2);
+                  setSelected(id2);
                   setQuery("");
-                  onSelect(id);
                 }), { className: "qc-quiet" }),
                 h("div", { className: "qc-contact-list" }, channelIds.map(contact).filter(Boolean).filter((c) => {
                   const u = plugin.getPartnerProfile(c.userId);
@@ -4288,7 +4981,6 @@ var require_contacts = __commonJS({
                   const u = plugin.getPartnerProfile(c.userId);
                   return button(h(R.Fragment, null, h(Avatar, { profile: u }), h("span", null, h("strong", null, u.displayName), h("small", null, u.username))), () => {
                     setSelected(c.id);
-                    onSelect(c.id);
                   }, { key: c.id, className: "qc-contact-card", "aria-pressed": selected === c.id });
                 }))
               ),
@@ -4296,22 +4988,43 @@ var require_contacts = __commonJS({
                 R.Fragment,
                 null,
                 h("div", { className: "qc-person" }, h(Avatar, { profile }), h("div", null, h("h3", null, profile.displayName), p(profile.username))),
-                field("Recipient public key", h("textarea", { rows: 5, value: keyText, disabled: busy, placeholder: "Paste their ML-KEM-768 public key", onChange: (e) => setKeyText(e.target.value) })),
-                p("1184 raw bytes \xB7 1580 Base64 characters. Save once for this DM."),
+                h(
+                  "div",
+                  { className: "qc-public-keys" },
+                  field("Recipient public key", h("textarea", { rows: 5, value: keyText, disabled: busy, placeholder: "Paste their ML-KEM public key or copied public-key bundle", onChange: (e) => {
+                    const value = e.target.value;
+                    try {
+                      const bundle = JSON.parse(value);
+                      if (typeof bundle.public_encaps === "string" && typeof bundle.public_signature === "string") {
+                        setKeyText(bundle.public_encaps);
+                        setSignatureText(bundle.public_signature);
+                        return;
+                      }
+                    } catch {
+                    }
+                    setKeyText(value);
+                  } })),
+                  field("Public signature key", h("textarea", { rows: 3, value: signatureText, disabled: busy, placeholder: "Paste their matching ML-DSA public signature key (optional)", onChange: (e) => setSignatureText(e.target.value) }))
+                ),
+                p("Key length selects the security level automatically: 800, 1184, or 1568 decoded bytes. Save once for this DM."),
+                p("Keep both public keys together for this contact. Signature verification is coming next."),
                 h(
                   "div",
                   { className: "qc-row" },
-                  button(row && keyText === row.public_encaps ? "Saved" : "Save key", () => run(async () => {
+                  button(row && keyText === row.public_encaps && signatureText === (row.public_signature || "") ? "Saved" : "Save key", () => run(async () => {
                     const publicKey = PQC.createPublicKey(keyText);
-                    plugin.saveRecipients(selected, [{ user_id: selectedContact.userId, public_encaps: raw(publicKey) }]);
+                    plugin.saveRecipients(selected, [{ user_id: selectedContact.userId, public_encaps: raw(publicKey), public_signature: signatureText }], publicKey.asymmetricKeyType);
                     setRows(plugin.getSavedPartners());
                     setKeyText(raw(publicKey));
                     onChanged();
-                    onSelect(selected);
                     setNotice("Recipient key saved.");
-                  }), { className: "qc-primary", disabled: busy || !keyText.trim() || keyText === row?.public_encaps }),
-                  row && button("Remove", () => {
-                    plugin.removePartner(selected);
+                  }), { className: "qc-primary", disabled: busy || !keyText.trim() || keyText === row?.public_encaps && signatureText === (row?.public_signature || "") }),
+                  button("Select", () => {
+                    onSelect(selected);
+                    dialog.current.close();
+                  }, { disabled: busy || !row, className: "qc-action" }),
+                  row && button("Clear", () => {
+                    plugin.removePartner(selected, row.key_algorithm);
                     setRows(plugin.getSavedPartners());
                     setKeyText("");
                     onChanged();
@@ -4323,34 +5036,81 @@ var require_contacts = __commonJS({
               { className: "qc-my-keys" },
               h(
                 "div",
-                { className: "qc-key-field" },
-                h("div", { className: "qc-label-row" }, h("h3", null, "Public encapsulation key"), button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy"), () => copy(raw(keys.publicKey)), { disabled: !keys || busy, className: "qc-quiet" })),
-                h("textarea", { "aria-label": "Public encapsulation key", readOnly: true, rows: 3, value: keys ? raw(keys.publicKey) : "Generating key\u2026" })
+                { className: "qc-row qc-key-toolbar" },
+                button(`${keyParams.label.replace("ML-KEM-", "ML-KEM ")} / ${keyParams.signature}`, () => run(async () => {
+                  const levels = Object.keys(PARAMETER_SETS), next = levels[(levels.indexOf(level) + 1) % levels.length];
+                  const pair = await plugin.generateKeys(next);
+                  if (alive.current) {
+                    setOwnKeys(pair);
+                    setLevel(next);
+                    setRevealed(false);
+                    setSignatureRevealed(false);
+                  }
+                }), { className: "qc-action", "aria-label": "Cycle security level", title: "Click to cycle security levels", disabled: busy }),
+                button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy both public keys"), () => copy(JSON.stringify({ parameter_set: level, public_encaps: raw(ownKeys.publicKey), public_signature: ownKeys.publicSignature }, null, 2)), { disabled: !ownKeys || busy, className: "qc-quiet" })
               ),
-              h(KeyParts),
-              p("Stored in this order: encoded t\u0302, then \u03C1. Together: 1184 bytes / 1580 Base64 characters."),
-              p("KeyGen takes random d and computes (\u03C1, \u03C3) = G(d \u2225 byte(3)). The public seed \u03C1 reconstructs \xC2; secret s and noise e produce t\u0302 = \xC2 \u2218 \u015D + \xEA."),
+              p(`ML-KEM NIST category ${keyParams.category}. Share the encapsulation and signature public keys from the same level.`),
               h(
                 "div",
-                { className: "qc-key-field" },
-                h("div", { className: "qc-label-row" }, h("h3", null, "Private decapsulation key"), h(
-                  "div",
-                  { className: "qc-key-actions" },
-                  button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy"), () => copy(raw(keys.privateKey)), { className: "qc-quiet qc-private-copy", style: { visibility: revealed ? "visible" : "hidden" }, "aria-label": "Copy private key", title: "Copy private key", disabled: !revealed || !keys || busy }),
-                  button(revealed ? "Hide" : "Reveal", () => setRevealed(!revealed), { className: "qc-quiet qc-reveal", disabled: !keys, "aria-label": revealed ? "Hide private key" : "Reveal private key", "aria-expanded": revealed })
-                )),
+                { className: "qc-public-keys" },
                 h(
                   "div",
-                  { className: "qc-private-key", "data-revealed": revealed, onClick: () => keys && setRevealed(true) },
-                  h("textarea", { "aria-label": "Private decapsulation key", "aria-hidden": !revealed, tabIndex: revealed ? 0 : -1, readOnly: true, rows: 3, value: keys ? raw(keys.privateKey) : "", onCopy: (e) => {
-                    if (!revealed) e.preventDefault();
-                  } })
+                  { className: "qc-key-field" },
+                  h("div", { className: "qc-label-row" }, h("h3", null, "Public encapsulation key"), button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy"), () => copy(raw(ownKeys.publicKey)), { disabled: !ownKeys || busy, className: "qc-quiet" })),
+                  h("textarea", { "aria-label": "Public encapsulation key", readOnly: true, rows: 3, value: ownKeys ? raw(ownKeys.publicKey) : "Generating key\u2026" })
+                ),
+                h(
+                  "div",
+                  { className: "qc-key-field" },
+                  h("div", { className: "qc-label-row" }, h("h3", null, "Public signature key"), button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy"), () => copy(ownKeys.publicSignature), { disabled: !ownKeys || busy, className: "qc-quiet" })),
+                  h("textarea", { "aria-label": "Public signature key", readOnly: true, rows: 3, value: ownKeys?.publicSignature || "Generating signature key\u2026" })
+                )
+              ),
+              h(KeyParts, { k: keyParams.k }),
+              p(`Stored in this order: encoded t\u0302, then \u03C1. Together: ${keyParams.publicBytes} bytes / ${4 * Math.ceil(keyParams.publicBytes / 3)} Base64 characters.`),
+              h("p", null, "KeyGen takes random d and computes ", h("span", { className: "qc-inline-math" }, `(\u03C1, \u03C3) = G(d \u2225 byte(${keyParams.k}))`), ". The public seed \u03C1 reconstructs the matrix; secret s and noise e produce the public vector t\u0302."),
+              h(
+                "div",
+                { className: "qc-public-keys qc-private-keys" },
+                h(
+                  "div",
+                  { className: "qc-key-field" },
+                  h("div", { className: "qc-label-row" }, h("h3", null, "Private decapsulation key"), h(
+                    "div",
+                    { className: "qc-key-actions" },
+                    button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy"), () => copy(raw(ownKeys.privateKey)), { className: "qc-quiet qc-private-copy", style: { visibility: revealed ? "visible" : "hidden" }, "aria-label": "Copy private key", title: "Copy private key", disabled: !revealed || !ownKeys || busy }),
+                    button(revealed ? "Hide" : "Reveal", () => setRevealed(!revealed), { className: "qc-quiet qc-reveal", disabled: !ownKeys, "aria-label": revealed ? "Hide private key" : "Reveal private key", "aria-expanded": revealed })
+                  )),
+                  h(
+                    "div",
+                    { className: "qc-private-key", "data-revealed": revealed, onClick: () => ownKeys && setRevealed(true) },
+                    h("textarea", { "aria-label": "Private decapsulation key", "aria-hidden": !revealed, tabIndex: revealed ? 0 : -1, readOnly: true, rows: 3, value: ownKeys ? raw(ownKeys.privateKey) : "", onCopy: (e) => {
+                      if (!revealed) e.preventDefault();
+                    } })
+                  )
+                ),
+                h(
+                  "div",
+                  { className: "qc-key-field" },
+                  h("div", { className: "qc-label-row" }, h("h3", null, "Private signature key"), h(
+                    "div",
+                    { className: "qc-key-actions" },
+                    button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy"), () => copy(ownKeys.privateSignature), { className: "qc-quiet qc-signature-copy", style: { visibility: signatureRevealed ? "visible" : "hidden" }, "aria-label": "Copy private signature key", disabled: !signatureRevealed || !ownKeys || busy }),
+                    button(signatureRevealed ? "Hide" : "Reveal", () => setSignatureRevealed(!signatureRevealed), { className: "qc-quiet qc-reveal", disabled: !ownKeys, "aria-label": signatureRevealed ? "Hide private signature key" : "Reveal private signature key", "aria-expanded": signatureRevealed })
+                  )),
+                  h(
+                    "div",
+                    { className: "qc-private-key", "data-revealed": signatureRevealed, onClick: () => ownKeys && setSignatureRevealed(true) },
+                    h("textarea", { "aria-label": "Private signature key", "aria-hidden": !signatureRevealed, tabIndex: signatureRevealed ? 0 : -1, readOnly: true, rows: 3, value: ownKeys?.privateSignature || "", onCopy: (e) => {
+                      if (!signatureRevealed) e.preventDefault();
+                    } })
+                  )
                 )
               ),
               h(
                 "details",
                 { className: "qc-restore" },
-                h("summary", null, "Restore a private key"),
+                h("summary", null, h(Icon, { name: "chevron" }), "Restore a private key"),
                 field("Private key to restore", h("textarea", { rows: 2, value: dkText, onChange: (e) => {
                   setDkText(e.target.value);
                   setConfirmRestore(false);
@@ -4372,14 +5132,16 @@ var require_contacts = __commonJS({
                       test.m.fill(0);
                     }
                     if (!alive.current || !plugin.running) return;
-                    config2.save("public_encaps", raw(publicKey));
-                    config2.save("private_decaps", raw(privateKey));
+                    const scheme = privateKey.asymmetricKeyType;
+                    config2.saveKeySet(scheme, { public_encaps: raw(publicKey), private_decaps: raw(privateKey) });
                     plugin.session = {};
-                    plugin.keyPairs.get(ACTIVE_SCHEME2)?.privateKey.bytes.fill(0);
+                    for (const pair of plugin.keyPairs.values()) pair.privateKey.bytes.fill(0);
                     plugin.keyPairs.clear();
                     plugin.keyTasks.clear();
                     plugin.attachments?.clear();
-                    await plugin.generateKeys();
+                    const restoredKeys = await plugin.generateKeys(scheme);
+                    setLevel(scheme);
+                    setOwnKeys(restoredKeys);
                     onChanged();
                     plugin.scheduleMount();
                     setDkText("");
@@ -4411,6 +5173,7 @@ var require_settings = __commonJS({
     var { PQC } = require_pqc();
     var { sha3_256: sha3_2562, sha3_512: sha3_5122 } = (init_sha3(), __toCommonJS(sha3_exports));
     var { ACTIVE_SCHEME: ACTIVE_SCHEME2, MAX_DECODED_FILE_SIZE } = require_constants();
+    var { parameters: parameters2 } = require_parameters();
     var M = require_mlkem();
     var createUI = require_ui();
     var createContacts = require_contacts();
@@ -4420,6 +5183,7 @@ var require_settings = __commonJS({
     module2.exports = function getSettingsPanel2(plugin, { onClose } = {}) {
       const R = BdApi.React, ui = createUI(R);
       const { h, p, button, field, formula, code, Icon, Tabs, Switch, Avatar, Variables, Sparkline, KeyParts, Polynomial } = ui;
+      const math = (text) => h("code", { className: "qc-code qc-math", role: "math" }, text);
       const Contacts = createContacts(R, ui);
       const split2 = (left, right, className = "") => h("div", { className: `qc-split ${className}` }, h("section", { className: "qc-explanation" }, left), h("section", { className: "qc-visual" }, right));
       function OpenedMessage({ result, onDismiss }) {
@@ -4446,7 +5210,7 @@ var require_settings = __commonJS({
               button("Go Back", () => dialog.current.close(), { className: "qc-quiet", title: "Return to the main Qcord panel" })
             )),
             h("div", { className: `qc-plaintext qcord-message ${plugin.markupClass}` }, plugin.messageContent(result.text, plugin.currentChannel())),
-            h("details", null, h("summary", null, "Derived K"), code(result.key))
+            h("details", null, h("summary", null, h(Icon, { name: "chevron" }), "Derived K"), code(result.key))
           )
         );
       }
@@ -4458,14 +5222,17 @@ var require_settings = __commonJS({
         const [opened, setOpened] = R.useState(null), [contactsTab, setContactsTab] = R.useState(null);
         const [busy, setBusy] = R.useState(false), [error, setError] = R.useState(""), [notice, setNotice] = R.useState("");
         const [attached, setAttached] = R.useState(false), [stopped, setStopped] = R.useState(!plugin.running);
+        const [autoVerify, setAutoVerify] = R.useState(plugin.autoVerify === true);
         const [saveReceipts, setSaveReceipts] = R.useState(plugin.saveReceipts);
         const [autoEncrypt, setAutoEncrypt] = R.useState(plugin.autoEncrypt), [autoDecrypt, setAutoDecrypt] = R.useState(plugin.autoDecrypt);
         const [keyTab, setKeyTab] = R.useState("matrix"), [part, setPart] = R.useState("u");
         const [vectorIndex, setVectorIndex] = R.useState(0), [matrixCell, setMatrixCell] = R.useState(0), [coefficient, setCoefficient] = R.useState(0);
         const alive = R.useRef(true), ticket = R.useRef(0), pending = R.useRef(false), preview = R.useRef(null), filePicker = R.useRef(null);
-        const indices = [0, 1, 2], row = partners.find((r) => r.channel_id === channel);
+        const row = partners.find((r) => r.channel_id === channel);
+        const scheme = row?.key_algorithm || ACTIVE_SCHEME2, params = parameters2(scheme), { k, du, dv } = params;
+        const indices = Array.from({ length: k }, (_, i) => i);
         const profile = row ? plugin.getPartnerProfile(row.user_id) : null;
-        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes) : null, [row?.public_encaps]);
+        const publicInfo = R.useMemo(() => row ? M.publicTrace(PQC.createPublicKey(row.public_encaps).bytes, scheme) : null, [row?.public_encaps]);
         const derived = R.useMemo(() => {
           if (!draft) return null;
           const kr = sha3_5122(Uint8Array.from([...draft.trace.m, ...sha3_2562(PQC.createPublicKey(draft.public_encaps).bytes)]));
@@ -4498,6 +5265,7 @@ var require_settings = __commonJS({
             setAutoEncrypt(plugin.autoEncrypt);
             setAutoDecrypt(plugin.autoDecrypt);
             setSaveReceipts(plugin.saveReceipts);
+            setAutoVerify(plugin.autoVerify === true);
           };
           plugin.panels.add(stop);
           plugin.resets.add(reset);
@@ -4555,7 +5323,7 @@ var require_settings = __commonJS({
           }
           invalidate();
           const request = ++ticket.current;
-          const result = await plugin.prepareEncapsulation(channel, ACTIVE_SCHEME2, text);
+          const result = await plugin.prepareEncapsulation(channel, scheme, text);
           if (!alive.current || request !== ticket.current) {
             M.wipe(result);
             return;
@@ -4592,31 +5360,31 @@ var require_settings = __commonJS({
             setError(e.message);
           }
         }
-        const vectorTiles = (polynomials, label, selected, select) => h("div", { className: "qc-vector-tiles", "aria-label": `${label} vector` }, polynomials.map((values, i) => button(h(R.Fragment, null, h("span", null, `${label}[${i}]`), h(Sparkline, { values })), () => select(i), { key: i, "aria-pressed": selected === i })));
+        const vectorTiles = (polynomials, label, selected, select) => h("div", { className: "qc-vector-tiles", style: { gridTemplateColumns: `repeat(${polynomials.length}, minmax(0, 1fr))` }, "aria-label": `${label} vector` }, polynomials.map((values, i) => button(h(R.Fragment, null, h("span", null, `${label}[${i}]`), h(Sparkline, { values })), () => select(i), { key: i, "aria-pressed": selected === i })));
         let content;
         if (step === 0) {
-          const selected = keyTab === "vector" ? publicInfo?.tHat[vectorIndex] : publicInfo?.aHat[Math.floor(matrixCell / 3)][matrixCell % 3];
+          const selected = keyTab === "vector" ? publicInfo?.tHat[vectorIndex] : publicInfo?.aHat[Math.floor(matrixCell / k)][matrixCell % k];
           content = split2(
             h(
               R.Fragment,
               null,
-              h(Variables, { items: [["ek", "recipient's public key"], ["k / n / q", "3 / 256 / 3329"], ["t\u0302", "3 public polynomials"], ["\u03C1", "32-byte public seed"]] }),
+              h(Variables, { items: [["ek", "recipient's public key"], ["k / n / q", `${k} / 256 / 3329`], ["t\u0302", `${k} public polynomials`], ["\u03C1", "32-byte public seed"]] }),
               h("h3", null, "Read the recipient's key"),
               formula("ek = ByteEncode\u2081\u2082(t\u0302) \u2225 \u03C1"),
-              h(KeyParts),
-              p("The first 1152 bytes encode t\u0302. The last 32 bytes are \u03C1, which reconstructs the 3 \xD7 3 matrix \xC2."),
-              code("\xC2[i,j] = SampleNTT(\u03C1 \u2225 byte(j) \u2225 byte(i))"),
+              h(KeyParts, { k }),
+              p(`The first ${384 * k} bytes encode t\u0302; the last 32 bytes are the seed \u03C1 for the ${k} \xD7 ${k} matrix. Each polynomial takes 384 bytes, so (key length \u2212 32) / 384 gives k. Lengths 800 / 1184 / 1568 identify ML-KEM-512 / 768 / 1024. This recipient uses ${params.label}.`),
+              math("\xC2[i,j] = SampleNTT(\u03C1 \u2225 byte(j) \u2225 byte(i))"),
               !row && button("Add recipient's public key", () => setContactsTab("contacts"), { className: "qc-primary" })
             ),
             h(
               R.Fragment,
               null,
               h(Tabs, { label: "Public key views", items: [["matrix", "Matrix \xC2"], ["vector", "Vector t\u0302"], ["saved", "Encoded key"]], value: keyTab, onChange: setKeyTab }),
-              keyTab === "saved" ? h(R.Fragment, null, field("Saved public_encaps", h("textarea", { rows: 5, readOnly: true, value: row?.public_encaps || "Save a recipient key to inspect its bytes." })), p("1184 raw bytes \xB7 1580 Base64 characters")) : h(
+              keyTab === "saved" ? h(R.Fragment, null, field("Saved public_encaps", h("textarea", { rows: 5, readOnly: true, value: row?.public_encaps || "Save a recipient key to inspect its bytes." })), p(`${params.publicBytes} raw bytes \xB7 ${4 * Math.ceil(params.publicBytes / 3)} Base64 characters`)) : h(
                 R.Fragment,
                 null,
-                keyTab === "matrix" ? h("div", { className: "qc-matrix", "aria-label": "Public matrix A hat" }, indices.flatMap((i) => indices.map((j) => button(h(R.Fragment, null, h("span", null, `\xC2[${i},${j}]`), h(Sparkline, { values: publicInfo?.aHat[i][j] })), () => setMatrixCell(i * 3 + j), { key: `${i}-${j}`, "aria-pressed": matrixCell === i * 3 + j, disabled: !publicInfo })))) : vectorTiles(publicInfo?.tHat || [[], [], []], "t\u0302", vectorIndex, setVectorIndex),
-                selected ? h(Polynomial, { values: selected, name: keyTab === "vector" ? `t\u0302[${vectorIndex}] \xB7 NTT` : `\xC2[${Math.floor(matrixCell / 3)},${matrixCell % 3}] \xB7 NTT` }) : h("div", { className: "qc-awaiting" }, p("Each cell is a polynomial of 256 coefficients."), p("Your recipient's values appear here after you save their key."))
+                keyTab === "matrix" ? h("div", { className: "qc-matrix", style: { gridTemplateColumns: `repeat(${k}, minmax(0, 1fr))` }, "aria-label": "Public matrix A hat" }, indices.flatMap((i) => indices.map((j) => button(h(R.Fragment, null, h("span", null, `\xC2[${i},${j}]`), h(Sparkline, { values: publicInfo?.aHat[i][j] })), () => setMatrixCell(i * k + j), { key: `${i}-${j}`, "aria-pressed": matrixCell === i * k + j, disabled: !publicInfo })))) : vectorTiles(publicInfo?.tHat || indices.map(() => []), "t\u0302", vectorIndex, setVectorIndex),
+                selected ? h(Polynomial, { values: selected, name: keyTab === "vector" ? `t\u0302[${vectorIndex}] \xB7 NTT` : `\xC2[${Math.floor(matrixCell / k)},${matrixCell % k}] \xB7 NTT` }) : h("div", { className: "qc-awaiting" }, p("Each cell is a polynomial of 256 coefficients."), p("Your recipient's values appear here after you save their key."))
               )
             )
           );
@@ -4626,8 +5394,9 @@ var require_settings = __commonJS({
             h(
               R.Fragment,
               null,
-              h(Variables, { items: [["m", "fresh random 32 bytes"], ["ek", "recipient key \xB7 1184 bytes"], ["H", "SHA3-256"], ["G", "SHA3-512"]] }),
+              h(Variables, { items: [["m", "fresh random 32 bytes"], ["ek", `recipient key \xB7 ${params.publicBytes} bytes`], ["H", "SHA3-256"], ["G", "SHA3-512"]] }),
               h("h3", null, "Derive the shared key"),
+              p("m is 32 fresh random bytes from the browser\u2019s cryptographically secure random generator (crypto.getRandomValues). Sample fresh m draws a new value and rebuilds the encapsulation."),
               formula("(K, r) = G(m \u2225 H(ek))"),
               p("Hash the entire public key. Split G's 64-byte output: the first 32 bytes are K; the last 32 are the noise seed r."),
               formula("\u03BC = Decompress\u2081(ByteDecode\u2081(m))"),
@@ -4644,13 +5413,13 @@ var require_settings = __commonJS({
             h(
               R.Fragment,
               null,
-              h(Variables, { items: [["r", "32-byte sampling seed from (K, r)"], ["\xC2 / t\u0302", "recipient public polynomials in NTT form"], ["y / e\u2081 / e\u2082", "3 / 3 / 1 polynomials, sampled from r"], ["\u03BC", "m encoded as coefficients 0 or 1665"]] }),
+              h(Variables, { items: [["r", "32-byte sampling seed from (K, r)"], ["\xC2 / t\u0302", "recipient public polynomials in NTT form"], ["y / e\u2081 / e\u2082", `${k} / ${k} / 1 polynomials, sampled from r`], ["\u03BC", "m encoded as coefficients 0 or 1665"]] }),
               h(
                 "section",
                 { className: "qc-sampling", "aria-label": "Noise sampling from r" },
                 h("div", { className: "qc-seed-row" }, h("strong", null, "Seed r"), h("code", { "aria-label": "Sampling seed r" }, derived.r)),
-                h("div", { className: "qc-noise-paths" }, [["y[0..2]", "0, 1, 2"], ["e\u2081[0..2]", "3, 4, 5"], ["e\u2082", "6"]].map(([symbol, nonces]) => h("div", { key: symbol }, h("strong", null, symbol), h("small", null, `Nonce N = ${nonces}`)))),
-                h("div", { className: "qc-sampling-equation", role: "math" }, "Each polynomial = SamplePolyCBD\u2082(PRF\u2082(r, N))"),
+                h("div", { className: "qc-noise-paths" }, [[`y[0..${k - 1}]`, indices.join(", ")], [`e\u2081[0..${k - 1}]`, indices.map((i2) => k + i2).join(", ")], ["e\u2082", String(2 * k)]].map(([symbol, nonces]) => h("div", { key: symbol }, h("strong", null, symbol), h("small", null, `Nonce N = ${nonces}`)))),
+                h("div", { className: "qc-sampling-equation", role: "math" }, `y uses CBD with eta=${params.eta1}; e\u2081 and e\u2082 use eta=${params.eta2}. Each has its own nonce.`),
                 h("small", null, "r is a seed, not the vector y. Then compute \u0177 = NTT(y).")
               ),
               h(
@@ -4660,9 +5429,9 @@ var require_settings = __commonJS({
                 formula("v = NTT\u207B\xB9(t\u0302\u1D40 \u2218 \u0177) + \u03BC + e\u2082"),
                 h("small", null, "\u2218 multiplies in the NTT domain. Coefficients are modulo 3329.")
               ),
-              code(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
-              h("div", { className: "qc-compression" }, h("span", null, "Compressed for the file"), h("strong", null, `${values[j]} \u2192 ${M.compress(values[j], part === "u" ? 10 : 4)}`), h("small", null, part === "u" ? "10 bits" : "4 bits")),
-              h("details", { className: "qc-noise-details" }, h("summary", null, "Sampled coefficients"), code(`y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} \u2026
+              math(part === "u" ? `u[${i}][${j}] = (${product} + ${t.e1[i][j]}) mod 3329 = ${values[j]}` : `v[${j}] = (${product} + ${t.mu[j]} + ${t.e2[j]}) mod 3329 = ${values[j]}`),
+              h("div", { className: "qc-compression" }, h("span", null, "Compressed for the file"), h("strong", null, `${values[j]} \u2192 ${M.compress(values[j], part === "u" ? du : dv)}`), h("small", null, `${part === "u" ? du : dv} bits`)),
+              h("details", { className: "qc-noise-details" }, h("summary", null, h(Icon, { name: "chevron" }), "Sampled coefficients"), code(`y[${i}]: ${t.rVector[i].slice(0, 12).join(", ")} \u2026
 e\u2081[${i}]: ${t.e1[i].slice(0, 12).join(", ")} \u2026
 e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
             ),
@@ -4685,7 +5454,7 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
               h(Variables, { items: [["K", "32-byte shared secret"], ["nonce", "12 fresh random bytes"], ["tag", "16-byte authentication tag"]] }),
               h("h3", null, "Write the encrypted message"),
               field("Message", h("textarea", { className: "qc-message-input", rows: 5, maxLength: 64e3, value: text, disabled: busy, placeholder: "Your message\u2026 Discord Markdown is supported.", onChange: (e) => editMessage(e.target.value) })),
-              code("AES-256-GCM(K, nonce, message) \u2192 ciphertext + tag"),
+              math("AES-256-GCM(K, nonce, message) \u2192 ciphertext + tag"),
               p("One attachment carries u, v, and the encrypted message. Your saved K reopens sent files when Save receipts is on; the recipient uses their private key."),
               h("span", { className: "qc-muted" }, "AES-GCM is Qcord's message layer. ML-KEM follows FIPS 203.")
             ),
@@ -4700,16 +5469,16 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
             "header",
             { className: "qc-toolbar" },
             button(h(R.Fragment, null, profile && h(Avatar, { profile }), h("span", null, h("strong", null, profile?.displayName || "Choose recipient"), h("small", null, row ? "Public key saved" : "Save their public key"))), () => setContactsTab("contacts"), { className: "qc-recipient", "aria-label": "Choose recipient" }),
+            button(h(R.Fragment, null, h(Icon, { name: "keys" }), "Your keys"), () => setContactsTab("keys"), { className: "qc-panel-button", "aria-label": "Your keys" }),
             h(
               "div",
               { className: "qc-mode-controls" },
               h(Switch, { label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: (value) => run(async () => plugin.setAutomatic("encrypt", value)) }),
               h(Switch, { label: "Auto decrypt", checked: autoDecrypt, onChange: (value) => run(async () => plugin.setAutomatic("decrypt", value)) }),
+              h(Switch, { label: "Auto verify", checked: autoVerify, title: "Save your preference for the upcoming signature verification feature", onChange: (value) => run(async () => plugin.setAutomatic("verify", value)) }),
               h(Switch, { label: "Save receipts", checked: saveReceipts, title: "Save keys to reopen your sent messages on this device", onChange: (value) => run(async () => plugin.setSaveReceipts(value)) })
             ),
-            button(h(R.Fragment, null, h(Icon, { name: "keys" }), "Your keys"), () => setContactsTab("keys"), { className: "qc-panel-button", "aria-label": "Your keys" }),
-            button(h(R.Fragment, null, h(Icon, { name: "contacts" }), "Contacts"), () => setContactsTab("contacts"), { className: "qc-panel-button", "aria-label": "Contacts" }),
-            onClose && button("Exit", onClose, { className: "qc-exit", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat" })
+            onClose && button("Exit", onClose, { className: "qc-quiet qc-exit", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat" })
           ),
           h(Tabs, { label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy }),
           h("main", { className: "qc-main", role: "tabpanel", "aria-label": `${stages[step]} stage`, "aria-busy": busy }, content),
@@ -4718,7 +5487,7 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
             { className: "qc-footer" },
             button("Previous step", () => navigate(step - 1), { disabled: busy || step === 0 }),
             h("div", { className: "qc-feedback" }, h("div", { role: "alert", className: "qc-error" }, error), h("div", { role: "status" }, busy ? "Working\u2026" : notice)),
-            button(h(R.Fragment, null, h(Icon, { name: "upload" }), "Open file"), () => filePicker.current.click(), { className: "qc-quiet qc-open-file", title: "Decrypt a downloaded .qcord file on this device", disabled: busy }),
+            button(h(R.Fragment, null, h(Icon, { name: "upload" }), "Open .qcord file"), () => filePicker.current.click(), { className: "qc-quiet qc-open-file", title: "Decrypt a downloaded .qcord file on this device", disabled: busy }),
             h("input", { ref: filePicker, hidden: true, type: "file", accept: ".qcord,application/json", "aria-label": "Open saved .qcord file", onChange: (e) => {
               const file = e.target.files?.[0];
               e.target.value = "";
@@ -4737,9 +5506,11 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
             }), { className: "qc-primary", disabled: busy || attached || !draft || !messageReady })
           ),
           opened && h(OpenedMessage, { result: opened, onDismiss: () => setOpened(null) }),
-          contactsTab && h(Contacts, { key: contactsTab, plugin, channel, keys, view: contactsTab, onClose: () => setContactsTab(null), onChanged: refreshed, onSelect: (id) => {
+          contactsTab && h(Contacts, { key: contactsTab, plugin, channel, keys, view: contactsTab, onClose: () => setContactsTab(null), onChanged: refreshed, onSelect: (id2) => {
             invalidate();
-            setChannel(id);
+            setChannel(id2);
+            setVectorIndex(0);
+            setMatrixCell(0);
             setPartners(plugin.getSavedPartners());
             setStep(0);
           } })
@@ -4767,7 +5538,7 @@ var require_InterVariable = __commonJS({
 // src/styles.css
 var require_styles = __commonJS({
   "src/styles.css"(exports2, module2) {
-    module2.exports = '/* Quiet surfaces, consistent controls, no animated glow or decorative motion. */\n.qcord-dialog {\n    width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;\n    padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;\n    color: #f1f3f5; color-scheme: dark; background: #202226;\n    box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;\n}\n.qcord-dialog::backdrop { background: #080a0e65; }\n.qcord-dialog[data-covered="true"] { background: transparent; border-color: transparent; box-shadow: none; }\n.qcord-dialog[data-covered="true"]::backdrop { background: transparent; }\n.qcord-dialog[data-covered="true"] > .qc-panel > :not(dialog) { visibility: hidden; }\n.qc-panel {\n    --qc-text: var(--text-normal, #f1f3f5); --qc-muted: var(--text-muted, #a4aab4);\n    --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #10121665;\n    --qc-accent: #9ac8a7; --qc-graph: #86b997;\n    --qc-font: "Qcord Inter", Inter, system-ui, sans-serif;\n    display: flex; flex-direction: column; gap: 18px; width: 100%; height: 100%; min-height: 0;\n    padding: 22px; box-sizing: border-box; color: var(--qc-text); background: transparent;\n    font: 14px/1.5 var(--qc-font); text-align: left; font-optical-sizing: auto;\n}\n.qc-composer { min-height: min(640px, 90dvh); }\n.qcord-dialog > .qc-composer { min-height: 0; }\n.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\n.qc-panel ::-webkit-scrollbar { width: 0; height: 6px; }\n.qc-panel ::-webkit-scrollbar-track { background: transparent; }\n.qc-panel ::-webkit-scrollbar-thumb { background: #a4b2a84a; border-radius: 8px; }\n.qc-panel ::-webkit-scrollbar-thumb:hover { background: #a4b2a87a; }\n.qc-panel h2, .qc-panel h3, .qc-panel p, .qc-panel figure, .qc-panel dl { margin: 0; }\n.qc-panel h3 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em; }\n.qc-panel p { font-size: 13px; line-height: 1.65; color: var(--qc-muted); text-wrap: pretty; }\n.qc-panel small, .qc-muted { font-size: 11px; color: var(--qc-muted); }\n.qc-panel button {\n    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px;\n    padding: 8px 13px; border: 1px solid var(--qc-line); border-radius: 7px;\n    background: #ffffff06; color: var(--qc-text); font: inherit; font-size: 12px; line-height: 1.3;\n    cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, border-color 140ms ease;\n}\n.qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }\n.qc-panel button:disabled { opacity: .38; cursor: default; }\n.qc-panel button, .qc-panel button *, .qcord-button, .qcord-button *, .qcord-download { user-select: none; -webkit-user-select: none; }\n.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\n.qc-panel textarea:focus, .qc-panel input[type="search"]:focus { border-color: #a0c8ac; outline: 2px solid #8fbd9c65; outline-offset: 2px; }\n.qc-panel .qc-message-input:focus { border-color: #a0c8ac; outline: 0; outline-offset: 0; box-shadow: none; }\n.qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }\n.qc-panel .qc-primary { background: #9ac8a7; border-color: #9ac8a7; color: #13261b; font-weight: 600; }\n.qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }\n.qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }\n.qc-panel .qc-action { align-self: flex-start; color: #dcefe2; background: #8fbd9c20; border-color: #8fbd9c75; padding: 10px 14px; font-weight: 500; }\n.qc-panel .qc-exit { background: transparent; border-color: #ffffff30; }\n.qc-toolbar { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }\n.qc-toolbar > button, .qc-toolbar .qc-switch, .qc-mode-controls { height: 44px; min-height: 44px; }\n.qc-panel .qc-recipient { justify-content: flex-start; text-align: left; min-width: 180px; flex: 1; height: 44px; padding: 5px 10px; }\n.qc-recipient > span, .qc-contact-card > span { min-width: 0; }\n.qc-recipient strong, .qc-recipient small, .qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\n.qc-recipient strong { font-size: 12px; font-weight: 500; }\n.qc-recipient small { font-size: 10px; margin-top: 2px; }\n.qc-avatar { display: block; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; object-fit: cover; }\n.qc-avatar-fallback { display: flex; justify-content: center; align-items: center; background: #375443; color: #dbeee0; }\n.qc-mode-controls { display: flex; align-items: stretch; gap: 4px; }\n.qc-panel .qc-switch { padding: 6px 9px; border: 1px solid var(--qc-line); background: #0001; font-size: 11px; color: var(--qc-muted); }\n.qc-switch[aria-checked="true"] { color: var(--qc-text); }\n.qc-switch-track { position: relative; display: block; width: 26px; height: 15px; flex: 0 0 26px; border-radius: 9px; background: #ffffff20; }\n.qc-switch-track > span { position: absolute; left: 3px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #b1b6bd; transition: transform 150ms cubic-bezier(.23,1,.32,1); }\n.qc-switch[aria-checked="true"] .qc-switch-track { background: #528064; }\n.qc-switch[aria-checked="true"] .qc-switch-track > span { transform: translateX(11px); background: #e4f6e9; }\n.qc-tabs { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--qc-line); }\n.qc-tabs > button { min-width: 0; border: 0; background: transparent; color: var(--qc-muted); white-space: nowrap; font-size: 12px; }\n.qc-tabs > button[aria-selected="true"] { background: #ffffff09; color: var(--qc-text); }\n.qc-composer > .qc-tabs > button { flex: 1; }\n.qc-main { flex: 1 1 0; min-height: 0; }\n.qc-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 28px; height: 100%; min-height: 0; }\n.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 15px; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }\n.qc-visual { padding-left: 24px; border-left: 1px solid var(--qc-line); }\n.qc-visual > .qc-tabs { padding-bottom: 7px; }\n.qc-visual .qc-tabs > button { font-size: 11px; min-height: 32px; padding: 7px 10px; }\n.qc-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 8px; background: #00000012; flex: 0 0 auto; }\n.qc-variables > div { min-width: 0; }\n.qc-variables dt { font: 16px/1.4 "Cambria Math", ui-monospace, monospace; color: #dce9df; }\n.qc-variables dd { margin: 2px 0 0; color: var(--qc-muted); font-size: 10px; }\n.qc-equation { font: 23px/1.4 "Cambria Math", "STIX Two Math", serif; color: #edf3ef; padding: 4px 0; overflow-wrap: anywhere; flex: 0 0 auto; }\n.qc-code { display: block; font: 11px/1.7 var(--qc-font); font-variant-numeric: tabular-nums; white-space: pre-wrap; overflow-wrap: anywhere; color: #ccd8d0; }\n.qc-secret-values { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\n.qc-keyparts { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; flex: 0 0 auto; }\n.qc-keyparts > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; background: #83ae9514; border-top: 2px solid #8db99b; border-radius: 0 0 5px 5px; }\n.qc-keyparts > div + div { background: #a5b8d610; border-color: #9aaec3; }\n.qc-keyparts strong { font-size: 11px; font-weight: 500; }\n.qc-keyparts span { font-size: 9px; color: var(--qc-muted); }\n.qc-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; flex: 0 0 auto; }\n.qc-matrix button, .qc-vector-tiles button { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 43px; padding: 6px 9px; color: #84af94; background: #88ae9510; }\n.qc-matrix button > span, .qc-vector-tiles button > span { text-align: left; font: 10px var(--qc-font); }\n.qc-matrix svg, .qc-vector-tiles svg { width: 100%; height: 20px; }\n.qc-matrix button[aria-pressed="true"], .qc-vector-tiles button[aria-pressed="true"] { color: #b9dec6; border-color: #96c3a275; background: #8ab89c1c; }\n.qc-vector-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 0 0 auto; }\n.qc-vector-tiles button { min-height: 64px; }\n.qc-single-polynomial { display: flex; flex-direction: column; gap: 5px; min-height: 64px; padding: 6px 9px; color: #a8d1b5; background: #88ae9510; border: 1px solid #96c3a275; border-radius: 7px; }\n.qc-single-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\n.qc-single-polynomial > svg { width: 100%; height: 27px; }\n.qc-sampling { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #87aa9209; }\n.qc-seed-row { display: flex; align-items: center; gap: 10px; min-width: 0; }\n.qc-seed-row strong { flex: 0 0 auto; font-size: 11px; }\n.qc-seed-row code { min-width: 0; font: 10px/1.5 var(--qc-font); overflow-wrap: anywhere; color: #bdcec2; }\n.qc-noise-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }\n.qc-noise-paths > div { display: flex; flex-direction: column; gap: 2px; padding: 5px 7px; border-left: 2px solid #8fbd9c65; background: #8fbd9c0c; }\n.qc-noise-paths strong { font: 16px/1.3 "Cambria Math", "STIX Two Math", serif; }\n.qc-noise-paths small { font-size: 9px; }\n.qc-sampling-equation { font: 17px/1.4 "Cambria Math", "STIX Two Math", serif; }\n.qc-construction-equations { display: flex; flex-direction: column; gap: 5px; }\n.qc-construction .qc-explanation { gap: 10px; }\n.qc-awaiting { padding: 20px 4px; display: flex; flex-direction: column; gap: 8px; }\n.qc-polynomial { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 9px; background: #00000010; flex: 0 0 auto; }\n.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\n.qc-polynomial figcaption strong { font-weight: 500; }\n.qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }\n.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: none; cursor: crosshair; }\n.qc-selection { transition: transform 80ms linear; }\n.qc-scrubber { display: flex; align-items: center; gap: 12px; }\n.qc-scrubber > label { flex: 1; }\n.qc-coefficient-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }\n.qc-coefficient-strip > button { display: flex; flex-direction: column; gap: 3px; min-height: 42px; padding: 3px; font: 11px var(--qc-font); font-variant-numeric: tabular-nums; background: transparent; border-color: transparent; }\n.qc-coefficient-strip small { font-size: 9px; }\n.qc-coefficient-strip button[aria-pressed="true"] { background: #87aa921c; color: #c7e7d1; border-color: #8bb9993b; }\n.qc-panel input[type="range"] { appearance: none; display: block; width: 100%; height: 24px; padding: 0; margin: 0; background: transparent; cursor: pointer; touch-action: pan-y; }\n.qc-panel input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 3px; background: linear-gradient(to right, var(--qc-accent) var(--qc-progress), #ffffff24 var(--qc-progress)); }\n.qc-panel input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border: 2px solid #202226; border-radius: 50%; background: var(--qc-accent); }\n.qc-compression { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 7px; font-size: 11px; color: var(--qc-muted); }\n.qc-compression strong { margin-left: auto; color: #d3e6d9; font: 15px var(--qc-font); font-variant-numeric: tabular-nums; }\n.qc-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--qc-muted); min-width: 0; }\n.qc-panel textarea, .qc-panel input[type="search"], .qc-panel input[type="text"] { width: 100%; padding: 10px 12px; color: var(--qc-text); background: var(--qc-empty); border: 1px solid var(--qc-line); border-radius: 7px; font: 11px/1.65 var(--qc-font); }\n.qc-panel textarea { resize: none; min-height: 60px; }\n.qc-panel textarea[readonly] { color: #bdc9c0; }\n.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: #7b838f; }\n.qc-panel input[type="search"] { font-family: inherit; }\n.qc-panel .qc-message-input { font: 14px/1.6 var(--qc-font); min-height: 145px; }\n.qc-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.qc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\n.qc-json { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-behavior: smooth; margin: 0; padding: 14px; border-radius: 8px; border: 1px solid var(--qc-line); background: var(--qc-empty); color: #cad5ce; white-space: pre; font: 11px/1.85 var(--qc-font); font-variant-numeric: tabular-nums; }\n.qc-footer { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 13px; border-top: 1px solid var(--qc-line); }\n.qc-feedback { flex: 1; min-width: 0; font-size: 11px; color: var(--qc-muted); overflow-wrap: anywhere; }\n.qc-error { color: #f1a5ac; }\n.qc-panel details { font-size: 11px; color: var(--qc-muted); }\n.qc-panel summary { cursor: pointer; }\n.qc-panel details > .qc-code, .qc-panel details > .qc-field { margin-top: 12px; }\n.qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }\n.qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }\n.qc-contact-header > .qc-panel-title { flex: 1; }\n.qc-panel-title { display: flex; align-items: center; gap: 10px; }\n.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }\n.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }\n.qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }\n.qc-panel .qc-contact-card { min-height: 48px; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 7px; }\n.qc-contact-card[aria-pressed="true"] { background: #9ab2a012; border-color: #9ab2a026; }\n.qc-contact-card strong { font-size: 12px; font-weight: 500; }\n.qc-contact-card small { margin-top: 2px; font-size: 10px; }\n.qc-contact-detail { display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding-top: 4px; min-width: 0; }\n.qc-person { display: flex; align-items: center; gap: 10px; }\n.qc-person h3 { font-size: 15px; }\n.qc-person p { font-size: 11px; }\n.qc-my-keys { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }\n.qc-my-keys h3 { font-size: 14px; }\n.qc-my-keys p { font-size: 11px; line-height: 1.6; }\n.qc-key-field { display: flex; flex-direction: column; gap: 7px; }\n.qc-key-field textarea { display: block; }\n.qc-key-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }\n.qc-panel .qc-reveal { width: 64px; }\n.qc-private-key { border-radius: 7px; }\n.qc-private-key textarea { display: block; }\n.qc-private-key[data-revealed="false"] { overflow: hidden; cursor: pointer; }\n.qc-private-key[data-revealed="false"] textarea { filter: blur(5px); user-select: none; -webkit-user-select: none; pointer-events: none; }\n.qc-reset-area { padding-top: 10px; border-top: 1px solid var(--qc-line); }\n.qc-reset-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #bb546450; border-radius: 8px; background: #83344115; font-size: 12px; }\n.qc-opened-dialog { width: min(700px, 92vw); height: min(490px, 86dvh); }\n.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #0002; border: 1px solid var(--qc-line); border-radius: 8px; }\n.qcord-button { display: inline-flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: transparent; border: 0; padding: 6px; border-radius: 7px; color: var(--interactive-normal, #a4aab4); cursor: pointer; }\n.qcord-button svg { width: 21px; height: 21px; fill: currentColor; }\n.qcord-button.qcord-decrypt-enabled { color: #fff; background: #367b50; box-shadow: inset 0 0 0 1px #9cddae85, 0 0 9px #6aa78035; }\n.qcord-button:focus-visible { outline: 2px solid #8fbd9c; outline-offset: 2px; }\n[class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #50976755, #4e7c5e35 55%, #77b98a45); box-shadow: inset 0 0 0 3px #87c79c80, 0 0 14px #5f9b7335; outline: 3px solid #9ad0ad; outline-offset: -3px; }\n[class*="channelTextArea"].qcord-encrypt-enabled:focus-within { outline: 4px solid #9ad0ad; outline-offset: -4px; box-shadow: inset 0 0 0 4px #87c79c48, 0 0 14px #5f9b7320; }\n[class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #50976755, #4e7c5e35 55%, #77b98a45); }\n.qcord-file-hidden, .qcord-empty-content { display: none !important; }\n.qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }\n.qcord-decrypted { position: relative; width: fit-content; max-width: 100%; min-width: 0; padding: 9px 34px 9px 12px; border: 1px solid #8fba9d28; border-radius: 8px; background: #829a8910; }\n.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; font-family: "Qcord Inter", Inter, system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }\n.qcord-message > :first-child { margin-top: 0; }\n.qcord-message > :last-child { margin-bottom: 0; }\n.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\n.qcord-message a { color: var(--text-link, #a2c5ef); }\n.qcord-message pre { max-width: 100%; overflow-x: auto; }\n.qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #97a4a0); font-size: 15px; }\n.qcord-download svg { width: 18px; height: 18px; fill: currentColor; }\n@media (hover: hover) and (pointer: fine) {\n    .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #ffffff0b; }\n    .qc-panel .qc-primary:hover:not(:disabled) { background: #aed4b8; border-color: #aed4b8; }\n    .qc-panel .qc-danger:hover:not(:disabled) { background: #b53f4d; }\n    .qcord-download:hover { background: #ffffff0b; color: #d4e5da; }\n}\n@media (max-height: 780px) and (min-width: 901px) {\n    .qc-panel { padding: 18px; gap: 13px; }\n    .qc-explanation, .qc-visual { gap: 11px; }\n    .qc-polynomial > svg { height: 90px; }\n    .qc-polynomial { gap: 9px; }\n    .qc-my-keys { gap: 8px; }\n    .qc-variables { padding: 10px; gap: 8px 12px; }\n    .qc-sampling { padding: 8px 10px; gap: 5px; }\n    .qc-construction-equations { gap: 2px; }\n    .qc-construction-equations .qc-equation { font-size: 21px; padding: 2px 0; }\n}\n@media (max-width: 950px) {\n    .qc-toolbar { gap: 7px; }\n    .qc-toolbar .qc-panel-button { font-size: 0; width: 40px; padding: 8px; }\n    .qc-recipient { min-width: 140px; }\n    .qc-split { gap: 18px; }\n    .qc-visual { padding-left: 18px; }\n}\n@media (max-width: 760px) {\n    .qcord-dialog { width: 96vw; height: 92dvh; }\n    .qc-panel { padding: 15px; gap: 12px; }\n    .qc-toolbar { flex-wrap: wrap; }\n    .qc-toolbar .qc-recipient { order: 0; flex: 1; }\n    .qc-mode-controls { order: 3; width: 100%; }\n    .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }\n    .qc-toolbar .qc-panel-button { order: 1; }\n    .qc-toolbar .qc-exit { order: 2; }\n    .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }\n    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }\n    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\n    .qc-visual { border-left: 0; padding: 16px 0 0; border-top: 1px solid var(--qc-line); }\n    .qc-contact-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 15px; }\n    .qc-contact-sidebar { padding-right: 12px; }\n    .qc-footer { gap: 5px; }\n    .qc-footer .qc-open-file { font-size: 0; padding: 8px; }\n    .qc-contact-header { gap: 10px; }\n}\n@media (max-width: 520px) {\n    .qc-contact-layout { display: flex; flex-direction: column; overflow: auto; }\n    .qc-contact-sidebar { border-right: 0; padding-right: 0; flex: 0 0 auto; }\n    .qc-contact-list { flex-direction: row; max-height: 55px; overflow-x: auto; }\n    .qc-contact-list > button { flex: 0 0 auto; }\n    .qc-contact-detail { gap: 13px; }\n    .qc-keyparts { grid-template-columns: 1.5fr 1fr; }\n}\n@media (prefers-reduced-motion: reduce) {\n    .qc-panel button, .qc-switch-track > span { transition: none; }\n    .qc-selection { transition: none; }\n    .qc-json { scroll-behavior: auto; }\n    .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: none; }\n}\n';
+    module2.exports = '/* Quiet surfaces, consistent controls, no animated glow or decorative motion. */\r\n.qcord-dialog {\r\n    width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;\r\n    padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;\r\n    color: #f1f3f5; color-scheme: dark; background: #111111 linear-gradient(180deg, #0f0f0f, #1d1f21);\r\n    box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;\r\n}\r\n.qcord-dialog::backdrop { background: #0b0b0b65; }\r\n.qcord-dialog[data-covered="true"] { background: transparent; border-color: transparent; box-shadow: none; }\r\n.qcord-dialog[data-covered="true"]::backdrop { background: transparent; }\r\n.qcord-dialog[data-covered="true"] > .qc-panel > :not(dialog) { visibility: hidden; }\r\n.qc-panel {\r\n    --qc-text: #eee; --qc-muted: #a7a5ab;\r\n    --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #101010;\r\n    --qc-accent: #65abd0; --qc-graph: #65abd0;\r\n    --qc-font: "Qcord Inter", Inter, system-ui, sans-serif;\r\n    display: flex; flex-direction: column; gap: 18px; width: 100%; height: 100%; min-height: 0;\r\n    padding: 22px; box-sizing: border-box; color: var(--qc-text); background: transparent;\r\n    font: 14px/1.5 var(--qc-font); text-align: left; font-optical-sizing: auto;\r\n}\r\n.qc-composer { min-height: min(640px, 90dvh); }\r\n.qcord-dialog > .qc-composer { min-height: 0; }\r\n.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\r\n.qc-panel ::-webkit-scrollbar { width: 0; height: 6px; }\r\n.qc-panel ::-webkit-scrollbar-track { background: transparent; }\r\n.qc-panel ::-webkit-scrollbar-thumb { background: #65abd04a; border-radius: 8px; }\r\n.qc-panel ::-webkit-scrollbar-thumb:hover { background: #65abd07a; }\r\n.qc-panel h2, .qc-panel h3, .qc-panel p, .qc-panel figure, .qc-panel dl { margin: 0; }\r\n.qc-panel h3 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em; }\r\n.qc-panel p { font-size: 13px; line-height: 1.65; color: var(--qc-muted); text-wrap: pretty; }\r\n.qc-panel small, .qc-muted { font-size: 11px; color: var(--qc-muted); }\r\n.qc-panel button {\r\n    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px;\r\n    padding: 8px 13px; border: 1px solid var(--qc-line); border-radius: 7px;\r\n    background: #1a1a1a; color: var(--qc-text); font: inherit; font-size: 12px; line-height: 1.3;\r\n    cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, border-color 140ms ease;\r\n}\r\n.qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }\r\n.qc-panel button:disabled { opacity: .38; cursor: default; }\r\n.qc-panel button, .qc-panel button *, .qcord-button, .qcord-button *, .qcord-download { user-select: none; -webkit-user-select: none; }\r\n.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\r\n.qc-panel textarea:focus, .qc-panel input[type="search"]:focus, .qc-panel input[type="text"]:focus { border-color: var(--qc-line); outline: none; box-shadow: none; }\r\n.qc-panel .qc-message-input:focus { border-color: var(--qc-line); outline: 0; outline-offset: 0; box-shadow: none; }\r\n.qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }\r\n.qc-panel .qc-primary { background: #21668d; border-color: #3b87b0; color: #f1f3f5; font-weight: 600; }\r\n.qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }\r\n.qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }\r\n.qc-panel .qc-action { align-self: flex-start; color: #f1f3f5; background: #488faf20; border-color: #488faf75; padding: 10px 14px; font-weight: 500; }\r\n.qc-panel .qc-exit { background: transparent; border-color: transparent; }\r\n.qc-toolbar { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex: 0 0 auto; }\r\n.qc-toolbar > button, .qc-toolbar .qc-switch, .qc-mode-controls { height: 44px; min-height: 44px; }\r\n.qc-panel .qc-recipient { justify-content: flex-start; text-align: left; min-width: 140px; max-width: none; flex: 1; height: 44px; padding: 5px 10px; }\r\n.qc-recipient > span, .qc-contact-card > span { min-width: 0; }\r\n.qc-recipient strong, .qc-recipient small, .qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\r\n.qc-recipient strong { font-size: 12px; font-weight: 500; }\r\n.qc-recipient small { font-size: 10px; margin-top: 2px; }\r\n.qc-avatar { display: block; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; object-fit: cover; }\r\n.qc-avatar-fallback { display: flex; justify-content: center; align-items: center; background: #263944; color: #f1f3f5; }\r\n.qc-mode-controls { display: contents; }\r\n.qc-panel .qc-switch { padding: 6px 9px; border: 1px solid var(--qc-line); background: #0001; font-size: 11px; color: var(--qc-muted); }\r\n.qc-switch[aria-checked="true"] { color: var(--qc-text); }\r\n.qc-switch-track { position: relative; display: block; width: 26px; height: 15px; flex: 0 0 26px; border-radius: 9px; background: #ffffff20; }\r\n.qc-switch-track > span { position: absolute; left: 3px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #b1b6bd; transition: transform 150ms cubic-bezier(.23,1,.32,1); }\r\n.qc-switch[aria-checked="true"] .qc-switch-track { background: #286a91; }\r\n.qc-switch[aria-checked="true"] .qc-switch-track > span { transform: translateX(11px); background: #f1f3f5; }\r\n.qc-tabs { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--qc-line); }\r\n.qc-tabs > button { min-width: 0; border: 0; background: transparent; color: var(--qc-muted); white-space: nowrap; font-size: 12px; }\r\n.qc-tabs > button[aria-selected="true"] { background: #ffffff09; color: var(--qc-text); }\r\n.qc-composer > .qc-tabs > button { flex: 1; }\r\n.qc-main { flex: 1 1 0; min-height: 0; }\r\n.qc-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 28px; height: 100%; min-height: 0; }\r\n.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 15px; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }\r\n.qc-visual { padding-left: 24px; border-left: 1px solid var(--qc-line); }\r\n.qc-visual > .qc-tabs { padding-bottom: 7px; }\r\n.qc-visual .qc-tabs > button { font-size: 11px; min-height: 32px; padding: 7px 10px; }\r\n.qc-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 8px; background: #00000012; flex: 0 0 auto; }\r\n.qc-variables > div { min-width: 0; }\r\n.qc-variables dt { font: 16px/1.4 "Cambria Math", ui-monospace, monospace; color: #f1f3f5; }\r\n.qc-variables dd { margin: 2px 0 0; color: var(--qc-muted); font-size: 10px; }\r\n.qc-equation { font: 23px/1.4 "Cambria Math", "STIX Two Math", serif; color: #f1f3f5; padding: 4px 0; overflow-wrap: anywhere; flex: 0 0 auto; }\r\n.qc-code { display: block; font: 11px/1.7 var(--qc-font); font-variant-numeric: tabular-nums; white-space: pre-wrap; overflow-wrap: anywhere; color: #dee8ee; }\r\n.qc-secret-values { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\r\n.qc-keyparts { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; flex: 0 0 auto; }\r\n.qc-keyparts > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; background: #488faf14; border-top: 2px solid #488faf; border-radius: 0 0 5px 5px; }\r\n.qc-keyparts > div + div { background: #65abd010; border-color: #65abd0; }\r\n.qc-keyparts strong { font-size: 11px; font-weight: 500; }\r\n.qc-keyparts span { font-size: 9px; color: var(--qc-muted); }\r\n.qc-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; flex: 0 0 auto; }\r\n.qc-matrix button, .qc-vector-tiles button { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 43px; padding: 6px 9px; color: #65abd0; background: #286a9110; }\r\n.qc-matrix button > span, .qc-vector-tiles button > span { text-align: left; font: 10px var(--qc-font); }\r\n.qc-matrix svg, .qc-vector-tiles svg { width: 100%; height: 20px; }\r\n.qc-matrix button[aria-pressed="true"], .qc-vector-tiles button[aria-pressed="true"] { color: #dee8ee; border-color: #488faf75; background: #488faf1c; }\r\n.qc-vector-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 0 0 auto; }\r\n.qc-vector-tiles button { min-height: 64px; }\r\n.qc-single-polynomial { display: flex; flex-direction: column; gap: 5px; min-height: 64px; padding: 6px 9px; color: #dee8ee; background: #286a9110; border: 1px solid #488faf75; border-radius: 7px; }\r\n.qc-single-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\r\n.qc-single-polynomial > svg { width: 100%; height: 27px; }\r\n.qc-sampling { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #488faf09; }\r\n.qc-seed-row { display: flex; align-items: center; gap: 10px; min-width: 0; }\r\n.qc-seed-row strong { flex: 0 0 auto; font-size: 11px; }\r\n.qc-seed-row code { min-width: 0; font: 10px/1.5 var(--qc-font); overflow-wrap: anywhere; color: #dee8ee; }\r\n.qc-noise-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }\r\n.qc-noise-paths > div { display: flex; flex-direction: column; gap: 2px; padding: 5px 7px; border-left: 2px solid #488faf65; background: #488faf0c; }\r\n.qc-noise-paths strong { font: 16px/1.3 "Cambria Math", "STIX Two Math", serif; }\r\n.qc-noise-paths small { font-size: 9px; }\r\n.qc-sampling-equation { font: 17px/1.4 "Cambria Math", "STIX Two Math", serif; }\r\n.qc-construction-equations { display: flex; flex-direction: column; gap: 5px; }\r\n.qc-construction .qc-explanation { gap: 8px; }\r\n.qc-awaiting { padding: 20px 4px; display: flex; flex-direction: column; gap: 8px; }\r\n.qc-polynomial { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 9px; background: #00000010; flex: 0 0 auto; }\r\n.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\r\n.qc-polynomial figcaption strong { font-weight: 500; }\r\n.qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }\r\n.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: none; cursor: crosshair; }\r\n.qc-selection { transition: transform 80ms linear; }\r\n.qc-scrubber { display: flex; align-items: center; gap: 12px; }\r\n.qc-scrubber > label { flex: 1; }\r\n.qc-coefficient-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }\r\n.qc-coefficient-strip > button { display: flex; flex-direction: column; gap: 3px; min-height: 42px; padding: 3px; font: 11px var(--qc-font); font-variant-numeric: tabular-nums; background: transparent; border-color: transparent; }\r\n.qc-coefficient-strip small { font-size: 9px; }\r\n.qc-coefficient-strip button[aria-pressed="true"] { background: #488faf1c; color: #dee8ee; border-color: #488faf3b; }\r\n.qc-panel input[type="range"] { appearance: none; display: block; width: 100%; height: 24px; padding: 0; margin: 0; background: transparent; cursor: pointer; touch-action: pan-y; }\r\n.qc-panel input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 3px; background: linear-gradient(to right, var(--qc-accent) var(--qc-progress), #ffffff24 var(--qc-progress)); }\r\n.qc-panel input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border: 2px solid #111111; border-radius: 50%; background: var(--qc-accent); }\r\n.qc-compression { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 7px; font-size: 11px; color: var(--qc-muted); }\r\n.qc-compression strong { margin-left: auto; color: #dee8ee; font: 15px var(--qc-font); font-variant-numeric: tabular-nums; }\r\n.qc-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--qc-muted); min-width: 0; }\r\n.qc-panel textarea, .qc-panel input[type="search"], .qc-panel input[type="text"] { width: 100%; padding: 10px 12px; color: var(--qc-text); background: var(--qc-empty); border: 1px solid var(--qc-line); border-radius: 7px; font: 11px/1.65 var(--qc-font); }\r\n.qc-panel textarea { resize: none; min-height: 60px; }\r\n.qc-panel textarea[readonly] { color: #dee8ee; }\r\n.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: #7b838f; }\r\n.qc-panel input[type="search"] { font-family: inherit; }\r\n.qc-panel .qc-message-input { font: 14px/1.6 var(--qc-font); min-height: 145px; }\r\n.qc-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.qc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\r\n.qc-json { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-behavior: smooth; margin: 0; padding: 14px; border-radius: 8px; border: 1px solid var(--qc-line); background: var(--qc-empty); color: #dee8ee; white-space: pre; font: 11px/1.85 var(--qc-font); font-variant-numeric: tabular-nums; }\r\n.qc-footer { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 13px; border-top: 1px solid var(--qc-line); }\r\n.qc-feedback { flex: 1; min-width: 0; font-size: 11px; color: var(--qc-muted); overflow-wrap: anywhere; }\r\n.qc-error { color: #f1a5ac; }\r\n.qc-panel details { font-size: 11px; color: var(--qc-muted); }\r\n.qc-panel summary { cursor: pointer; }\r\n.qc-panel details > .qc-code, .qc-panel details > .qc-field { margin-top: 12px; }\r\n.qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }\r\n.qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }\r\n.qc-contact-header > .qc-panel-title { flex: 1; }\r\n.qc-panel-title { display: flex; align-items: center; gap: 10px; }\r\n.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }\r\n.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }\r\n.qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }\r\n.qc-panel .qc-contact-card { min-height: 48px; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 7px; }\r\n.qc-contact-card[aria-pressed="true"] { background: #488faf12; border-color: #488faf26; }\r\n.qc-contact-card strong { font-size: 12px; font-weight: 500; }\r\n.qc-contact-card small { margin-top: 2px; font-size: 10px; }\r\n.qc-contact-detail { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding-top: 4px; min-width: 0; }\r\n.qc-person { display: flex; align-items: center; gap: 10px; }\r\n.qc-person h3 { font-size: 15px; }\r\n.qc-person p { font-size: 11px; }\r\n.qc-my-keys { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }\r\n.qc-my-keys h3 { font-size: 14px; }\r\n.qc-my-keys p { font-size: 11px; line-height: 1.6; }\r\n.qc-key-field { display: flex; flex-direction: column; gap: 7px; }\r\n.qc-key-field textarea { display: block; }\r\n.qc-key-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }\r\n.qc-panel .qc-reveal { width: 64px; }\r\n.qc-private-key { border-radius: 7px; }\r\n.qc-private-key textarea { display: block; }\r\n.qc-private-key[data-revealed="false"] { overflow: hidden; cursor: pointer; }\r\n.qc-private-key[data-revealed="false"] textarea { filter: blur(5px); user-select: none; -webkit-user-select: none; pointer-events: none; }\r\n.qc-reset-area { padding-top: 10px; border-top: 1px solid var(--qc-line); }\r\n.qc-reset-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #bb546450; border-radius: 8px; background: #83344115; font-size: 12px; }\r\n.qc-opened-dialog { width: min(700px, 92vw); height: min(490px, 86dvh); }\r\n.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #0002; border: 1px solid var(--qc-line); border-radius: 8px; }\r\n.qcord-button { display: inline-flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: transparent; border: 0; padding: 6px; border-radius: 7px; color: var(--interactive-normal, #a4aab4); cursor: pointer; }\r\n.qcord-button svg { width: 21px; height: 21px; fill: currentColor; }\r\n.qcord-button.qcord-decrypt-enabled { color: #fff; background: #286a91; box-shadow: inset 0 0 0 1px #65abd085, 0 0 9px #488faf35; }\r\n.qcord-button:focus-visible { outline: 2px solid #488faf; outline-offset: 2px; }\r\n[class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #26394455, #286a9135 55%, #488faf45); box-shadow: inset 0 0 0 1px #488faf60; outline: 1px solid #488faf; outline-offset: -1px; }\r\n[class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #26394455, #286a9135 55%, #488faf45); }\r\n.qcord-file-hidden, .qcord-empty-content { display: none !important; }\r\n.qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }\r\n.qcord-decrypted { position: relative; width: fit-content; max-width: 100%; min-width: 0; padding: 9px 34px 9px 12px; border: 1px solid #65abd028; border-radius: 8px; background: #488faf10; }\r\n.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; font-family: "Qcord Inter", Inter, system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.qcord-message > :first-child { margin-top: 0; }\r\n.qcord-message > :last-child { margin-bottom: 0; }\r\n.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\r\n.qcord-message a { color: var(--text-link, #a2c5ef); }\r\n.qcord-message pre { max-width: 100%; overflow-x: auto; }\r\n.qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #65abd0); font-size: 15px; }\r\n.qcord-download svg { width: 18px; height: 18px; fill: currentColor; }\r\n@media (hover: hover) and (pointer: fine) {\r\n    .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #2a2a2a; }\r\n    .qc-panel .qc-primary:hover:not(:disabled) { background: #2a789f; border-color: #599fbe; }\r\n    .qc-panel .qc-danger:hover:not(:disabled) { background: #b53f4d; }\r\n    .qcord-download:hover { background: #ffffff0b; color: #dee8ee; }\r\n}\r\n@media (max-height: 780px) and (min-width: 901px) {\r\n    .qc-panel { padding: 18px; gap: 13px; }\r\n    .qc-explanation, .qc-visual { gap: 11px; }\r\n    .qc-polynomial > svg { height: 90px; }\r\n    .qc-polynomial { gap: 9px; }\r\n    .qc-my-keys { gap: 8px; }\r\n    .qc-variables { padding: 10px; gap: 8px 12px; }\r\n    .qc-sampling { padding: 8px 10px; gap: 5px; }\r\n    .qc-construction-equations { gap: 2px; }\r\n    .qc-construction-equations .qc-equation { font-size: 21px; padding: 2px 0; }\r\n}\r\n@media (max-width: 950px) {\r\n    .qc-toolbar { gap: 7px; }\r\n    .qc-toolbar .qc-panel-button { font-size: 0; width: 40px; padding: 8px; }\r\n    .qc-recipient { min-width: 140px; }\r\n    .qc-split { gap: 18px; }\r\n    .qc-visual { padding-left: 18px; }\r\n}\r\n@media (max-width: 760px) {\r\n    .qcord-dialog { width: 96vw; height: 92dvh; }\r\n    .qc-panel { padding: 15px; gap: 12px; }\r\n    .qc-toolbar { flex-wrap: wrap; }\r\n    .qc-toolbar .qc-recipient { order: -2; flex: 1; }\r\n    .qc-mode-controls { order: 3; width: 100%; }\r\n    .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }\r\n    .qc-toolbar .qc-panel-button { order: -1; }\r\n    .qc-toolbar .qc-exit { order: 2; }\r\n    .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }\r\n    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }\r\n    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\r\n    .qc-visual { border-left: 0; padding: 16px 0 0; border-top: 1px solid var(--qc-line); }\r\n    .qc-contact-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 15px; }\r\n    .qc-contact-sidebar { padding-right: 12px; }\r\n    .qc-footer { gap: 5px; }\r\n    .qc-footer .qc-open-file { font-size: 0; padding: 8px; }\r\n    .qc-contact-header { gap: 10px; }\r\n}\r\n@media (max-width: 520px) {\r\n    .qc-contact-layout { display: flex; flex-direction: column; overflow: auto; }\r\n    .qc-contact-sidebar { border-right: 0; padding-right: 0; flex: 0 0 auto; }\r\n    .qc-contact-list { flex-direction: row; max-height: 55px; overflow-x: auto; }\r\n    .qc-contact-list > button { flex: 0 0 auto; }\r\n    .qc-contact-detail { gap: 13px; }\r\n    .qc-keyparts { grid-template-columns: 1.5fr 1fr; }\r\n}\r\n@media (prefers-reduced-motion: reduce) {\r\n    .qc-panel button, .qc-switch-track > span { transition: none; }\r\n    .qc-selection { transition: none; }\r\n    .qc-json { scroll-behavior: auto; }\r\n    .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: none; }\r\n}\r\n\r\n.qc-contact-search { position: relative; }\r\n.qc-contact-search > svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--qc-muted); pointer-events: none; }\r\n.qc-panel .qc-contact-search > input { width: 100%; padding-left: 36px; }\r\n.qc-panel summary { display: flex; align-items: center; gap: 8px; list-style: none; }\r\n.qc-panel summary::-webkit-details-marker { display: none; }\r\n.qc-panel summary > svg { flex: 0 0 auto; transform: rotate(-90deg); transition: transform 140ms ease; }\r\n.qc-panel details[open] > summary > svg { transform: rotate(0); }\r\n.qcord-signature { position: absolute; top: 6px; right: 32px; width: 23px; height: 23px; padding: 3px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: #65abd0; cursor: pointer; }\r\n.qcord-signature:hover { background: #488faf30; }\r\n.qcord-signature-pending { font-size: 16px; }\r\n.qcord-decrypted { padding-right: 64px; }\r\n.qcord-decrypted[data-signature="failed"] { background: #a9364330; border-color: #d45966; }\r\n.qcord-signature[data-status="failed"] { color: #f1a5ac; }\r\n@media (max-width: 1100px) { .qc-toolbar { flex-wrap: wrap; } }\r\n\r\n/* Adjacent public identities with compact actions and neutral, quiet surfaces. */\r\n.qc-public-keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; flex: 0 0 auto; }\r\n.qc-public-keys > * { min-width: 0; }\r\n.qc-public-keys textarea { height: 132px; }\r\n.qc-my-keys > *, .qc-key-field { flex-shrink: 0; }\r\n.qc-my-keys button, .qc-contact-sidebar > button { align-self: flex-start; }\r\n.qc-key-toolbar { justify-content: space-between; }\r\n.qc-key-toolbar button { flex: 0 0 auto; }\r\n.qc-equation, .qc-math, .qc-inline-math, .qc-compression strong, .qc-sampling-equation, .qc-noise-paths strong, .qc-variables dt { font-family: "Cambria Math", Cambria, "STIX Two Math", serif; color: #f1f3f5; }\r\n.qc-math { font-size: 15px; line-height: 1.4; }\r\n.qc-panel textarea::selection, .qc-panel input::selection, .qc-panel code::selection { background: #245a7680; color: #fff; }\r\n@media (max-width: 620px) { .qc-public-keys { grid-template-columns: minmax(0, 1fr); } }\r\n\r\n.qc-keyparts > div { background: #17506a; border-color: #3986a3; }\r\n.qc-keyparts > div + div { background: #2b6a6d; border-color: #65a5a5; }\r\n.qc-keyparts span { color: #d5e7eb; }\r\n.qc-private-keys .qc-label-row { flex-wrap: wrap; gap: 4px 8px; }\r\n.qc-private-keys .qc-key-actions { margin-left: auto; }\r\n';
   }
 });
 
@@ -4776,6 +5547,7 @@ var require_attachments = __commonJS({
   "src/attachments.js"(exports2, module2) {
     "use strict";
     var { MAX_DECODED_FILE_SIZE, NAME: NAME2 } = require_constants();
+    var { outlined } = require_icons();
     var LOGO = require_button();
     module2.exports = class AttachmentDecoder {
       constructor(plugin) {
@@ -4849,6 +5621,25 @@ var require_attachments = __commonJS({
           download.title = "Download .qcord";
           download.setAttribute("aria-label", "Download .qcord");
           element.append(download);
+          const signature = document.createElement("button");
+          signature.type = "button";
+          signature.className = "qcord-signature qcord-signature-pending";
+          const status = ["verified", "failed"].includes(result.signatureStatus) ? result.signatureStatus : "unchecked";
+          signature.dataset.status = status;
+          element.dataset.signature = status;
+          if (status === "unchecked") signature.textContent = "?";
+          else {
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            for (const [name, value] of Object.entries({ viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": true })) svg.setAttribute(name, value);
+            const path = document.createElementNS(svg.namespaceURI, "path");
+            path.setAttribute("d", outlined[status === "verified" ? "check" : "shieldX"]);
+            svg.append(path);
+            signature.append(svg);
+          }
+          signature.title = plugin.autoVerify ? "Signature not checked: automatic verification is coming next" : "Check Signature Challenge (coming next)";
+          signature.setAttribute("aria-label", `Check Signature Challenge: ${status === "unchecked" ? "signature not checked" : status === "verified" ? "signature verified" : "signature failed"}`);
+          signature.addEventListener("click", () => BdApi.UI.showToast("Signature not checked. The verification walkthrough is coming next.", { type: "info" }));
+          element.append(signature);
           entry.element = element;
           const message = link.closest('[id^="chat-messages-"]');
           const slot = message?.querySelector('[id^="message-content-"], [class*="messageContent_"]');
@@ -4906,6 +5697,7 @@ module.exports = class Qcord extends Encapsulation {
     this.modeListeners = /* @__PURE__ */ new Set();
     this.pendingSends = /* @__PURE__ */ new Map();
     this.outgoingEpoch = {};
+    this.autoVerify = config.load("auto_verify") === true;
     this.autoEncrypt = config.load("auto_encrypt") === true;
     this.autoDecrypt = config.load("auto_decrypt") !== false;
     this.saveReceipts = config.load("save_receipts") !== false;
@@ -4958,12 +5750,15 @@ module.exports = class Qcord extends Encapsulation {
   }
   setAutomatic(mode, enabled) {
     if (!this.running || this.resetting) throw new Error("Wait until Qcord is ready.");
-    if (!["encrypt", "decrypt"].includes(mode)) throw new Error("Unknown automatic mode.");
+    if (!["encrypt", "decrypt", "verify"].includes(mode)) throw new Error("Unknown automatic mode.");
     if (mode === "encrypt" && enabled && !this.sendHookReady) throw new Error("Automatic encryption is unavailable in this Discord build.");
     config.save(`auto_${mode}`, Boolean(enabled));
     if (mode === "encrypt") {
       this.autoEncrypt = Boolean(enabled);
       this.outgoingEpoch = {};
+    } else if (mode === "verify") {
+      this.autoVerify = Boolean(enabled);
+      this.attachments.clear();
     } else {
       this.autoDecrypt = Boolean(enabled);
       this.attachments.clear();
@@ -4984,7 +5779,7 @@ module.exports = class Qcord extends Encapsulation {
     this.pendingSends.set(channelId, true);
     let draft;
     try {
-      draft = await this.prepareEncapsulation(channelId, ACTIVE_SCHEME, text);
+      draft = await this.prepareEncapsulation(channelId, void 0, text);
       if (!this.running || !this.autoEncrypt || this.session !== session || this.outgoingEpoch !== epoch) throw new Error("Automatic encryption was cancelled. Your draft was kept.");
       await this.stageDraft(draft, () => this.autoEncrypt && this.outgoingEpoch === epoch);
       return { shouldClear: true, shouldRefocus: true };

@@ -1,16 +1,20 @@
 "use strict";
 
-const {ml_kem768} = require("@noble/post-quantum/ml-kem.js");
+const {ml_kem512, ml_kem768, ml_kem1024} = require("@noble/post-quantum/ml-kem.js");
+const {ml_dsa44, ml_dsa65, ml_dsa87} = require("@noble/post-quantum/ml-dsa.js");
+const signatures = {"ml-kem-512": ml_dsa44, "ml-kem-768": ml_dsa65, "ml-kem-1024": ml_dsa87};
 const {equalBytes} = require("@noble/post-quantum/utils.js");
 const {pack, unpack, readKeyData} = require("./der");
 
 // NIST identifiers for ML-KEM SPKI / PKCS#8 keys.
 const algorithms = {
+    "ml-kem-512": {impl: ml_kem512, oid: "608648016503040401"},
+    "ml-kem-1024": {impl: ml_kem1024, oid: "608648016503040403"},
     "ml-kem-768": {impl: ml_kem768, oid: "608648016503040402"}
 };
 
 function algorithm(scheme) {
-    if (!Object.hasOwn(algorithms, scheme)) throw new Error("Qcord supports ML-KEM-768 only.");
+    if (!Object.hasOwn(algorithms, scheme)) throw new Error("Unsupported ML-KEM parameter set.");
     return algorithms[scheme];
 }
 
@@ -96,6 +100,17 @@ function requireKey(key, type) {
 }
 
 const PQC = {
+    generateSignatureKeys: scheme => run(() => {
+        algorithm(scheme);
+        const seed = randomBytes(32);
+        try { const pair = signatures[scheme].keygen(seed); return {publicKey: pair.publicKey, privateKey: pair.secretKey}; }
+        finally { seed.fill(0); }
+    }),
+    validateSignatureKey: (text, scheme) => {
+        const bytes = readKeyData(text);
+        if (bytes.length !== signatures[scheme].lengths.publicKey) throw new Error("Signature key length does not match the recipient's security level.");
+        return Buffer.from(bytes).toString("base64");
+    },
     backend: "bundled @noble/post-quantum 0.7.1",
     generateKeyPair: scheme => run(() => {
         const {impl} = algorithm(scheme);

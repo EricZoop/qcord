@@ -71,8 +71,8 @@ window.qcordTest={plugin,state,actions,data,addAttachment,releaseDownload:url=>d
     finally {result.sharedKey.fill(0);result.m.fill(0);}
 },useRecipientIdentity:()=>{
     plugin.attachments.clear();
-    data.public_encaps=Buffer.from(contact.publicKey.bytes).toString("base64");
-    data.private_decaps=Buffer.from(contact.privateKey.bytes).toString("base64");
+    data.key_sets["ml-kem-768"].public_encaps=Buffer.from(contact.publicKey.bytes).toString("base64");
+    data.key_sets["ml-kem-768"].private_decaps=Buffer.from(contact.privateKey.bytes).toString("base64");
     data.recipients=[];plugin.keyPairs.clear();plugin.keyTasks.clear();plugin.session={};
 }};
 installFilePreview(plugin, data);
