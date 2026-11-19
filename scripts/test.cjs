@@ -21,7 +21,7 @@ const actions = {sendMessage: async (channelId, value) => {sent.push({channelId,
 global.document = {querySelectorAll: () => []};
 global.BdApi = {
     Data: {load: (_, key) => structuredClone(store[key]), save: (_, key, value) => { store[key] = structuredClone(value); }, delete: (_, key) => { delete store[key]; }},
-    Webpack: {getStore: name => ({ChannelStore: {getChannel: id => id === "300" ? {type: 3, recipients: ["2", "3"]} : {type: 1, recipients: ["2"]}}, SelectedChannelStore: {getChannelId: () => channel}})[name],
+    Webpack: {getStore: name => ({ChannelStore: {getChannel: id => id === "300" ? {type: 3, recipients: ["2", "3"]} : {type: 1, recipients: ["2"]}}, UserStore: {getCurrentUser:()=>({id:"1"})}, SelectedChannelStore: {getChannelId: () => channel}})[name],
         getByKeys: key => key === "sendMessage" ? actions : key === "addFiles" ? {addFiles: async value => staged.push(value)} : null},
     Patcher:{instead:(_,object,key,callback)=>{const original=object[key];object[key]=function(...args){return callback(this,args,original);};const undo=()=>{object[key]=original;};unpatches.push(undo);return undo;},unpatchAll:()=>{unpatches.splice(0).reverse().forEach(undo=>undo());}},
     UI: {showToast() {}}
@@ -187,7 +187,7 @@ test("both published example configs decrypt the complete example message", asyn
 test("vector rows round-trip without changing the ciphertext or authenticated message", () => {
     const file = JSON.parse(fs.readFileSync("schemas/example.qcord", "utf8"));
     const wire = packet.stringify(file), lines = wire.trimEnd().split("\n");
-    const rows = lines.filter(line => /^      \[/.test(line));
+    const rows = wire.split('"encrypted_message"')[0].split("\n").filter(line => /^      \[/.test(line));
     assert.equal(rows.length, 3);
     rows.forEach(line => assert.equal(JSON.parse(line.trim().replace(/,$/, "")).length, 256));
     const v = lines.find(line => line.startsWith('    "v": ['));
@@ -288,25 +288,52 @@ test("epoch receipt lookup caches its index and reopens directly without ML-KEM 
 });
 
 
-test("ML-DSA placeholders are blank, separate from ciphertext, and validated without changing legacy authentication", async () => {
-    const {sender, receiver} = await pair();
-    const draft = await sender.prepareEncapsulation("100", scheme, "Unsigned placeholder");
-    assert.deepEqual(draft.packet.signature_sigma, {c_tilde: "", z: [], h: []});
-    assert.ok(draft.wire.indexOf('"signature_sigma"') > draft.wire.indexOf('"encrypted_message"'));
-    assert.ok(store.key_sets[scheme].public_signature); assert.ok(store.key_sets[scheme].private_signature);
-    const legacy = structuredClone(draft.packet); delete legacy.signature_sigma;
-    assert.ok(fileSchema(legacy), JSON.stringify(fileSchema.errors));
-    assert.deepEqual(packet.aad(legacy), packet.aad(draft.packet));
-    assert.equal((await receiver.decapsulateFile(packet.stringify(legacy))).text, "Unsigned placeholder");
-    for (const sigma of [null, {}, {c: "", z: [], h: []}, {c_tilde: "AA==", z: [], h: []}, {c_tilde: "", z: [1], h: []}, {c_tilde: "", z: [], h: [1]}, {c_tilde: "", z: [], h: [], extra: ""}]) {
-        const changed = {...draft.packet, signature_sigma: sigma};
-        assert.equal(fileSchema(changed), false);
-        assert.throws(() => packet.parse(JSON.stringify(changed)), /blank signature_sigma/);
-        assert.throws(() => packet.stringify(changed), /blank signature_sigma/);
+test("ML-DSA signs all levels, reproduces lecture verification values, and rejects tampering", async () => {
+    const DSA = require("../src/mldsa");
+    reset(); const sender = client();
+    for (const level of ["ml-kem-512", "ml-kem-768", "ml-kem-1024"]) {
+        const keys = await sender.generateKeys(level);
+        sender.saveRecipients("100", [{user_id:"2", public_encaps:raw(keys.publicKey), public_signature:keys.publicSignature}], level);
+        const draft = await sender.prepareEncapsulation("100", level, "Signed contents");
+        const result = {scheme:level, file:draft.packet, channelId:"100", source:"Recipient dk"};
+        const verified = sender.verifyFileSignature(result, true, true);
+        assert.equal(verified.status, "verified");
+        assert.equal(verified.trace.computed, verified.trace.expected);
+        assert.ok(verified.trace.zNorm < verified.trace.zBound);
+        assert.equal(verified.trace.c.filter(x => x !== 0).length, verified.trace.tau);
+        assert.deepEqual(DSA.decodeSignature(DSA.encodeSignature(draft.packet.signature_sigma, level), level), draft.packet.signature_sigma);
+        assert.ok(fileSchema(draft.packet), JSON.stringify(fileSchema.errors));
+        const edited = sender.updateDraftMessage(draft, "Changed text");
+        assert.equal(sender.verifyFileSignature({...result, file:edited.packet}).status, "verified");
+        for (const mutate of [f => {const bytes=Buffer.from(f.signature_sigma.c_tilde,"base64"); bytes[0]^=1; f.signature_sigma.c_tilde=bytes.toString("base64");}, f=>f.signature_sigma.z[0][0]++, f=>f.kem.u[0][0]^=1, f=>f.encrypted_message.nonce_base64=flip(f.encrypted_message.nonce_base64), f=>f.encrypted_message.ciphertext_base64=flip(f.encrypted_message.ciphertext_base64), f=>f.encrypted_message.authentication_tag_base64=flip(f.encrypted_message.authentication_tag_base64)]) {
+            const changed = structuredClone(draft.packet); mutate(changed);
+            assert.equal(sender.verifyFileSignature({...result, file:changed}, true, true).status,"failed");
+        }
+        const highNorm=structuredClone(draft.packet); highNorm.signature_sigma.z[0][0]=DSA.parameters(level).gamma1;
+        assert.equal(sender.verifyFileSignature({...result,file:highNorm},true,true).status,"failed");
+        const malformed = structuredClone(draft.packet); malformed.signature_sigma.h[0]=[4,4];
+        assert.throws(()=>packet.parse(JSON.stringify(malformed)),/hint/);
+        const other = await PQC.generateSignatureKeys(level);
+        sender.saveRecipients("100",[{user_id:"2",public_encaps:raw(keys.publicKey),public_signature:Buffer.from(other.publicKey).toString("base64")}],level);
+        assert.equal(sender.verifyFileSignature(result,true,true).status,"failed", "Never trusts a signature against an unrelated saved key");
+        assert.equal(sender.verifyFileSignature({...result, source:"Saved sender K", authorId:"2", requireAuthor:true}).status,"failed", "A contact replaying your signed file is checked against the contact key, even if you have a receipt");
+        assert.equal(sender.verifyFileSignature({...result, source:"Saved sender K", authorId:"1", requireAuthor:true}).status,"verified");
+        assert.equal(sender.verifyFileSignature({...result, requireAuthor:true}).status,"missing-author");
+        sender.saveRecipients("100",[{user_id:"2",public_encaps:raw(keys.publicKey)}],level);
+        assert.equal(sender.verifyFileSignature(result).status,"missing-key");
+        assert.equal(sender.verifyFileSignature(result,false).status,"unchecked");
+        const unsigned = structuredClone(draft.packet); delete unsigned.signature_sigma;
+        assert.equal(sender.verifyFileSignature({...result,file:unsigned}).status,"unsigned");
+        unsigned.signature_sigma={c_tilde:"",z:[],h:[]};
+        assert.ok(fileSchema(unsigned)); assert.equal(sender.verifyFileSignature({...result,file:unsigned}).status,"unsigned");
+        await sender.saveDraft(draft);
+        sender.autoVerify=true;
+        assert.equal((await sender.openFile(draft.wire,"100",draft.message_epoch)).signatureStatus,"verified", "Sent receipts verify against the local signing key");
+        const altered = structuredClone(draft.packet); altered.signature_sigma.z[0][0]++;
+        await assert.rejects(sender.saveDraft({...draft, wire:packet.stringify(altered)}),/signature/);
     }
-    const changedConfig = {...store, public_signature: "unimplemented"};
-    assert.equal(configSchema(changedConfig), false);
 });
+
 
 test("version-4 migration groups every level without changing identities, toggles or receipts", async () => {
     const {sender} = await pair();

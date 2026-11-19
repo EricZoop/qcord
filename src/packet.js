@@ -2,6 +2,7 @@
 
 const {parameters, PARAMETER_SETS} = require("./parameters");
 const {encode, decode} = require("./mlkem");
+const DSA = require("./mldsa");
 const {MAX_DECODED_FILE_SIZE} = require("./constants");
 const coefficients = file => file?.qcord_version === 6 ? file.kem : file;
 const schemeOf = file => Object.keys(PARAMETER_SETS).find(name => parameters(name).k === coefficients(file)?.u?.length);
@@ -40,7 +41,7 @@ function parse(text) {
     const ciphertext = toCiphertext(packet);
     const expected = packet.qcord_version === 6 ? "encrypted_message,kem,qcord_version" : "encrypted_message,qcord_version,u,v";
     if (Object.keys(packet).filter(key => key !== "signature_sigma").sort().join() !== expected) throw new Error("Unexpected Qcord file fields.");
-    if (packet.signature_sigma !== undefined) validateSignaturePlaceholder(packet.signature_sigma);
+    if (packet.signature_sigma !== undefined) validateSignature(packet.signature_sigma, schemeOf(packet), packet.qcord_version);
     const sealed = packet.encrypted_message;
     if (!sealed || typeof sealed !== "object" || Array.isArray(sealed) || Object.keys(sealed).sort().join() !== "authentication_tag_base64,ciphertext_base64,nonce_base64") throw new Error("Invalid encrypted_message fields.");
     decodeBase64(sealed.nonce_base64, 12);
@@ -48,13 +49,23 @@ function parse(text) {
     decodeBase64(sealed.ciphertext_base64);
     return {packet, ciphertext};
 }
-// Reserved fields are blank until signing and verification are implemented.
-function validateSignaturePlaceholder(sigma) {
-    if (!sigma || typeof sigma !== "object" || Array.isArray(sigma)
-        || Object.keys(sigma).sort().join() !== "c_tilde,h,z" || sigma.c_tilde !== ""
-        || !Array.isArray(sigma.z) || sigma.z.length || !Array.isArray(sigma.h) || sigma.h.length) {
-        throw new Error("Expected blank signature_sigma placeholders; ML-DSA is not implemented.");
-    }
+// Blank/missing signatures keep legacy files readable; populated components
+// must be an exact canonical ML-DSA signature for the envelope's level.
+function validateSignature(sigma, scheme, version) {
+    if (!sigma || typeof sigma !== "object" || Array.isArray(sigma) || Object.keys(sigma).sort().join() !== "c_tilde,h,z") throw new Error("Invalid signature_sigma fields.");
+    if (DSA.blank(sigma)) return;
+    if (version !== 6) throw new Error("Legacy files must have blank signature_sigma fields.");
+    DSA.encodeSignature(sigma, scheme);
+}
+
+// Sign the canonical encrypted envelope, including nonce and authentication tag.
+// Public verification keys are pinned in local contacts, never trusted from a file.
+function signaturePayload(file) {
+    const sealed = file.encrypted_message;
+    return Buffer.from("Qcord signed envelope v1\n" + JSON.stringify({
+        qcord_version: file.qcord_version, kem: {u: coefficients(file).u, v: coefficients(file).v},
+        encrypted_message: {nonce_base64: sealed.nonce_base64, ciphertext_base64: sealed.ciphertext_base64, authentication_tag_base64: sealed.authentication_tag_base64}
+    }));
 }
 
 // Authenticate the canonical ciphertext structure, independent of JSON formatting.
@@ -71,8 +82,8 @@ function stringify(file) {
     const vectors = nested ? `  "kem": {\n    "u": [\n${rows}\n    ],\n    "v": [${kem.v.join(", ")}]\n  }` : `  "u": [\n${rows}\n  ],\n  "v": [${kem.v.join(", ")}]`;
     const sealed = JSON.stringify(file.encrypted_message, null, 2).replace(/\n/g, "\n  ");
     const sigma = file.signature_sigma;
-    if (sigma !== undefined) validateSignaturePlaceholder(sigma);
-    const signature = sigma === undefined ? "" : `,\n  "signature_sigma": ${JSON.stringify(sigma, null, 2).replace(/\n/g, "\n  ")}`;
+    if (sigma !== undefined) validateSignature(sigma, schemeOf(file), file.qcord_version);
+    const signature = sigma === undefined ? "" : `,\n  "signature_sigma": {\n    "c_tilde": ${JSON.stringify(sigma.c_tilde)},\n    "z": [${sigma.z.length ? "\n" + sigma.z.map(poly => "      [" + poly.join(", ") + "]").join(",\n") + "\n    " : ""}],\n    "h": [${sigma.h.length ? "\n" + sigma.h.map(indices => "      [" + indices.join(", ") + "]").join(",\n") + "\n    " : ""}]\n  }`;
     return `{\n  "qcord_version": ${file.qcord_version},\n${vectors},\n  "encrypted_message": ${sealed}${signature}\n}\n`;
 }
-module.exports = {schemeOf, fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify};
+module.exports = {signaturePayload, schemeOf, fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify};

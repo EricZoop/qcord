@@ -252,12 +252,20 @@
 .qc-panel summary::-webkit-details-marker { display: none; }
 .qc-panel summary > svg { flex: 0 0 auto; transform: rotate(-90deg); transition: transform 140ms ease; }
 .qc-panel details[open] > summary > svg { transform: rotate(0); }
-.qcord-signature { position: absolute; top: 6px; right: 32px; width: 23px; height: 23px; padding: 3px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: #65abd0; cursor: pointer; }
-.qcord-signature:hover { background: #488faf30; }
-.qcord-signature-pending { font-size: 16px; }
-.qcord-decrypted { padding-right: 64px; }
 .qcord-decrypted[data-signature="failed"] { background: #a9364330; border-color: #d45966; }
-.qcord-signature[data-status="failed"] { color: #f1a5ac; }
+.qcord-download { padding: 2px; border: 0; background: transparent; cursor: pointer; }
+.qcord-download svg[stroke] { fill: none; }
+.qcord-download[data-status="verified"] { color: #86c6b0; }
+.qcord-download[data-status="failed"] { color: #f1a5ac; }
+.qc-verification-result { display: flex; align-items: center; gap: 10px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 7px; background: #17506a60; }
+.qc-verification-result[data-status="failed"] { background: #a9364330; color: #f1a5ac; border-color: #d45966; }
+.qc-verification-rows > button[aria-pressed="true"] { background: #17506a; }
+.qc-verification-rows { gap: 4px; }
+.qc-verification-rows > button { min-height: 30px; padding: 5px 8px; }
+.qc-file-link { display: inline-flex; gap: 7px; align-items: center; color: var(--qc-text); font-size: 12px; text-decoration: none; white-space: nowrap; }
+.qc-verifier .qc-explanation { gap: 11px; }
+.qc-verifier .qc-equation { font-size: 21px; }
+.qc-signature-parts { grid-template-columns: 1fr 3fr; }
 @media (max-width: 1100px) { .qc-toolbar { flex-wrap: wrap; } }
 
 /* Adjacent public identities with compact actions and neutral, quiet surfaces. */

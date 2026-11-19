@@ -3,6 +3,7 @@
 const {PQC, equalBytes} = require("./pqc");
 const config = require("./config");
 const {parameters} = require("./parameters");
+const DSA = require("./mldsa");
 const packet = require("./packet");
 const message = require("./message");
 const {ACTIVE_SCHEME, MAX_DECODED_FILE_SIZE} = require("./constants");
@@ -36,6 +37,7 @@ module.exports = class Encapsulation {
                 } finally { pair.privateKey.fill(0); }
             }
             const identity = config.load("key_sets")[scheme];
+            if (PQC.signaturePublicKey(identity.private_signature, scheme) !== identity.public_signature) throw new Error("Saved public and private signature keys do not match.");
             keys.publicSignature = identity.public_signature;
             keys.privateSignature = identity.private_signature;
             this.keyPairs.set(scheme, keys);
@@ -112,6 +114,8 @@ module.exports = class Encapsulation {
         const row = this.getRecipients(channelId, scheme)[0];
         if (!row || row.user_id !== partner.userId) throw new Error(`Save this recipient's ${parameters(scheme).label} public key first.`);
         const session = this.session;
+        await this.generateKeys(scheme);
+        this.checkSession(session);
         const result = await PQC.encapsulate(PQC.createPublicKey(row.public_encaps), true);
         try {
             this.checkSession(session);
@@ -123,6 +127,9 @@ module.exports = class Encapsulation {
     }
 
     serializeDraft(draft) {
+        const identity = config.load("key_sets")?.[draft.scheme];
+        if (!identity?.private_signature) throw new Error("Generate your signing identity before composing.");
+        draft.packet.signature_sigma = DSA.decodeSignature(PQC.sign(packet.signaturePayload(draft.packet), identity.private_signature, draft.scheme), draft.scheme);
         const wire = packet.stringify(draft.packet);
         if (Buffer.byteLength(wire) > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file exceeds 1 MiB. Shorten the message.");
         return {...draft, wire};
@@ -151,6 +158,8 @@ module.exports = class Encapsulation {
         try {
             this.checkSession(session);
             if (!equalBytes(restored.ciphertext, ciphertext)) throw new Error("Draft no longer matches its m value.");
+            const ownPublic = config.load("key_sets")?.[draft.scheme]?.public_signature;
+            if (DSA.blank(file.signature_sigma) || !ownPublic || !PQC.verify(DSA.encodeSignature(file.signature_sigma, draft.scheme), packet.signaturePayload(file), ownPublic, draft.scheme)) throw new Error("Draft signature no longer matches your signing identity.");
             if (!message.open(file, restored.sharedKey).length) throw new Error("Write a message before attaching.");
             // Re-read after async work, preserving unrelated saves and detecting replacement.
             const current = config.load("recipients") || [];
@@ -183,7 +192,7 @@ module.exports = class Encapsulation {
         } finally { sharedKey.fill(0); }
     }
 
-    async openFile(text, channelId, messageEpoch = null) {
+    async openFile(text, channelId, messageEpoch = null, sender = {}) {
         this.checkSession(this.session);
         const {packet: file} = packet.parse(text);
         if (this.receiptRevision !== config.receiptsRevision || this.receiptSession !== this.session) {
@@ -206,11 +215,46 @@ module.exports = class Encapsulation {
         for (const record of candidates) {
             const key = packet.decodeBase64(record.k, 32);
             try {
-                return {scheme: packet.schemeOf(file), key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K"};
+                return this.withVerification({scheme: packet.schemeOf(file), key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K"}, file, channelId, sender);
             } catch { /* Another receipt may share the filename epoch. */ }
             finally { key.fill(0); }
         }
-        return {...await this.decapsulateFile(text), source: "Recipient dk"};
+        return this.withVerification({...await this.decapsulateFile(text), source: "Recipient dk"}, file, channelId, sender);
+    }
+
+    withVerification(result, file, channelId, sender = {}) {
+        const opened = {...result, file, channelId, ...sender};
+        opened.verification = this.verifyFileSignature(opened, this.autoVerify === true);
+        opened.signatureStatus = opened.verification.status;
+        return opened;
+    }
+
+    verifyFileSignature(result, verify = true, inspect = false) {
+        this.checkSession(this.session);
+        const {file, channelId, scheme} = result;
+        const currentUserId = BdApi.Webpack.getStore?.("UserStore")?.getCurrentUser?.()?.id;
+        const own = result.authorId ? result.authorId === currentUserId : result.source === "Saved sender K";
+        const keySource = own ? "Your saved signing key" : "Contact's saved signing key";
+        if (!verify) return {status: "unchecked", reason: "Signature has not been checked.", keySource};
+        if (DSA.blank(file.signature_sigma)) return {status: "unsigned", reason: "This older file has no signature. Its sender cannot be verified.", keySource};
+        if (result.requireAuthor && !result.authorId) return {status: "missing-author", reason: "Discord could not identify this message's author. No signature identity is assumed.", keySource};
+        let publicKey;
+        if (own) publicKey = config.load("key_sets")?.[scheme]?.public_signature;
+        else {
+            const partner = this.getDirectPartner(channelId);
+            if (result.authorId && result.authorId !== partner.userId) return {status: "missing-author", reason: "Message author does not match this contact.", keySource};
+            publicKey = this.getRecipients(channelId, scheme).find(row => row.user_id === partner.userId)?.public_signature;
+        }
+        if (!publicKey) return {status: "missing-key", reason: "Save the sender's public signature key in the recipient panel before verifying.", keySource};
+        const payload = packet.signaturePayload(file), signature = DSA.encodeSignature(file.signature_sigma, scheme);
+        const valid = PQC.verify(signature, payload, publicKey, scheme);
+        const verification = {status: valid ? "verified" : "failed", reason: valid ? "Signature matches the saved public key and this encrypted envelope." : "Signature does not match the saved public key or this encrypted envelope.", keySource, publicKey, payloadBytes: payload.length, signatureBytes: signature.length};
+        if (inspect) {
+            verification.trace = DSA.verificationTrace(Buffer.from(publicKey, "base64"), payload, file.signature_sigma, scheme);
+            const traceValid = verification.trace.computed === verification.trace.expected && verification.trace.zNorm < verification.trace.zBound && verification.trace.hintCount <= verification.trace.hintBound;
+            if (valid !== traceValid) throw new Error("Verification walkthrough did not reproduce the library's result.");
+        }
+        return verification;
     }
 
     async clearConfig() {

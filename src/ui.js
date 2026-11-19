@@ -46,7 +46,7 @@ module.exports = function createUI(R) {
     function KeyParts({k = 3}) {
         return h("div", {className: "qc-keyparts", "aria-label": "Public key byte order"}, h("div", null, h("strong", null, "Encoded t̂"), h("span", null, `${384 * k} bytes · ${512 * k} Base64 characters`)), h("div", null, h("strong", null, "ρ seed"), h("span", null, "32 bytes · 44 Base64 characters")));
     }
-    function Polynomial({values, name, signed = false, index, onIndexChange}) {
+    function Polynomial({values, name, signed = false, index, onIndexChange, modulus = 3329}) {
         const [localIndex, setLocalIndex] = R.useState(0);
         const dragging = R.useRef(false);
         const frame = R.useRef(null), pendingIndex = R.useRef(0);
@@ -55,9 +55,9 @@ module.exports = function createUI(R) {
         const choose = value => { if (index === undefined) setLocalIndex(value); onIndexChange?.(value); };
         const baseline = signed ? 58 : 110;
         const bars = R.useMemo(() => {
-            const scale = signed ? Math.max(1, ...values.map(Math.abs)) : 3328;
+            const scale = signed ? Math.max(1, ...values.map(Math.abs)) : modulus - 1;
             return values.map((v, j) => { const height = Math.max(1, Math.abs(v) / scale * (signed ? 50 : 100)); return h("rect", {key: j, x: j * 2.5, y: signed && v < 0 ? baseline : baseline - height, width: 1.8, height, fill: "var(--qc-graph)", opacity: .7}, h("title", null, `${name}[${j}] = ${v}`)); });
-        }, [values, signed, name]);
+        }, [values, signed, name, modulus]);
         const scrub = (event, immediate = false) => {
             const rect = event.currentTarget.getBoundingClientRect();
             pendingIndex.current = Math.max(0, Math.min(values.length - 1, Math.floor((event.clientX - rect.left) / rect.width * values.length)));

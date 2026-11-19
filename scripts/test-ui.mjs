@@ -149,7 +149,7 @@ try {
     await stage("3. Construct u, v");
     assert.equal(await composer.getByLabel("Sampling seed r",{exact:true}).innerText(),seedR,"Construction uses the same r derived alongside K");
     assert.deepEqual(await composer.locator(".qc-noise-paths small").allTextContents(),["Nonce N = 0, 1, 2","Nonce N = 3, 4, 5","Nonce N = 6"]);
-    assert.equal(await composer.locator(".qc-sampling-equation").innerText(),"y uses CBD with eta=2; e₁ and e₂ use eta=2. Each has its own nonce.");
+    assert.equal(await composer.locator(".qc-sampling-equation").innerText(),"y uses CBD with η=2; e₁ and e₂ use η=2. Each has its own nonce.");
     const formulas=await composer.locator(".qc-equation").allTextContents();
     assert.deepEqual(formulas,["u = NTT⁻¹(Âᵀ ∘ ŷ) + e₁","v = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂"]);
     await composer.getByRole("button",{name:"u[2]",exact:true}).click(); await composer.getByLabel("Coefficient index").fill("17");
@@ -178,9 +178,9 @@ try {
     await composer.locator(".qc-json").evaluate(el=>el.scrollTo({left:120}));
     await page.waitForFunction(()=>document.querySelector(".qc-json").scrollLeft>0);
     await composer.locator(".qc-json").evaluate(el=>el.scrollTo({left:0,behavior:"instant"}));
-    assert.equal(wire.split("\n").filter(line=>/^      \[/.test(line)).length, 3);
+    assert.equal(wire.split('"encrypted_message"')[0].split("\n").filter(line=>/^      \[/.test(line)).length, 3);
     assert.deepEqual(Object.keys(file).sort(), ["encrypted_message", "kem", "qcord_version", "signature_sigma"]);
-    assert.deepEqual(file.signature_sigma, {c_tilde: "", z: [], h: []});
+    assert.equal(file.signature_sigma.z.length, 5); assert.equal(file.signature_sigma.h.length, 6);
     assert.deepEqual(file.kem.u, first.kem.u); assert.deepEqual(file.kem.v, first.kem.v);
     assert.notEqual(file.encrypted_message.nonce_base64, first.encrypted_message.nonce_base64);
     assert.ok(!wire.includes("Hello from both sides")); await noOuterOverflow();
@@ -212,7 +212,7 @@ try {
     assert.equal(await senderAuto.locator(".qcord-message").evaluate(el=>getComputedStyle(el).color),"rgb(255, 255, 255)");
     assert.equal(await senderAuto.locator("code").evaluate(el=>getComputedStyle(el).color),"rgb(255, 255, 255)");
     assert.equal(await senderAuto.locator("img").count(),0,"Decrypted HTML stays inert text");
-    assert.equal(await senderAuto.locator(".qcord-download").getAttribute("href"),senderURL);
+    assert.equal(await senderAuto.locator("button").count(),1,"One existing corner control opens verification");
     assert.equal(await senderAuto.locator(".qcord-download svg path").getAttribute("d"),await page.locator(".qcord-button svg path").getAttribute("d"),"The file download uses the user's Qcord logo");
     assert.equal(await page.locator("#chat-messages-100-900 .mosaicItem_fixture").isVisible(),false);
     const gap=await page.locator("#chat-messages-100-900").evaluate(el=>el.querySelector(".qcord-decrypted").getBoundingClientRect().top-el.querySelector(".header_fixture").getBoundingClientRect().bottom);
@@ -296,7 +296,8 @@ try {
     assert.equal(await privateSignatureBox.evaluate(el => getComputedStyle(el).filter), 'none');
     assert.equal(await privateBox.evaluate(el => getComputedStyle(el).filter), 'blur(5px)', 'Reveal controls are independent');
     await keysPanel.getByRole('button', {name:'Hide private signature key',exact:true}).click();
-    assert.deepEqual(await keysPanel.locator('.qc-keyparts > div').evaluateAll(els => els.map(el => getComputedStyle(el).backgroundColor)), ['rgb(23, 80, 106)','rgb(43, 106, 109)']);
+    assert.equal(await keysPanel.locator('.qc-keyparts').count(), 0);
+    assert.equal(await keysPanel.getByRole('button',{name:'Copy both public keys',exact:true}).count(),0);
     const privateBytes=Buffer.from(await privateBox.inputValue(),"base64");
     assert.equal(privateBytes.length,2400,"The real private key is in the blurred textbox");
     assert.equal(privateBytes.subarray(1152,2336).toString("base64"),await keysPanel.getByLabel("Public encapsulation key",{exact:true}).inputValue(),"The displayed keys are paired");

@@ -173,6 +173,19 @@ module.exports = class Qcord extends Encapsulation {
         dialog.showModal();
     }
 
+    openVerification(result, options = {}) {
+        const dialog = document.createElement("dialog");
+        dialog.className = "qcord-dialog";
+        dialog.setAttribute("aria-label", "Qcord signature verification");
+        document.body.append(dialog);
+        const root = BdApi.ReactDOM.createRoot(dialog), close = () => dialog.close();
+        this.dialogs.add(close);
+        const unbind = dismissOnBackdrop(dialog, close);
+        dialog.addEventListener("close", () => { unbind(); root.unmount(); dialog.remove(); this.dialogs.delete(close); }, {once: true});
+        root.render(require("./verification")(this, result, {...options, onClose: close}));
+        dialog.showModal();
+    }
+
     observer(mutation) {
         const target = mutation?.target?.nodeType === 1 ? mutation.target : mutation?.target?.parentElement;
         if (target?.closest(".qcord-dialog, .qcord-decrypted, .qcord-button")) return;

@@ -2569,6 +2569,33 @@ var require_pqc = __commonJS({
         if (bytes.length !== signatures[scheme].lengths.publicKey) throw new Error("Signature key length does not match the recipient's security level.");
         return Buffer.from(bytes).toString("base64");
       },
+      sign: (payload, privateText, scheme) => {
+        algorithm(scheme);
+        const secret = readKeyData(privateText), entropy = randomBytes3(32);
+        try {
+          return signatures[scheme].sign(Uint8Array.from(payload), secret, { extraEntropy: entropy });
+        } finally {
+          secret.fill(0);
+          entropy.fill(0);
+        }
+      },
+      verify: (signature, payload, publicText, scheme) => {
+        algorithm(scheme);
+        const key = readKeyData(PQC.validateSignatureKey(publicText, scheme));
+        try {
+          return signatures[scheme].verify(Uint8Array.from(signature), Uint8Array.from(payload), Uint8Array.from(key));
+        } catch {
+          return false;
+        }
+      },
+      signaturePublicKey: (privateText, scheme) => {
+        const secret = readKeyData(privateText);
+        try {
+          return Buffer.from(signatures[scheme].getPublicKey(secret)).toString("base64");
+        } finally {
+          secret.fill(0);
+        }
+      },
       backend: "bundled @noble/post-quantum 0.7.1",
       generateKeyPair: (scheme) => run(() => {
         const { impl } = algorithm(scheme);
@@ -4144,12 +4171,184 @@ var init_aes = __esm({
   }
 });
 
+// src/mldsa.js
+var require_mldsa = __commonJS({
+  "src/mldsa.js"(exports2, module2) {
+    "use strict";
+    var { shake128: shake1282, shake256: shake2562 } = (init_sha3(), __toCommonJS(sha3_exports));
+    var { encode, decode } = require_mlkem();
+    var Q3 = 8380417;
+    var N3 = 256;
+    var presets = {
+      "ml-kem-512": { label: "ML-DSA-44", k: 4, l: 4, gamma1: 2 ** 17, gamma2: (Q3 - 1) / 88, tau: 39, eta: 2, omega: 80, challengeBytes: 32 },
+      "ml-kem-768": { label: "ML-DSA-65", k: 6, l: 5, gamma1: 2 ** 19, gamma2: (Q3 - 1) / 32, tau: 49, eta: 4, omega: 55, challengeBytes: 48 },
+      "ml-kem-1024": { label: "ML-DSA-87", k: 8, l: 7, gamma1: 2 ** 19, gamma2: (Q3 - 1) / 32, tau: 60, eta: 2, omega: 75, challengeBytes: 64 }
+    };
+    var parameters2 = (scheme) => {
+      if (!Object.hasOwn(presets, scheme)) throw new Error("Unsupported signature parameter set.");
+      return presets[scheme];
+    };
+    var mod = (x, q = Q3) => (x % q + q) % q;
+    var concat = (...parts) => Uint8Array.from(parts.flatMap((part) => Array.from(part)));
+    var blank = (sigma) => !sigma || sigma.c_tilde === "" && Array.isArray(sigma.z) && !sigma.z.length && Array.isArray(sigma.h) && !sigma.h.length;
+    function challengeBytes(text, size) {
+      if (typeof text !== "string" || text.length !== 4 * Math.ceil(size / 3)) throw new Error("Invalid ML-DSA challenge length.");
+      const bytes = Buffer.from(text, "base64");
+      if (bytes.length !== size || bytes.toString("base64") !== text) throw new Error("Invalid ML-DSA challenge encoding.");
+      return bytes;
+    }
+    function encodeSignature(sigma, scheme) {
+      const p = parameters2(scheme), d = p.gamma1 === 2 ** 17 ? 18 : 20;
+      if (!sigma || Object.keys(sigma).sort().join() !== "c_tilde,h,z") throw new Error("Invalid ML-DSA signature fields.");
+      const c = challengeBytes(sigma.c_tilde, p.challengeBytes);
+      if (!Array.isArray(sigma.z) || sigma.z.length !== p.l || !sigma.z.every((poly) => Array.isArray(poly) && poly.length === N3 && poly.every((x) => Number.isInteger(x) && x > -p.gamma1 && x <= p.gamma1))) throw new Error("Invalid ML-DSA response vector.");
+      if (!Array.isArray(sigma.h) || sigma.h.length !== p.k) throw new Error("Invalid ML-DSA hint vector.");
+      const hints = new Uint8Array(p.omega + p.k);
+      let count = 0;
+      sigma.h.forEach((indices, i) => {
+        if (!Array.isArray(indices) || !indices.every((x, j) => Number.isInteger(x) && x >= 0 && x < N3 && (!j || x > indices[j - 1])) || count + indices.length > p.omega) throw new Error("Invalid ML-DSA hint encoding.");
+        hints.set(indices, count);
+        count += indices.length;
+        hints[p.omega + i] = count;
+      });
+      return concat(c, ...sigma.z.map((poly) => encode(poly.map((x) => p.gamma1 - x), d)), hints);
+    }
+    function decodeSignature(bytes, scheme) {
+      const p = parameters2(scheme), d = p.gamma1 === 2 ** 17 ? 18 : 20, width = d * 32;
+      if (bytes.length !== p.challengeBytes + p.l * width + p.omega + p.k) throw new Error("Invalid ML-DSA signature length.");
+      const offset = p.challengeBytes + p.l * width, hints = bytes.slice(offset);
+      let count = 0;
+      const sigma = {
+        c_tilde: Buffer.from(bytes.slice(0, p.challengeBytes)).toString("base64"),
+        z: Array.from({ length: p.l }, (_, i) => decode(bytes.slice(p.challengeBytes + i * width, p.challengeBytes + (i + 1) * width), d).map((x) => p.gamma1 - x)),
+        h: Array.from({ length: p.k }, (_, i) => {
+          const end = hints[p.omega + i], indices = Array.from(hints.slice(count, end));
+          count = end;
+          return indices;
+        })
+      };
+      const canonical = encodeSignature(sigma, scheme);
+      if (canonical.some((x, i) => x !== bytes[i])) throw new Error("Noncanonical ML-DSA signature.");
+      return sigma;
+    }
+    function pow(a, n) {
+      let r = 1;
+      for (; n; n = Math.floor(n / 2), a = mod(a * a)) if (n % 2) r = mod(r * a);
+      return r;
+    }
+    var zetas = Array.from({ length: N3 }, (_, i) => pow(1753, parseInt(i.toString(2).padStart(8, "0").split("").reverse().join(""), 2)));
+    function ntt(input, inverse = false) {
+      const f = Array.from(input, (x) => mod(x));
+      let k = inverse ? 255 : 1;
+      for (let len = inverse ? 1 : 128; inverse ? len <= 128 : len >= 1; len = inverse ? len * 2 : len / 2) {
+        for (let start = 0; start < N3; start += 2 * len) {
+          const z = zetas[inverse ? k-- : k++];
+          for (let j = start; j < start + len; j++) {
+            const t = f[j];
+            if (inverse) {
+              f[j] = mod(t + f[j + len]);
+              f[j + len] = mod(z * (f[j + len] - t));
+            } else {
+              const u = mod(z * f[j + len]);
+              f[j] = mod(t + u);
+              f[j + len] = mod(t - u);
+            }
+          }
+        }
+      }
+      return inverse ? f.map((x) => mod(x * 8347681)) : f;
+    }
+    function sampleMatrix(rho, i, j) {
+      const xof = shake1282.create().update(concat(rho, [j, i])), out = [];
+      while (out.length < N3) {
+        const b = xof.xof(168);
+        for (let n = 0; n < b.length && out.length < N3; n += 3) {
+          const x = (b[n] | b[n + 1] << 8 | b[n + 2] << 16) & 8388607;
+          if (x < Q3) out.push(x);
+        }
+      }
+      xof.destroy();
+      return out;
+    }
+    function sampleChallenge(seed, tau) {
+      const xof = shake2562.create().update(seed);
+      let block = xof.xof(136), pos = 8;
+      const signs = block.slice(0, 8), c = Array(N3).fill(0);
+      const next = () => {
+        if (pos === block.length) {
+          block = xof.xof(136);
+          pos = 0;
+        }
+        return block[pos++];
+      };
+      for (let i = N3 - tau, bit = 0; i < N3; i++, bit++) {
+        let b;
+        do {
+          b = next();
+        } while (b > i);
+        c[i] = c[b];
+        c[b] = 1 - 2 * (signs[bit >> 3] >> bit % 8 & 1);
+      }
+      xof.destroy();
+      return c;
+    }
+    function useHint(value, hint, gamma2) {
+      const alpha = 2 * gamma2, r = mod(value), low = mod(r, alpha);
+      let r0 = low > gamma2 ? low - alpha : low, r1;
+      if (r - r0 === Q3 - 1) {
+        r1 = 0;
+        r0--;
+      } else r1 = (r - r0) / alpha;
+      return hint ? mod(r1 + (r0 > 0 ? 1 : -1), (Q3 - 1) / alpha) : r1;
+    }
+    function verificationTrace(publicKey, payload, sigma, scheme) {
+      const p = parameters2(scheme);
+      encodeSignature(sigma, scheme);
+      if (publicKey.length !== 32 + 320 * p.k) throw new Error("Invalid ML-DSA public key length.");
+      const rho = publicKey.slice(0, 32), t1 = Array.from({ length: p.k }, (_, i) => decode(publicKey.slice(32 + i * 320, 32 + (i + 1) * 320), 10));
+      const tr = shake2562(publicKey, { dkLen: 64 }), mu = shake2562(concat(tr, [0, 0], payload), { dkLen: 64 });
+      const c = sampleChallenge(challengeBytes(sigma.c_tilde, p.challengeBytes), p.tau), cHat = ntt(c), zHat = sigma.z.map((poly) => ntt(poly));
+      const wApprox = [], w1 = [];
+      for (let i = 0; i < p.k; i++) {
+        const sum = Array(N3).fill(0);
+        for (let j = 0; j < p.l; j++) {
+          const a = sampleMatrix(rho, i, j);
+          for (let n = 0; n < N3; n++) sum[n] = mod(sum[n] + mod(a[n] * zHat[j][n]));
+        }
+        const t = ntt(t1[i].map((x) => x * 8192));
+        const w = ntt(sum.map((x, n) => mod(x - mod(cHat[n] * t[n]))), true), hints = new Set(sigma.h[i]);
+        wApprox.push(w);
+        w1.push(w.map((x, n) => useHint(x, hints.has(n), p.gamma2)));
+      }
+      const computed = shake2562(concat(mu, ...w1.map((poly) => encode(poly, p.gamma2 === (Q3 - 1) / 88 ? 6 : 4))), { dkLen: p.challengeBytes });
+      return {
+        rho,
+        t1,
+        tr,
+        mu,
+        c,
+        wApprox,
+        w1,
+        computed: Buffer.from(computed).toString("base64"),
+        expected: sigma.c_tilde,
+        zNorm: Math.max(...sigma.z.flat().map(Math.abs)),
+        zBound: p.gamma1 - p.tau * p.eta,
+        hintCount: sigma.h.reduce((n, h) => n + h.length, 0),
+        hintBound: p.omega,
+        ...p
+      };
+    }
+    module2.exports = { parameters: parameters2, blank, encodeSignature, decodeSignature, verificationTrace, ntt, Q: Q3 };
+  }
+});
+
 // src/packet.js
 var require_packet = __commonJS({
   "src/packet.js"(exports2, module2) {
     "use strict";
     var { parameters: parameters2, PARAMETER_SETS } = require_parameters();
     var { encode, decode } = require_mlkem();
+    var DSA = require_mldsa();
     var { MAX_DECODED_FILE_SIZE } = require_constants();
     var coefficients = (file) => file?.qcord_version === 6 ? file.kem : file;
     var schemeOf = (file) => Object.keys(PARAMETER_SETS).find((name) => parameters2(name).k === coefficients(file)?.u?.length);
@@ -4185,7 +4384,7 @@ var require_packet = __commonJS({
       const ciphertext = toCiphertext(packet);
       const expected = packet.qcord_version === 6 ? "encrypted_message,kem,qcord_version" : "encrypted_message,qcord_version,u,v";
       if (Object.keys(packet).filter((key) => key !== "signature_sigma").sort().join() !== expected) throw new Error("Unexpected Qcord file fields.");
-      if (packet.signature_sigma !== void 0) validateSignaturePlaceholder(packet.signature_sigma);
+      if (packet.signature_sigma !== void 0) validateSignature(packet.signature_sigma, schemeOf(packet), packet.qcord_version);
       const sealed = packet.encrypted_message;
       if (!sealed || typeof sealed !== "object" || Array.isArray(sealed) || Object.keys(sealed).sort().join() !== "authentication_tag_base64,ciphertext_base64,nonce_base64") throw new Error("Invalid encrypted_message fields.");
       decodeBase64(sealed.nonce_base64, 12);
@@ -4193,10 +4392,19 @@ var require_packet = __commonJS({
       decodeBase64(sealed.ciphertext_base64);
       return { packet, ciphertext };
     }
-    function validateSignaturePlaceholder(sigma) {
-      if (!sigma || typeof sigma !== "object" || Array.isArray(sigma) || Object.keys(sigma).sort().join() !== "c_tilde,h,z" || sigma.c_tilde !== "" || !Array.isArray(sigma.z) || sigma.z.length || !Array.isArray(sigma.h) || sigma.h.length) {
-        throw new Error("Expected blank signature_sigma placeholders; ML-DSA is not implemented.");
-      }
+    function validateSignature(sigma, scheme, version) {
+      if (!sigma || typeof sigma !== "object" || Array.isArray(sigma) || Object.keys(sigma).sort().join() !== "c_tilde,h,z") throw new Error("Invalid signature_sigma fields.");
+      if (DSA.blank(sigma)) return;
+      if (version !== 6) throw new Error("Legacy files must have blank signature_sigma fields.");
+      DSA.encodeSignature(sigma, scheme);
+    }
+    function signaturePayload(file) {
+      const sealed = file.encrypted_message;
+      return Buffer.from("Qcord signed envelope v1\n" + JSON.stringify({
+        qcord_version: file.qcord_version,
+        kem: { u: coefficients(file).u, v: coefficients(file).v },
+        encrypted_message: { nonce_base64: sealed.nonce_base64, ciphertext_base64: sealed.ciphertext_base64, authentication_tag_base64: sealed.authentication_tag_base64 }
+      }));
     }
     var aad = (file) => Buffer.from(JSON.stringify(file.qcord_version === 6 ? { qcord_version: 6, kem: { u: file.kem.u, v: file.kem.v } } : { qcord_version: 5, u: file.u, v: file.v }));
     function stringify(file) {
@@ -4215,9 +4423,13 @@ ${rows}
   "v": [${kem.v.join(", ")}]`;
       const sealed = JSON.stringify(file.encrypted_message, null, 2).replace(/\n/g, "\n  ");
       const sigma = file.signature_sigma;
-      if (sigma !== void 0) validateSignaturePlaceholder(sigma);
+      if (sigma !== void 0) validateSignature(sigma, schemeOf(file), file.qcord_version);
       const signature = sigma === void 0 ? "" : `,
-  "signature_sigma": ${JSON.stringify(sigma, null, 2).replace(/\n/g, "\n  ")}`;
+  "signature_sigma": {
+    "c_tilde": ${JSON.stringify(sigma.c_tilde)},
+    "z": [${sigma.z.length ? "\n" + sigma.z.map((poly) => "      [" + poly.join(", ") + "]").join(",\n") + "\n    " : ""}],
+    "h": [${sigma.h.length ? "\n" + sigma.h.map((indices) => "      [" + indices.join(", ") + "]").join(",\n") + "\n    " : ""}]
+  }`;
       return `{
   "qcord_version": ${file.qcord_version},
 ${vectors},
@@ -4225,7 +4437,7 @@ ${vectors},
 }
 `;
     }
-    module2.exports = { schemeOf, fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify };
+    module2.exports = { signaturePayload, schemeOf, fromCiphertext, toCiphertext, parse, decodeBase64, aad, stringify };
   }
 });
 
@@ -4437,6 +4649,7 @@ var require_messaging = __commonJS({
     var { PQC, equalBytes: equalBytes3 } = require_pqc();
     var config2 = require_config();
     var { parameters: parameters2 } = require_parameters();
+    var DSA = require_mldsa();
     var packet = require_packet();
     var message = require_message();
     var { ACTIVE_SCHEME: ACTIVE_SCHEME2, MAX_DECODED_FILE_SIZE } = require_constants();
@@ -4471,6 +4684,7 @@ var require_messaging = __commonJS({
             }
           }
           const identity = config2.load("key_sets")[scheme];
+          if (PQC.signaturePublicKey(identity.private_signature, scheme) !== identity.public_signature) throw new Error("Saved public and private signature keys do not match.");
           keys.publicSignature = identity.public_signature;
           keys.privateSignature = identity.private_signature;
           this.keyPairs.set(scheme, keys);
@@ -4548,6 +4762,8 @@ var require_messaging = __commonJS({
         const row = this.getRecipients(channelId, scheme)[0];
         if (!row || row.user_id !== partner.userId) throw new Error(`Save this recipient's ${parameters2(scheme).label} public key first.`);
         const session = this.session;
+        await this.generateKeys(scheme);
+        this.checkSession(session);
         const result = await PQC.encapsulate(PQC.createPublicKey(row.public_encaps), true);
         try {
           this.checkSession(session);
@@ -4563,6 +4779,9 @@ var require_messaging = __commonJS({
         }
       }
       serializeDraft(draft) {
+        const identity = config2.load("key_sets")?.[draft.scheme];
+        if (!identity?.private_signature) throw new Error("Generate your signing identity before composing.");
+        draft.packet.signature_sigma = DSA.decodeSignature(PQC.sign(packet.signaturePayload(draft.packet), identity.private_signature, draft.scheme), draft.scheme);
         const wire = packet.stringify(draft.packet);
         if (Buffer.byteLength(wire) > MAX_DECODED_FILE_SIZE) throw new Error("Qcord file exceeds 1 MiB. Shorten the message.");
         return { ...draft, wire };
@@ -4591,6 +4810,8 @@ var require_messaging = __commonJS({
         try {
           this.checkSession(session);
           if (!equalBytes3(restored.ciphertext, ciphertext)) throw new Error("Draft no longer matches its m value.");
+          const ownPublic = config2.load("key_sets")?.[draft.scheme]?.public_signature;
+          if (DSA.blank(file.signature_sigma) || !ownPublic || !PQC.verify(DSA.encodeSignature(file.signature_sigma, draft.scheme), packet.signaturePayload(file), ownPublic, draft.scheme)) throw new Error("Draft signature no longer matches your signing identity.");
           if (!message.open(file, restored.sharedKey).length) throw new Error("Write a message before attaching.");
           const current = config2.load("recipients") || [];
           const target = current.find((r) => r.channel_id === row.channel_id && r.public_encaps === row.public_encaps && r.user_id === row.user_id);
@@ -4624,7 +4845,7 @@ var require_messaging = __commonJS({
           sharedKey.fill(0);
         }
       }
-      async openFile(text, channelId, messageEpoch = null) {
+      async openFile(text, channelId, messageEpoch = null, sender = {}) {
         this.checkSession(this.session);
         const { packet: file } = packet.parse(text);
         if (this.receiptRevision !== config2.receiptsRevision || this.receiptSession !== this.session) {
@@ -4646,13 +4867,46 @@ var require_messaging = __commonJS({
         for (const record of candidates) {
           const key = packet.decodeBase64(record.k, 32);
           try {
-            return { scheme: packet.schemeOf(file), key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K" };
+            return this.withVerification({ scheme: packet.schemeOf(file), key: key.toString("hex"), text: message.open(file, key), source: "Saved sender K" }, file, channelId, sender);
           } catch {
           } finally {
             key.fill(0);
           }
         }
-        return { ...await this.decapsulateFile(text), source: "Recipient dk" };
+        return this.withVerification({ ...await this.decapsulateFile(text), source: "Recipient dk" }, file, channelId, sender);
+      }
+      withVerification(result, file, channelId, sender = {}) {
+        const opened = { ...result, file, channelId, ...sender };
+        opened.verification = this.verifyFileSignature(opened, this.autoVerify === true);
+        opened.signatureStatus = opened.verification.status;
+        return opened;
+      }
+      verifyFileSignature(result, verify = true, inspect = false) {
+        this.checkSession(this.session);
+        const { file, channelId, scheme } = result;
+        const currentUserId = BdApi.Webpack.getStore?.("UserStore")?.getCurrentUser?.()?.id;
+        const own = result.authorId ? result.authorId === currentUserId : result.source === "Saved sender K";
+        const keySource = own ? "Your saved signing key" : "Contact's saved signing key";
+        if (!verify) return { status: "unchecked", reason: "Signature has not been checked.", keySource };
+        if (DSA.blank(file.signature_sigma)) return { status: "unsigned", reason: "This older file has no signature. Its sender cannot be verified.", keySource };
+        if (result.requireAuthor && !result.authorId) return { status: "missing-author", reason: "Discord could not identify this message's author. No signature identity is assumed.", keySource };
+        let publicKey;
+        if (own) publicKey = config2.load("key_sets")?.[scheme]?.public_signature;
+        else {
+          const partner = this.getDirectPartner(channelId);
+          if (result.authorId && result.authorId !== partner.userId) return { status: "missing-author", reason: "Message author does not match this contact.", keySource };
+          publicKey = this.getRecipients(channelId, scheme).find((row) => row.user_id === partner.userId)?.public_signature;
+        }
+        if (!publicKey) return { status: "missing-key", reason: "Save the sender's public signature key in the recipient panel before verifying.", keySource };
+        const payload = packet.signaturePayload(file), signature = DSA.encodeSignature(file.signature_sigma, scheme);
+        const valid = PQC.verify(signature, payload, publicKey, scheme);
+        const verification = { status: valid ? "verified" : "failed", reason: valid ? "Signature matches the saved public key and this encrypted envelope." : "Signature does not match the saved public key or this encrypted envelope.", keySource, publicKey, payloadBytes: payload.length, signatureBytes: signature.length };
+        if (inspect) {
+          verification.trace = DSA.verificationTrace(Buffer.from(publicKey, "base64"), payload, file.signature_sigma, scheme);
+          const traceValid = verification.trace.computed === verification.trace.expected && verification.trace.zNorm < verification.trace.zBound && verification.trace.hintCount <= verification.trace.hintBound;
+          if (valid !== traceValid) throw new Error("Verification walkthrough did not reproduce the library's result.");
+        }
+        return verification;
       }
       async clearConfig() {
         if (!this.running || this.resetting) throw new Error("Qcord is stopped or already resetting.");
@@ -4765,7 +5019,7 @@ var require_ui = __commonJS({
       function KeyParts({ k = 3 }) {
         return h("div", { className: "qc-keyparts", "aria-label": "Public key byte order" }, h("div", null, h("strong", null, "Encoded t\u0302"), h("span", null, `${384 * k} bytes \xB7 ${512 * k} Base64 characters`)), h("div", null, h("strong", null, "\u03C1 seed"), h("span", null, "32 bytes \xB7 44 Base64 characters")));
       }
-      function Polynomial({ values, name, signed = false, index, onIndexChange }) {
+      function Polynomial({ values, name, signed = false, index, onIndexChange, modulus = 3329 }) {
         const [localIndex, setLocalIndex] = R.useState(0);
         const dragging = R.useRef(false);
         const frame = R.useRef(null), pendingIndex = R.useRef(0);
@@ -4779,12 +5033,12 @@ var require_ui = __commonJS({
         };
         const baseline = signed ? 58 : 110;
         const bars = R.useMemo(() => {
-          const scale = signed ? Math.max(1, ...values.map(Math.abs)) : 3328;
+          const scale = signed ? Math.max(1, ...values.map(Math.abs)) : modulus - 1;
           return values.map((v, j) => {
             const height = Math.max(1, Math.abs(v) / scale * (signed ? 50 : 100));
             return h("rect", { key: j, x: j * 2.5, y: signed && v < 0 ? baseline : baseline - height, width: 1.8, height, fill: "var(--qc-graph)", opacity: 0.7 }, h("title", null, `${name}[${j}] = ${v}`));
           });
-        }, [values, signed, name]);
+        }, [values, signed, name, modulus]);
         const scrub = (event, immediate = false) => {
           const rect = event.currentTarget.getBoundingClientRect();
           pendingIndex.current = Math.max(0, Math.min(values.length - 1, Math.floor((event.clientX - rect.left) / rect.width * values.length)));
@@ -4888,7 +5142,7 @@ var require_contacts = __commonJS({
     var dismissOnBackdrop2 = require_dialog();
     var raw = (key) => Buffer.from(key.bytes).toString("base64");
     module2.exports = function createContacts(R, ui) {
-      const { h, button, field, code, p, Icon, Avatar, KeyParts } = ui;
+      const { h, button, field, p, Icon, Avatar } = ui;
       return function Contacts({ plugin, channel, keys, view = "contacts", onSelect, onChanged, onClose }) {
         const [ownKeys, setOwnKeys] = R.useState(keys), [level, setLevel] = R.useState(ACTIVE_SCHEME2);
         const keyParams = parameters2(level);
@@ -5007,7 +5261,7 @@ var require_contacts = __commonJS({
                   field("Public signature key", h("textarea", { rows: 3, value: signatureText, disabled: busy, placeholder: "Paste their matching ML-DSA public signature key (optional)", onChange: (e) => setSignatureText(e.target.value) }))
                 ),
                 p("Key length selects the security level automatically: 800, 1184, or 1568 decoded bytes. Save once for this DM."),
-                p("Keep both public keys together for this contact. Signature verification is coming next."),
+                p("Keep both public keys together for this contact. Signatures are checked against the public signature key you save here."),
                 h(
                   "div",
                   { className: "qc-row" },
@@ -5046,10 +5300,11 @@ var require_contacts = __commonJS({
                     setRevealed(false);
                     setSignatureRevealed(false);
                   }
-                }), { className: "qc-action", "aria-label": "Cycle security level", title: "Click to cycle security levels", disabled: busy }),
-                button(h(R.Fragment, null, h(Icon, { name: "copy" }), "Copy both public keys"), () => copy(JSON.stringify({ parameter_set: level, public_encaps: raw(ownKeys.publicKey), public_signature: ownKeys.publicSignature }, null, 2)), { disabled: !ownKeys || busy, className: "qc-quiet" })
+                }), { className: "qc-action", "aria-label": "Cycle security level", title: "Click to cycle security levels", disabled: busy })
               ),
               p(`ML-KEM NIST category ${keyParams.category}. Share the encapsulation and signature public keys from the same level.`),
+              p(`Stored in this order: encoded t\u0302, then \u03C1. Together: ${keyParams.publicBytes} bytes / ${4 * Math.ceil(keyParams.publicBytes / 3)} Base64 characters.`),
+              h("p", null, "KeyGen takes random d and computes ", h("span", { className: "qc-inline-math" }, `(\u03C1, \u03C3) = G(d \u2225 byte(${keyParams.k}))`), ". The public seed \u03C1 reconstructs the matrix; secret s and noise e produce the public vector t\u0302."),
               h(
                 "div",
                 { className: "qc-public-keys" },
@@ -5066,9 +5321,6 @@ var require_contacts = __commonJS({
                   h("textarea", { "aria-label": "Public signature key", readOnly: true, rows: 3, value: ownKeys?.publicSignature || "Generating signature key\u2026" })
                 )
               ),
-              h(KeyParts, { k: keyParams.k }),
-              p(`Stored in this order: encoded t\u0302, then \u03C1. Together: ${keyParams.publicBytes} bytes / ${4 * Math.ceil(keyParams.publicBytes / 3)} Base64 characters.`),
-              h("p", null, "KeyGen takes random d and computes ", h("span", { className: "qc-inline-math" }, `(\u03C1, \u03C3) = G(d \u2225 byte(${keyParams.k}))`), ". The public seed \u03C1 reconstructs the matrix; secret s and noise e produce the public vector t\u0302."),
               h(
                 "div",
                 { className: "qc-public-keys qc-private-keys" },
@@ -5207,6 +5459,7 @@ var require_settings = __commonJS({
             h("div", { className: "qc-label-row" }, h("span", { className: "qc-muted" }, result.source), h(
               "div",
               { className: "qc-row" },
+              button("Check Signature Challenge", () => plugin.openVerification(result), { className: "qc-quiet" }),
               button("Go Back", () => dialog.current.close(), { className: "qc-quiet", title: "Return to the main Qcord panel" })
             )),
             h("div", { className: `qc-plaintext qcord-message ${plugin.markupClass}` }, plugin.messageContent(result.text, plugin.currentChannel())),
@@ -5419,7 +5672,7 @@ var require_settings = __commonJS({
                 { className: "qc-sampling", "aria-label": "Noise sampling from r" },
                 h("div", { className: "qc-seed-row" }, h("strong", null, "Seed r"), h("code", { "aria-label": "Sampling seed r" }, derived.r)),
                 h("div", { className: "qc-noise-paths" }, [[`y[0..${k - 1}]`, indices.join(", ")], [`e\u2081[0..${k - 1}]`, indices.map((i2) => k + i2).join(", ")], ["e\u2082", String(2 * k)]].map(([symbol, nonces]) => h("div", { key: symbol }, h("strong", null, symbol), h("small", null, `Nonce N = ${nonces}`)))),
-                h("div", { className: "qc-sampling-equation", role: "math" }, `y uses CBD with eta=${params.eta1}; e\u2081 and e\u2082 use eta=${params.eta2}. Each has its own nonce.`),
+                h("div", { className: "qc-sampling-equation", role: "math" }, `y uses CBD with \u03B7=${params.eta1}; e\u2081 and e\u2082 use \u03B7=${params.eta2}. Each has its own nonce.`),
                 h("small", null, "r is a seed, not the vector y. Then compute \u0177 = NTT(y).")
               ),
               h(
@@ -5475,7 +5728,7 @@ e\u2082: ${t.e2.slice(0, 12).join(", ")} \u2026`))
               { className: "qc-mode-controls" },
               h(Switch, { label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: (value) => run(async () => plugin.setAutomatic("encrypt", value)) }),
               h(Switch, { label: "Auto decrypt", checked: autoDecrypt, onChange: (value) => run(async () => plugin.setAutomatic("decrypt", value)) }),
-              h(Switch, { label: "Auto verify", checked: autoVerify, title: "Save your preference for the upcoming signature verification feature", onChange: (value) => run(async () => plugin.setAutomatic("verify", value)) }),
+              h(Switch, { label: "Auto verify", checked: autoVerify, title: "Verify decrypted messages using saved signature public keys", onChange: (value) => run(async () => plugin.setAutomatic("verify", value)) }),
               h(Switch, { label: "Save receipts", checked: saveReceipts, title: "Save keys to reopen your sent messages on this device", onChange: (value) => run(async () => plugin.setSaveReceipts(value)) })
             ),
             onClose && button("Exit", onClose, { className: "qc-quiet qc-exit", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat" })
@@ -5538,7 +5791,7 @@ var require_InterVariable = __commonJS({
 // src/styles.css
 var require_styles = __commonJS({
   "src/styles.css"(exports2, module2) {
-    module2.exports = '/* Quiet surfaces, consistent controls, no animated glow or decorative motion. */\r\n.qcord-dialog {\r\n    width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;\r\n    padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;\r\n    color: #f1f3f5; color-scheme: dark; background: #111111 linear-gradient(180deg, #0f0f0f, #1d1f21);\r\n    box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;\r\n}\r\n.qcord-dialog::backdrop { background: #0b0b0b65; }\r\n.qcord-dialog[data-covered="true"] { background: transparent; border-color: transparent; box-shadow: none; }\r\n.qcord-dialog[data-covered="true"]::backdrop { background: transparent; }\r\n.qcord-dialog[data-covered="true"] > .qc-panel > :not(dialog) { visibility: hidden; }\r\n.qc-panel {\r\n    --qc-text: #eee; --qc-muted: #a7a5ab;\r\n    --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #101010;\r\n    --qc-accent: #65abd0; --qc-graph: #65abd0;\r\n    --qc-font: "Qcord Inter", Inter, system-ui, sans-serif;\r\n    display: flex; flex-direction: column; gap: 18px; width: 100%; height: 100%; min-height: 0;\r\n    padding: 22px; box-sizing: border-box; color: var(--qc-text); background: transparent;\r\n    font: 14px/1.5 var(--qc-font); text-align: left; font-optical-sizing: auto;\r\n}\r\n.qc-composer { min-height: min(640px, 90dvh); }\r\n.qcord-dialog > .qc-composer { min-height: 0; }\r\n.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\r\n.qc-panel ::-webkit-scrollbar { width: 0; height: 6px; }\r\n.qc-panel ::-webkit-scrollbar-track { background: transparent; }\r\n.qc-panel ::-webkit-scrollbar-thumb { background: #65abd04a; border-radius: 8px; }\r\n.qc-panel ::-webkit-scrollbar-thumb:hover { background: #65abd07a; }\r\n.qc-panel h2, .qc-panel h3, .qc-panel p, .qc-panel figure, .qc-panel dl { margin: 0; }\r\n.qc-panel h3 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em; }\r\n.qc-panel p { font-size: 13px; line-height: 1.65; color: var(--qc-muted); text-wrap: pretty; }\r\n.qc-panel small, .qc-muted { font-size: 11px; color: var(--qc-muted); }\r\n.qc-panel button {\r\n    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px;\r\n    padding: 8px 13px; border: 1px solid var(--qc-line); border-radius: 7px;\r\n    background: #1a1a1a; color: var(--qc-text); font: inherit; font-size: 12px; line-height: 1.3;\r\n    cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, border-color 140ms ease;\r\n}\r\n.qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }\r\n.qc-panel button:disabled { opacity: .38; cursor: default; }\r\n.qc-panel button, .qc-panel button *, .qcord-button, .qcord-button *, .qcord-download { user-select: none; -webkit-user-select: none; }\r\n.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\r\n.qc-panel textarea:focus, .qc-panel input[type="search"]:focus, .qc-panel input[type="text"]:focus { border-color: var(--qc-line); outline: none; box-shadow: none; }\r\n.qc-panel .qc-message-input:focus { border-color: var(--qc-line); outline: 0; outline-offset: 0; box-shadow: none; }\r\n.qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }\r\n.qc-panel .qc-primary { background: #21668d; border-color: #3b87b0; color: #f1f3f5; font-weight: 600; }\r\n.qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }\r\n.qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }\r\n.qc-panel .qc-action { align-self: flex-start; color: #f1f3f5; background: #488faf20; border-color: #488faf75; padding: 10px 14px; font-weight: 500; }\r\n.qc-panel .qc-exit { background: transparent; border-color: transparent; }\r\n.qc-toolbar { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex: 0 0 auto; }\r\n.qc-toolbar > button, .qc-toolbar .qc-switch, .qc-mode-controls { height: 44px; min-height: 44px; }\r\n.qc-panel .qc-recipient { justify-content: flex-start; text-align: left; min-width: 140px; max-width: none; flex: 1; height: 44px; padding: 5px 10px; }\r\n.qc-recipient > span, .qc-contact-card > span { min-width: 0; }\r\n.qc-recipient strong, .qc-recipient small, .qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\r\n.qc-recipient strong { font-size: 12px; font-weight: 500; }\r\n.qc-recipient small { font-size: 10px; margin-top: 2px; }\r\n.qc-avatar { display: block; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; object-fit: cover; }\r\n.qc-avatar-fallback { display: flex; justify-content: center; align-items: center; background: #263944; color: #f1f3f5; }\r\n.qc-mode-controls { display: contents; }\r\n.qc-panel .qc-switch { padding: 6px 9px; border: 1px solid var(--qc-line); background: #0001; font-size: 11px; color: var(--qc-muted); }\r\n.qc-switch[aria-checked="true"] { color: var(--qc-text); }\r\n.qc-switch-track { position: relative; display: block; width: 26px; height: 15px; flex: 0 0 26px; border-radius: 9px; background: #ffffff20; }\r\n.qc-switch-track > span { position: absolute; left: 3px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #b1b6bd; transition: transform 150ms cubic-bezier(.23,1,.32,1); }\r\n.qc-switch[aria-checked="true"] .qc-switch-track { background: #286a91; }\r\n.qc-switch[aria-checked="true"] .qc-switch-track > span { transform: translateX(11px); background: #f1f3f5; }\r\n.qc-tabs { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--qc-line); }\r\n.qc-tabs > button { min-width: 0; border: 0; background: transparent; color: var(--qc-muted); white-space: nowrap; font-size: 12px; }\r\n.qc-tabs > button[aria-selected="true"] { background: #ffffff09; color: var(--qc-text); }\r\n.qc-composer > .qc-tabs > button { flex: 1; }\r\n.qc-main { flex: 1 1 0; min-height: 0; }\r\n.qc-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 28px; height: 100%; min-height: 0; }\r\n.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 15px; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }\r\n.qc-visual { padding-left: 24px; border-left: 1px solid var(--qc-line); }\r\n.qc-visual > .qc-tabs { padding-bottom: 7px; }\r\n.qc-visual .qc-tabs > button { font-size: 11px; min-height: 32px; padding: 7px 10px; }\r\n.qc-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 8px; background: #00000012; flex: 0 0 auto; }\r\n.qc-variables > div { min-width: 0; }\r\n.qc-variables dt { font: 16px/1.4 "Cambria Math", ui-monospace, monospace; color: #f1f3f5; }\r\n.qc-variables dd { margin: 2px 0 0; color: var(--qc-muted); font-size: 10px; }\r\n.qc-equation { font: 23px/1.4 "Cambria Math", "STIX Two Math", serif; color: #f1f3f5; padding: 4px 0; overflow-wrap: anywhere; flex: 0 0 auto; }\r\n.qc-code { display: block; font: 11px/1.7 var(--qc-font); font-variant-numeric: tabular-nums; white-space: pre-wrap; overflow-wrap: anywhere; color: #dee8ee; }\r\n.qc-secret-values { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\r\n.qc-keyparts { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; flex: 0 0 auto; }\r\n.qc-keyparts > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; background: #488faf14; border-top: 2px solid #488faf; border-radius: 0 0 5px 5px; }\r\n.qc-keyparts > div + div { background: #65abd010; border-color: #65abd0; }\r\n.qc-keyparts strong { font-size: 11px; font-weight: 500; }\r\n.qc-keyparts span { font-size: 9px; color: var(--qc-muted); }\r\n.qc-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; flex: 0 0 auto; }\r\n.qc-matrix button, .qc-vector-tiles button { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 43px; padding: 6px 9px; color: #65abd0; background: #286a9110; }\r\n.qc-matrix button > span, .qc-vector-tiles button > span { text-align: left; font: 10px var(--qc-font); }\r\n.qc-matrix svg, .qc-vector-tiles svg { width: 100%; height: 20px; }\r\n.qc-matrix button[aria-pressed="true"], .qc-vector-tiles button[aria-pressed="true"] { color: #dee8ee; border-color: #488faf75; background: #488faf1c; }\r\n.qc-vector-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 0 0 auto; }\r\n.qc-vector-tiles button { min-height: 64px; }\r\n.qc-single-polynomial { display: flex; flex-direction: column; gap: 5px; min-height: 64px; padding: 6px 9px; color: #dee8ee; background: #286a9110; border: 1px solid #488faf75; border-radius: 7px; }\r\n.qc-single-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\r\n.qc-single-polynomial > svg { width: 100%; height: 27px; }\r\n.qc-sampling { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #488faf09; }\r\n.qc-seed-row { display: flex; align-items: center; gap: 10px; min-width: 0; }\r\n.qc-seed-row strong { flex: 0 0 auto; font-size: 11px; }\r\n.qc-seed-row code { min-width: 0; font: 10px/1.5 var(--qc-font); overflow-wrap: anywhere; color: #dee8ee; }\r\n.qc-noise-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }\r\n.qc-noise-paths > div { display: flex; flex-direction: column; gap: 2px; padding: 5px 7px; border-left: 2px solid #488faf65; background: #488faf0c; }\r\n.qc-noise-paths strong { font: 16px/1.3 "Cambria Math", "STIX Two Math", serif; }\r\n.qc-noise-paths small { font-size: 9px; }\r\n.qc-sampling-equation { font: 17px/1.4 "Cambria Math", "STIX Two Math", serif; }\r\n.qc-construction-equations { display: flex; flex-direction: column; gap: 5px; }\r\n.qc-construction .qc-explanation { gap: 8px; }\r\n.qc-awaiting { padding: 20px 4px; display: flex; flex-direction: column; gap: 8px; }\r\n.qc-polynomial { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 9px; background: #00000010; flex: 0 0 auto; }\r\n.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\r\n.qc-polynomial figcaption strong { font-weight: 500; }\r\n.qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }\r\n.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: none; cursor: crosshair; }\r\n.qc-selection { transition: transform 80ms linear; }\r\n.qc-scrubber { display: flex; align-items: center; gap: 12px; }\r\n.qc-scrubber > label { flex: 1; }\r\n.qc-coefficient-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }\r\n.qc-coefficient-strip > button { display: flex; flex-direction: column; gap: 3px; min-height: 42px; padding: 3px; font: 11px var(--qc-font); font-variant-numeric: tabular-nums; background: transparent; border-color: transparent; }\r\n.qc-coefficient-strip small { font-size: 9px; }\r\n.qc-coefficient-strip button[aria-pressed="true"] { background: #488faf1c; color: #dee8ee; border-color: #488faf3b; }\r\n.qc-panel input[type="range"] { appearance: none; display: block; width: 100%; height: 24px; padding: 0; margin: 0; background: transparent; cursor: pointer; touch-action: pan-y; }\r\n.qc-panel input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 3px; background: linear-gradient(to right, var(--qc-accent) var(--qc-progress), #ffffff24 var(--qc-progress)); }\r\n.qc-panel input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border: 2px solid #111111; border-radius: 50%; background: var(--qc-accent); }\r\n.qc-compression { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 7px; font-size: 11px; color: var(--qc-muted); }\r\n.qc-compression strong { margin-left: auto; color: #dee8ee; font: 15px var(--qc-font); font-variant-numeric: tabular-nums; }\r\n.qc-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--qc-muted); min-width: 0; }\r\n.qc-panel textarea, .qc-panel input[type="search"], .qc-panel input[type="text"] { width: 100%; padding: 10px 12px; color: var(--qc-text); background: var(--qc-empty); border: 1px solid var(--qc-line); border-radius: 7px; font: 11px/1.65 var(--qc-font); }\r\n.qc-panel textarea { resize: none; min-height: 60px; }\r\n.qc-panel textarea[readonly] { color: #dee8ee; }\r\n.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: #7b838f; }\r\n.qc-panel input[type="search"] { font-family: inherit; }\r\n.qc-panel .qc-message-input { font: 14px/1.6 var(--qc-font); min-height: 145px; }\r\n.qc-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.qc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\r\n.qc-json { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-behavior: smooth; margin: 0; padding: 14px; border-radius: 8px; border: 1px solid var(--qc-line); background: var(--qc-empty); color: #dee8ee; white-space: pre; font: 11px/1.85 var(--qc-font); font-variant-numeric: tabular-nums; }\r\n.qc-footer { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 13px; border-top: 1px solid var(--qc-line); }\r\n.qc-feedback { flex: 1; min-width: 0; font-size: 11px; color: var(--qc-muted); overflow-wrap: anywhere; }\r\n.qc-error { color: #f1a5ac; }\r\n.qc-panel details { font-size: 11px; color: var(--qc-muted); }\r\n.qc-panel summary { cursor: pointer; }\r\n.qc-panel details > .qc-code, .qc-panel details > .qc-field { margin-top: 12px; }\r\n.qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }\r\n.qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }\r\n.qc-contact-header > .qc-panel-title { flex: 1; }\r\n.qc-panel-title { display: flex; align-items: center; gap: 10px; }\r\n.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }\r\n.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }\r\n.qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }\r\n.qc-panel .qc-contact-card { min-height: 48px; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 7px; }\r\n.qc-contact-card[aria-pressed="true"] { background: #488faf12; border-color: #488faf26; }\r\n.qc-contact-card strong { font-size: 12px; font-weight: 500; }\r\n.qc-contact-card small { margin-top: 2px; font-size: 10px; }\r\n.qc-contact-detail { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding-top: 4px; min-width: 0; }\r\n.qc-person { display: flex; align-items: center; gap: 10px; }\r\n.qc-person h3 { font-size: 15px; }\r\n.qc-person p { font-size: 11px; }\r\n.qc-my-keys { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }\r\n.qc-my-keys h3 { font-size: 14px; }\r\n.qc-my-keys p { font-size: 11px; line-height: 1.6; }\r\n.qc-key-field { display: flex; flex-direction: column; gap: 7px; }\r\n.qc-key-field textarea { display: block; }\r\n.qc-key-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }\r\n.qc-panel .qc-reveal { width: 64px; }\r\n.qc-private-key { border-radius: 7px; }\r\n.qc-private-key textarea { display: block; }\r\n.qc-private-key[data-revealed="false"] { overflow: hidden; cursor: pointer; }\r\n.qc-private-key[data-revealed="false"] textarea { filter: blur(5px); user-select: none; -webkit-user-select: none; pointer-events: none; }\r\n.qc-reset-area { padding-top: 10px; border-top: 1px solid var(--qc-line); }\r\n.qc-reset-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #bb546450; border-radius: 8px; background: #83344115; font-size: 12px; }\r\n.qc-opened-dialog { width: min(700px, 92vw); height: min(490px, 86dvh); }\r\n.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #0002; border: 1px solid var(--qc-line); border-radius: 8px; }\r\n.qcord-button { display: inline-flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: transparent; border: 0; padding: 6px; border-radius: 7px; color: var(--interactive-normal, #a4aab4); cursor: pointer; }\r\n.qcord-button svg { width: 21px; height: 21px; fill: currentColor; }\r\n.qcord-button.qcord-decrypt-enabled { color: #fff; background: #286a91; box-shadow: inset 0 0 0 1px #65abd085, 0 0 9px #488faf35; }\r\n.qcord-button:focus-visible { outline: 2px solid #488faf; outline-offset: 2px; }\r\n[class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #26394455, #286a9135 55%, #488faf45); box-shadow: inset 0 0 0 1px #488faf60; outline: 1px solid #488faf; outline-offset: -1px; }\r\n[class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #26394455, #286a9135 55%, #488faf45); }\r\n.qcord-file-hidden, .qcord-empty-content { display: none !important; }\r\n.qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }\r\n.qcord-decrypted { position: relative; width: fit-content; max-width: 100%; min-width: 0; padding: 9px 34px 9px 12px; border: 1px solid #65abd028; border-radius: 8px; background: #488faf10; }\r\n.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; font-family: "Qcord Inter", Inter, system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.qcord-message > :first-child { margin-top: 0; }\r\n.qcord-message > :last-child { margin-bottom: 0; }\r\n.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\r\n.qcord-message a { color: var(--text-link, #a2c5ef); }\r\n.qcord-message pre { max-width: 100%; overflow-x: auto; }\r\n.qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #65abd0); font-size: 15px; }\r\n.qcord-download svg { width: 18px; height: 18px; fill: currentColor; }\r\n@media (hover: hover) and (pointer: fine) {\r\n    .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #2a2a2a; }\r\n    .qc-panel .qc-primary:hover:not(:disabled) { background: #2a789f; border-color: #599fbe; }\r\n    .qc-panel .qc-danger:hover:not(:disabled) { background: #b53f4d; }\r\n    .qcord-download:hover { background: #ffffff0b; color: #dee8ee; }\r\n}\r\n@media (max-height: 780px) and (min-width: 901px) {\r\n    .qc-panel { padding: 18px; gap: 13px; }\r\n    .qc-explanation, .qc-visual { gap: 11px; }\r\n    .qc-polynomial > svg { height: 90px; }\r\n    .qc-polynomial { gap: 9px; }\r\n    .qc-my-keys { gap: 8px; }\r\n    .qc-variables { padding: 10px; gap: 8px 12px; }\r\n    .qc-sampling { padding: 8px 10px; gap: 5px; }\r\n    .qc-construction-equations { gap: 2px; }\r\n    .qc-construction-equations .qc-equation { font-size: 21px; padding: 2px 0; }\r\n}\r\n@media (max-width: 950px) {\r\n    .qc-toolbar { gap: 7px; }\r\n    .qc-toolbar .qc-panel-button { font-size: 0; width: 40px; padding: 8px; }\r\n    .qc-recipient { min-width: 140px; }\r\n    .qc-split { gap: 18px; }\r\n    .qc-visual { padding-left: 18px; }\r\n}\r\n@media (max-width: 760px) {\r\n    .qcord-dialog { width: 96vw; height: 92dvh; }\r\n    .qc-panel { padding: 15px; gap: 12px; }\r\n    .qc-toolbar { flex-wrap: wrap; }\r\n    .qc-toolbar .qc-recipient { order: -2; flex: 1; }\r\n    .qc-mode-controls { order: 3; width: 100%; }\r\n    .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }\r\n    .qc-toolbar .qc-panel-button { order: -1; }\r\n    .qc-toolbar .qc-exit { order: 2; }\r\n    .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }\r\n    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }\r\n    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\r\n    .qc-visual { border-left: 0; padding: 16px 0 0; border-top: 1px solid var(--qc-line); }\r\n    .qc-contact-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 15px; }\r\n    .qc-contact-sidebar { padding-right: 12px; }\r\n    .qc-footer { gap: 5px; }\r\n    .qc-footer .qc-open-file { font-size: 0; padding: 8px; }\r\n    .qc-contact-header { gap: 10px; }\r\n}\r\n@media (max-width: 520px) {\r\n    .qc-contact-layout { display: flex; flex-direction: column; overflow: auto; }\r\n    .qc-contact-sidebar { border-right: 0; padding-right: 0; flex: 0 0 auto; }\r\n    .qc-contact-list { flex-direction: row; max-height: 55px; overflow-x: auto; }\r\n    .qc-contact-list > button { flex: 0 0 auto; }\r\n    .qc-contact-detail { gap: 13px; }\r\n    .qc-keyparts { grid-template-columns: 1.5fr 1fr; }\r\n}\r\n@media (prefers-reduced-motion: reduce) {\r\n    .qc-panel button, .qc-switch-track > span { transition: none; }\r\n    .qc-selection { transition: none; }\r\n    .qc-json { scroll-behavior: auto; }\r\n    .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: none; }\r\n}\r\n\r\n.qc-contact-search { position: relative; }\r\n.qc-contact-search > svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--qc-muted); pointer-events: none; }\r\n.qc-panel .qc-contact-search > input { width: 100%; padding-left: 36px; }\r\n.qc-panel summary { display: flex; align-items: center; gap: 8px; list-style: none; }\r\n.qc-panel summary::-webkit-details-marker { display: none; }\r\n.qc-panel summary > svg { flex: 0 0 auto; transform: rotate(-90deg); transition: transform 140ms ease; }\r\n.qc-panel details[open] > summary > svg { transform: rotate(0); }\r\n.qcord-signature { position: absolute; top: 6px; right: 32px; width: 23px; height: 23px; padding: 3px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: #65abd0; cursor: pointer; }\r\n.qcord-signature:hover { background: #488faf30; }\r\n.qcord-signature-pending { font-size: 16px; }\r\n.qcord-decrypted { padding-right: 64px; }\r\n.qcord-decrypted[data-signature="failed"] { background: #a9364330; border-color: #d45966; }\r\n.qcord-signature[data-status="failed"] { color: #f1a5ac; }\r\n@media (max-width: 1100px) { .qc-toolbar { flex-wrap: wrap; } }\r\n\r\n/* Adjacent public identities with compact actions and neutral, quiet surfaces. */\r\n.qc-public-keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; flex: 0 0 auto; }\r\n.qc-public-keys > * { min-width: 0; }\r\n.qc-public-keys textarea { height: 132px; }\r\n.qc-my-keys > *, .qc-key-field { flex-shrink: 0; }\r\n.qc-my-keys button, .qc-contact-sidebar > button { align-self: flex-start; }\r\n.qc-key-toolbar { justify-content: space-between; }\r\n.qc-key-toolbar button { flex: 0 0 auto; }\r\n.qc-equation, .qc-math, .qc-inline-math, .qc-compression strong, .qc-sampling-equation, .qc-noise-paths strong, .qc-variables dt { font-family: "Cambria Math", Cambria, "STIX Two Math", serif; color: #f1f3f5; }\r\n.qc-math { font-size: 15px; line-height: 1.4; }\r\n.qc-panel textarea::selection, .qc-panel input::selection, .qc-panel code::selection { background: #245a7680; color: #fff; }\r\n@media (max-width: 620px) { .qc-public-keys { grid-template-columns: minmax(0, 1fr); } }\r\n\r\n.qc-keyparts > div { background: #17506a; border-color: #3986a3; }\r\n.qc-keyparts > div + div { background: #2b6a6d; border-color: #65a5a5; }\r\n.qc-keyparts span { color: #d5e7eb; }\r\n.qc-private-keys .qc-label-row { flex-wrap: wrap; gap: 4px 8px; }\r\n.qc-private-keys .qc-key-actions { margin-left: auto; }\r\n';
+    module2.exports = '/* Quiet surfaces, consistent controls, no animated glow or decorative motion. */\r\n.qcord-dialog {\r\n    width: min(1160px, 94vw); height: min(740px, 90dvh); max-width: 96vw; max-height: 94dvh;\r\n    padding: 0; margin: auto; border: 1px solid #ffffff1b; border-radius: 14px; overflow: hidden;\r\n    color: #f1f3f5; color-scheme: dark; background: #111111 linear-gradient(180deg, #0f0f0f, #1d1f21);\r\n    box-shadow: 0 24px 80px #0007, 0 0 0 1px #0003;\r\n}\r\n.qcord-dialog::backdrop { background: #0b0b0b65; }\r\n.qcord-dialog[data-covered="true"] { background: transparent; border-color: transparent; box-shadow: none; }\r\n.qcord-dialog[data-covered="true"]::backdrop { background: transparent; }\r\n.qcord-dialog[data-covered="true"] > .qc-panel > :not(dialog) { visibility: hidden; }\r\n.qc-panel {\r\n    --qc-text: #eee; --qc-muted: #a7a5ab;\r\n    --qc-line: #ffffff12; --qc-surface: #ffffff04; --qc-empty: #101010;\r\n    --qc-accent: #65abd0; --qc-graph: #65abd0;\r\n    --qc-font: "Qcord Inter", Inter, system-ui, sans-serif;\r\n    display: flex; flex-direction: column; gap: 18px; width: 100%; height: 100%; min-height: 0;\r\n    padding: 22px; box-sizing: border-box; color: var(--qc-text); background: transparent;\r\n    font: 14px/1.5 var(--qc-font); text-align: left; font-optical-sizing: auto;\r\n}\r\n.qc-composer { min-height: min(640px, 90dvh); }\r\n.qcord-dialog > .qc-composer { min-height: 0; }\r\n.qc-panel *, .qc-panel *::before, .qc-panel *::after { box-sizing: border-box; }\r\n.qc-panel ::-webkit-scrollbar { width: 0; height: 6px; }\r\n.qc-panel ::-webkit-scrollbar-track { background: transparent; }\r\n.qc-panel ::-webkit-scrollbar-thumb { background: #65abd04a; border-radius: 8px; }\r\n.qc-panel ::-webkit-scrollbar-thumb:hover { background: #65abd07a; }\r\n.qc-panel h2, .qc-panel h3, .qc-panel p, .qc-panel figure, .qc-panel dl { margin: 0; }\r\n.qc-panel h3 { font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em; }\r\n.qc-panel p { font-size: 13px; line-height: 1.65; color: var(--qc-muted); text-wrap: pretty; }\r\n.qc-panel small, .qc-muted { font-size: 11px; color: var(--qc-muted); }\r\n.qc-panel button {\r\n    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px;\r\n    padding: 8px 13px; border: 1px solid var(--qc-line); border-radius: 7px;\r\n    background: #1a1a1a; color: var(--qc-text); font: inherit; font-size: 12px; line-height: 1.3;\r\n    cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, border-color 140ms ease;\r\n}\r\n.qc-panel button:active:not(:disabled):not(:focus-visible) { transform: scale(.98); }\r\n.qc-panel button:disabled { opacity: .38; cursor: default; }\r\n.qc-panel button, .qc-panel button *, .qcord-button, .qcord-button *, .qcord-download { user-select: none; -webkit-user-select: none; }\r\n.qc-panel :focus-visible { outline: 2px solid var(--qc-accent); outline-offset: 3px; }\r\n.qc-panel textarea:focus, .qc-panel input[type="search"]:focus, .qc-panel input[type="text"]:focus { border-color: var(--qc-line); outline: none; box-shadow: none; }\r\n.qc-panel .qc-message-input:focus { border-color: var(--qc-line); outline: 0; outline-offset: 0; box-shadow: none; }\r\n.qc-panel button:focus-visible, .qc-switch:focus-visible .qc-switch-track > span { transition: none; }\r\n.qc-panel .qc-primary { background: #21668d; border-color: #3b87b0; color: #f1f3f5; font-weight: 600; }\r\n.qc-panel .qc-danger { background: #a93643; border-color: #d4596666; color: #fff; }\r\n.qc-panel .qc-quiet { border-color: transparent; background: transparent; color: var(--qc-muted); }\r\n.qc-panel .qc-action { align-self: flex-start; color: #f1f3f5; background: #488faf20; border-color: #488faf75; padding: 10px 14px; font-weight: 500; }\r\n.qc-panel .qc-exit { background: transparent; border-color: transparent; }\r\n.qc-toolbar { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex: 0 0 auto; }\r\n.qc-toolbar > button, .qc-toolbar .qc-switch, .qc-mode-controls { height: 44px; min-height: 44px; }\r\n.qc-panel .qc-recipient { justify-content: flex-start; text-align: left; min-width: 140px; max-width: none; flex: 1; height: 44px; padding: 5px 10px; }\r\n.qc-recipient > span, .qc-contact-card > span { min-width: 0; }\r\n.qc-recipient strong, .qc-recipient small, .qc-contact-card strong, .qc-contact-card small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }\r\n.qc-recipient strong { font-size: 12px; font-weight: 500; }\r\n.qc-recipient small { font-size: 10px; margin-top: 2px; }\r\n.qc-avatar { display: block; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; object-fit: cover; }\r\n.qc-avatar-fallback { display: flex; justify-content: center; align-items: center; background: #263944; color: #f1f3f5; }\r\n.qc-mode-controls { display: contents; }\r\n.qc-panel .qc-switch { padding: 6px 9px; border: 1px solid var(--qc-line); background: #0001; font-size: 11px; color: var(--qc-muted); }\r\n.qc-switch[aria-checked="true"] { color: var(--qc-text); }\r\n.qc-switch-track { position: relative; display: block; width: 26px; height: 15px; flex: 0 0 26px; border-radius: 9px; background: #ffffff20; }\r\n.qc-switch-track > span { position: absolute; left: 3px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #b1b6bd; transition: transform 150ms cubic-bezier(.23,1,.32,1); }\r\n.qc-switch[aria-checked="true"] .qc-switch-track { background: #286a91; }\r\n.qc-switch[aria-checked="true"] .qc-switch-track > span { transform: translateX(11px); background: #f1f3f5; }\r\n.qc-tabs { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--qc-line); }\r\n.qc-tabs > button { min-width: 0; border: 0; background: transparent; color: var(--qc-muted); white-space: nowrap; font-size: 12px; }\r\n.qc-tabs > button[aria-selected="true"] { background: #ffffff09; color: var(--qc-text); }\r\n.qc-composer > .qc-tabs > button { flex: 1; }\r\n.qc-main { flex: 1 1 0; min-height: 0; }\r\n.qc-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 28px; height: 100%; min-height: 0; }\r\n.qc-explanation, .qc-visual { display: flex; flex-direction: column; gap: 15px; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }\r\n.qc-visual { padding-left: 24px; border-left: 1px solid var(--qc-line); }\r\n.qc-visual > .qc-tabs { padding-bottom: 7px; }\r\n.qc-visual .qc-tabs > button { font-size: 11px; min-height: 32px; padding: 7px 10px; }\r\n.qc-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 8px; background: #00000012; flex: 0 0 auto; }\r\n.qc-variables > div { min-width: 0; }\r\n.qc-variables dt { font: 16px/1.4 "Cambria Math", ui-monospace, monospace; color: #f1f3f5; }\r\n.qc-variables dd { margin: 2px 0 0; color: var(--qc-muted); font-size: 10px; }\r\n.qc-equation { font: 23px/1.4 "Cambria Math", "STIX Two Math", serif; color: #f1f3f5; padding: 4px 0; overflow-wrap: anywhere; flex: 0 0 auto; }\r\n.qc-code { display: block; font: 11px/1.7 var(--qc-font); font-variant-numeric: tabular-nums; white-space: pre-wrap; overflow-wrap: anywhere; color: #dee8ee; }\r\n.qc-secret-values { display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #0001; }\r\n.qc-keyparts { display: grid; grid-template-columns: 2fr 1fr; gap: 3px; flex: 0 0 auto; }\r\n.qc-keyparts > div { display: flex; flex-direction: column; gap: 3px; padding: 10px; background: #488faf14; border-top: 2px solid #488faf; border-radius: 0 0 5px 5px; }\r\n.qc-keyparts > div + div { background: #65abd010; border-color: #65abd0; }\r\n.qc-keyparts strong { font-size: 11px; font-weight: 500; }\r\n.qc-keyparts span { font-size: 9px; color: var(--qc-muted); }\r\n.qc-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; flex: 0 0 auto; }\r\n.qc-matrix button, .qc-vector-tiles button { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 43px; padding: 6px 9px; color: #65abd0; background: #286a9110; }\r\n.qc-matrix button > span, .qc-vector-tiles button > span { text-align: left; font: 10px var(--qc-font); }\r\n.qc-matrix svg, .qc-vector-tiles svg { width: 100%; height: 20px; }\r\n.qc-matrix button[aria-pressed="true"], .qc-vector-tiles button[aria-pressed="true"] { color: #dee8ee; border-color: #488faf75; background: #488faf1c; }\r\n.qc-vector-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 0 0 auto; }\r\n.qc-vector-tiles button { min-height: 64px; }\r\n.qc-single-polynomial { display: flex; flex-direction: column; gap: 5px; min-height: 64px; padding: 6px 9px; color: #dee8ee; background: #286a9110; border: 1px solid #488faf75; border-radius: 7px; }\r\n.qc-single-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\r\n.qc-single-polynomial > svg { width: 100%; height: 27px; }\r\n.qc-sampling { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 8px; background: #488faf09; }\r\n.qc-seed-row { display: flex; align-items: center; gap: 10px; min-width: 0; }\r\n.qc-seed-row strong { flex: 0 0 auto; font-size: 11px; }\r\n.qc-seed-row code { min-width: 0; font: 10px/1.5 var(--qc-font); overflow-wrap: anywhere; color: #dee8ee; }\r\n.qc-noise-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }\r\n.qc-noise-paths > div { display: flex; flex-direction: column; gap: 2px; padding: 5px 7px; border-left: 2px solid #488faf65; background: #488faf0c; }\r\n.qc-noise-paths strong { font: 16px/1.3 "Cambria Math", "STIX Two Math", serif; }\r\n.qc-noise-paths small { font-size: 9px; }\r\n.qc-sampling-equation { font: 17px/1.4 "Cambria Math", "STIX Two Math", serif; }\r\n.qc-construction-equations { display: flex; flex-direction: column; gap: 5px; }\r\n.qc-construction .qc-explanation { gap: 8px; }\r\n.qc-awaiting { padding: 20px 4px; display: flex; flex-direction: column; gap: 8px; }\r\n.qc-polynomial { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--qc-line); border-radius: 9px; background: #00000010; flex: 0 0 auto; }\r\n.qc-polynomial figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }\r\n.qc-polynomial figcaption strong { font-weight: 500; }\r\n.qc-polynomial figcaption > span { color: var(--qc-muted); font-size: 10px; }\r\n.qc-polynomial > svg { width: 100%; height: 110px; color: var(--qc-muted); touch-action: none; cursor: crosshair; }\r\n.qc-selection { transition: transform 80ms linear; }\r\n.qc-scrubber { display: flex; align-items: center; gap: 12px; }\r\n.qc-scrubber > label { flex: 1; }\r\n.qc-coefficient-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }\r\n.qc-coefficient-strip > button { display: flex; flex-direction: column; gap: 3px; min-height: 42px; padding: 3px; font: 11px var(--qc-font); font-variant-numeric: tabular-nums; background: transparent; border-color: transparent; }\r\n.qc-coefficient-strip small { font-size: 9px; }\r\n.qc-coefficient-strip button[aria-pressed="true"] { background: #488faf1c; color: #dee8ee; border-color: #488faf3b; }\r\n.qc-panel input[type="range"] { appearance: none; display: block; width: 100%; height: 24px; padding: 0; margin: 0; background: transparent; cursor: pointer; touch-action: pan-y; }\r\n.qc-panel input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 3px; background: linear-gradient(to right, var(--qc-accent) var(--qc-progress), #ffffff24 var(--qc-progress)); }\r\n.qc-panel input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border: 2px solid #111111; border-radius: 50%; background: var(--qc-accent); }\r\n.qc-compression { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--qc-line); border-radius: 7px; font-size: 11px; color: var(--qc-muted); }\r\n.qc-compression strong { margin-left: auto; color: #dee8ee; font: 15px var(--qc-font); font-variant-numeric: tabular-nums; }\r\n.qc-field { display: flex; flex-direction: column; gap: 7px; font-size: 11px; color: var(--qc-muted); min-width: 0; }\r\n.qc-panel textarea, .qc-panel input[type="search"], .qc-panel input[type="text"] { width: 100%; padding: 10px 12px; color: var(--qc-text); background: var(--qc-empty); border: 1px solid var(--qc-line); border-radius: 7px; font: 11px/1.65 var(--qc-font); }\r\n.qc-panel textarea { resize: none; min-height: 60px; }\r\n.qc-panel textarea[readonly] { color: #dee8ee; }\r\n.qc-panel textarea::placeholder, .qc-panel input::placeholder { color: #7b838f; }\r\n.qc-panel input[type="search"] { font-family: inherit; }\r\n.qc-panel .qc-message-input { font: 14px/1.6 var(--qc-font); min-height: 145px; }\r\n.qc-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\r\n.qc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\r\n.qc-json { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-behavior: smooth; margin: 0; padding: 14px; border-radius: 8px; border: 1px solid var(--qc-line); background: var(--qc-empty); color: #dee8ee; white-space: pre; font: 11px/1.85 var(--qc-font); font-variant-numeric: tabular-nums; }\r\n.qc-footer { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 13px; border-top: 1px solid var(--qc-line); }\r\n.qc-feedback { flex: 1; min-width: 0; font-size: 11px; color: var(--qc-muted); overflow-wrap: anywhere; }\r\n.qc-error { color: #f1a5ac; }\r\n.qc-panel details { font-size: 11px; color: var(--qc-muted); }\r\n.qc-panel summary { cursor: pointer; }\r\n.qc-panel details > .qc-code, .qc-panel details > .qc-field { margin-top: 12px; }\r\n.qc-contacts-dialog { width: min(900px, 93vw); height: min(700px, 90dvh); }\r\n.qc-contact-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }\r\n.qc-contact-header > .qc-panel-title { flex: 1; }\r\n.qc-panel-title { display: flex; align-items: center; gap: 10px; }\r\n.qc-contact-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }\r\n.qc-contact-sidebar { display: flex; flex-direction: column; gap: 10px; min-height: 0; border-right: 1px solid var(--qc-line); padding-right: 18px; }\r\n.qc-contact-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; }\r\n.qc-panel .qc-contact-card { min-height: 48px; justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; padding: 7px; }\r\n.qc-contact-card[aria-pressed="true"] { background: #488faf12; border-color: #488faf26; }\r\n.qc-contact-card strong { font-size: 12px; font-weight: 500; }\r\n.qc-contact-card small { margin-top: 2px; font-size: 10px; }\r\n.qc-contact-detail { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 18px; padding-top: 4px; min-width: 0; }\r\n.qc-person { display: flex; align-items: center; gap: 10px; }\r\n.qc-person h3 { font-size: 15px; }\r\n.qc-person p { font-size: 11px; }\r\n.qc-my-keys { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }\r\n.qc-my-keys h3 { font-size: 14px; }\r\n.qc-my-keys p { font-size: 11px; line-height: 1.6; }\r\n.qc-key-field { display: flex; flex-direction: column; gap: 7px; }\r\n.qc-key-field textarea { display: block; }\r\n.qc-key-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }\r\n.qc-panel .qc-reveal { width: 64px; }\r\n.qc-private-key { border-radius: 7px; }\r\n.qc-private-key textarea { display: block; }\r\n.qc-private-key[data-revealed="false"] { overflow: hidden; cursor: pointer; }\r\n.qc-private-key[data-revealed="false"] textarea { filter: blur(5px); user-select: none; -webkit-user-select: none; pointer-events: none; }\r\n.qc-reset-area { padding-top: 10px; border-top: 1px solid var(--qc-line); }\r\n.qc-reset-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid #bb546450; border-radius: 8px; background: #83344115; font-size: 12px; }\r\n.qc-opened-dialog { width: min(700px, 92vw); height: min(490px, 86dvh); }\r\n.qc-plaintext { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #0002; border: 1px solid var(--qc-line); border-radius: 8px; }\r\n.qcord-button { display: inline-flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: transparent; border: 0; padding: 6px; border-radius: 7px; color: var(--interactive-normal, #a4aab4); cursor: pointer; }\r\n.qcord-button svg { width: 21px; height: 21px; fill: currentColor; }\r\n.qcord-button.qcord-decrypt-enabled { color: #fff; background: #286a91; box-shadow: inset 0 0 0 1px #65abd085, 0 0 9px #488faf35; }\r\n.qcord-button:focus-visible { outline: 2px solid #488faf; outline-offset: 2px; }\r\n[class*="channelTextArea"].qcord-encrypt-enabled { border-radius: 9px; background-image: linear-gradient(110deg, #26394455, #286a9135 55%, #488faf45); box-shadow: inset 0 0 0 1px #488faf60; outline: 1px solid #488faf; outline-offset: -1px; }\r\n[class*="channelTextArea"].qcord-encrypt-enabled [class*="scrollableContainer_"] { background-image: linear-gradient(110deg, #26394455, #286a9135 55%, #488faf45); }\r\n.qcord-file-hidden, .qcord-empty-content { display: none !important; }\r\n.qcord-inline-messages { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 2px 0 0; min-width: 0; }\r\n.qcord-decrypted { position: relative; width: fit-content; max-width: 100%; min-width: 0; padding: 9px 34px 9px 12px; border: 1px solid #65abd028; border-radius: 8px; background: #488faf10; }\r\n.qcord-message { --text-normal: #fff; --text-primary: #fff; --header-primary: #fff; color: #fff !important; font-family: "Qcord Inter", Inter, system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }\r\n.qcord-message > :first-child { margin-top: 0; }\r\n.qcord-message > :last-child { margin-bottom: 0; }\r\n.qcord-message code { color: #fff; background: var(--background-secondary, #2b2d31); }\r\n.qcord-message a { color: var(--text-link, #a2c5ef); }\r\n.qcord-message pre { max-width: 100%; overflow-x: auto; }\r\n.qcord-download { position: absolute; right: 6px; top: 6px; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 4px; text-decoration: none; color: var(--text-muted, #65abd0); font-size: 15px; }\r\n.qcord-download svg { width: 18px; height: 18px; fill: currentColor; }\r\n@media (hover: hover) and (pointer: fine) {\r\n    .qc-panel button:hover:not(:disabled) { border-color: #ffffff25; background-color: #2a2a2a; }\r\n    .qc-panel .qc-primary:hover:not(:disabled) { background: #2a789f; border-color: #599fbe; }\r\n    .qc-panel .qc-danger:hover:not(:disabled) { background: #b53f4d; }\r\n    .qcord-download:hover { background: #ffffff0b; color: #dee8ee; }\r\n}\r\n@media (max-height: 780px) and (min-width: 901px) {\r\n    .qc-panel { padding: 18px; gap: 13px; }\r\n    .qc-explanation, .qc-visual { gap: 11px; }\r\n    .qc-polynomial > svg { height: 90px; }\r\n    .qc-polynomial { gap: 9px; }\r\n    .qc-my-keys { gap: 8px; }\r\n    .qc-variables { padding: 10px; gap: 8px 12px; }\r\n    .qc-sampling { padding: 8px 10px; gap: 5px; }\r\n    .qc-construction-equations { gap: 2px; }\r\n    .qc-construction-equations .qc-equation { font-size: 21px; padding: 2px 0; }\r\n}\r\n@media (max-width: 950px) {\r\n    .qc-toolbar { gap: 7px; }\r\n    .qc-toolbar .qc-panel-button { font-size: 0; width: 40px; padding: 8px; }\r\n    .qc-recipient { min-width: 140px; }\r\n    .qc-split { gap: 18px; }\r\n    .qc-visual { padding-left: 18px; }\r\n}\r\n@media (max-width: 760px) {\r\n    .qcord-dialog { width: 96vw; height: 92dvh; }\r\n    .qc-panel { padding: 15px; gap: 12px; }\r\n    .qc-toolbar { flex-wrap: wrap; }\r\n    .qc-toolbar .qc-recipient { order: -2; flex: 1; }\r\n    .qc-mode-controls { order: 3; width: 100%; }\r\n    .qc-mode-controls .qc-switch { flex: 1; justify-content: space-between; }\r\n    .qc-toolbar .qc-panel-button { order: -1; }\r\n    .qc-toolbar .qc-exit { order: 2; }\r\n    .qc-composer > .qc-tabs > button { padding: 7px 4px; font-size: 10px; white-space: normal; }\r\n    .qc-split { display: flex; flex-direction: column; overflow: auto; gap: 22px; }\r\n    .qc-explanation, .qc-visual { overflow: visible; flex: 0 0 auto; }\r\n    .qc-visual { border-left: 0; padding: 16px 0 0; border-top: 1px solid var(--qc-line); }\r\n    .qc-contact-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 15px; }\r\n    .qc-contact-sidebar { padding-right: 12px; }\r\n    .qc-footer { gap: 5px; }\r\n    .qc-footer .qc-open-file { font-size: 0; padding: 8px; }\r\n    .qc-contact-header { gap: 10px; }\r\n}\r\n@media (max-width: 520px) {\r\n    .qc-contact-layout { display: flex; flex-direction: column; overflow: auto; }\r\n    .qc-contact-sidebar { border-right: 0; padding-right: 0; flex: 0 0 auto; }\r\n    .qc-contact-list { flex-direction: row; max-height: 55px; overflow-x: auto; }\r\n    .qc-contact-list > button { flex: 0 0 auto; }\r\n    .qc-contact-detail { gap: 13px; }\r\n    .qc-keyparts { grid-template-columns: 1.5fr 1fr; }\r\n}\r\n@media (prefers-reduced-motion: reduce) {\r\n    .qc-panel button, .qc-switch-track > span { transition: none; }\r\n    .qc-selection { transition: none; }\r\n    .qc-json { scroll-behavior: auto; }\r\n    .qc-panel button:active:not(:disabled):not(:focus-visible) { transform: none; }\r\n}\r\n\r\n.qc-contact-search { position: relative; }\r\n.qc-contact-search > svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--qc-muted); pointer-events: none; }\r\n.qc-panel .qc-contact-search > input { width: 100%; padding-left: 36px; }\r\n.qc-panel summary { display: flex; align-items: center; gap: 8px; list-style: none; }\r\n.qc-panel summary::-webkit-details-marker { display: none; }\r\n.qc-panel summary > svg { flex: 0 0 auto; transform: rotate(-90deg); transition: transform 140ms ease; }\r\n.qc-panel details[open] > summary > svg { transform: rotate(0); }\r\n.qcord-decrypted[data-signature="failed"] { background: #a9364330; border-color: #d45966; }\r\n.qcord-download { padding: 2px; border: 0; background: transparent; cursor: pointer; }\r\n.qcord-download svg[stroke] { fill: none; }\r\n.qcord-download[data-status="verified"] { color: #86c6b0; }\r\n.qcord-download[data-status="failed"] { color: #f1a5ac; }\r\n.qc-verification-result { display: flex; align-items: center; gap: 10px; padding: 13px; border: 1px solid var(--qc-line); border-radius: 7px; background: #17506a60; }\r\n.qc-verification-result[data-status="failed"] { background: #a9364330; color: #f1a5ac; border-color: #d45966; }\r\n.qc-verification-rows > button[aria-pressed="true"] { background: #17506a; }\r\n.qc-verification-rows { gap: 4px; }\r\n.qc-verification-rows > button { min-height: 30px; padding: 5px 8px; }\r\n.qc-file-link { display: inline-flex; gap: 7px; align-items: center; color: var(--qc-text); font-size: 12px; text-decoration: none; white-space: nowrap; }\r\n.qc-verifier .qc-explanation { gap: 11px; }\r\n.qc-verifier .qc-equation { font-size: 21px; }\r\n.qc-signature-parts { grid-template-columns: 1fr 3fr; }\r\n@media (max-width: 1100px) { .qc-toolbar { flex-wrap: wrap; } }\r\n\r\n/* Adjacent public identities with compact actions and neutral, quiet surfaces. */\r\n.qc-public-keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; flex: 0 0 auto; }\r\n.qc-public-keys > * { min-width: 0; }\r\n.qc-public-keys textarea { height: 132px; }\r\n.qc-my-keys > *, .qc-key-field { flex-shrink: 0; }\r\n.qc-my-keys button, .qc-contact-sidebar > button { align-self: flex-start; }\r\n.qc-key-toolbar { justify-content: space-between; }\r\n.qc-key-toolbar button { flex: 0 0 auto; }\r\n.qc-equation, .qc-math, .qc-inline-math, .qc-compression strong, .qc-sampling-equation, .qc-noise-paths strong, .qc-variables dt { font-family: "Cambria Math", Cambria, "STIX Two Math", serif; color: #f1f3f5; }\r\n.qc-math { font-size: 15px; line-height: 1.4; }\r\n.qc-panel textarea::selection, .qc-panel input::selection, .qc-panel code::selection { background: #245a7680; color: #fff; }\r\n@media (max-width: 620px) { .qc-public-keys { grid-template-columns: minmax(0, 1fr); } }\r\n\r\n.qc-keyparts > div { background: #17506a; border-color: #3986a3; }\r\n.qc-keyparts > div + div { background: #2b6a6d; border-color: #65a5a5; }\r\n.qc-keyparts span { color: #d5e7eb; }\r\n.qc-private-keys .qc-label-row { flex-wrap: wrap; gap: 4px 8px; }\r\n.qc-private-keys .qc-key-actions { margin-left: auto; }\r\n';
   }
 });
 
@@ -5606,7 +5859,9 @@ var require_attachments = __commonJS({
           if (Number(response.headers.get("content-length")) > MAX_DECODED_FILE_SIZE) return;
           const wire = await response.text();
           if (Buffer.byteLength(wire) > MAX_DECODED_FILE_SIZE || !current()) return;
-          const result = await plugin.openFile(wire, channelId, messageEpoch);
+          const messageId = link.closest('[id^="chat-messages-"]')?.id?.match(/^chat-messages-\d+-(\d+)$/)?.[1];
+          const authorId = BdApi.Webpack.getStore?.("MessageStore")?.getMessage?.(channelId, messageId)?.author?.id || null;
+          const result = await plugin.openFile(wire, channelId, messageEpoch, { authorId, requireAuthor: true });
           if (!current()) return;
           const element = document.createElement("div");
           element.className = "qcord-decrypted";
@@ -5614,32 +5869,35 @@ var require_attachments = __commonJS({
           const content = document.createElement("div");
           content.className = `qcord-message ${plugin.markupClass}`;
           element.append(content);
-          const download = document.createElement("a");
-          download.className = "qcord-download";
-          download.href = entry.url;
-          download.innerHTML = LOGO;
-          download.title = "Download .qcord";
-          download.setAttribute("aria-label", "Download .qcord");
-          element.append(download);
-          const signature = document.createElement("button");
-          signature.type = "button";
-          signature.className = "qcord-signature qcord-signature-pending";
-          const status = ["verified", "failed"].includes(result.signatureStatus) ? result.signatureStatus : "unchecked";
-          signature.dataset.status = status;
-          element.dataset.signature = status;
-          if (status === "unchecked") signature.textContent = "?";
-          else {
-            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-            for (const [name, value] of Object.entries({ viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": true })) svg.setAttribute(name, value);
-            const path = document.createElementNS(svg.namespaceURI, "path");
-            path.setAttribute("d", outlined[status === "verified" ? "check" : "shieldX"]);
-            svg.append(path);
-            signature.append(svg);
-          }
-          signature.title = plugin.autoVerify ? "Signature not checked: automatic verification is coming next" : "Check Signature Challenge (coming next)";
-          signature.setAttribute("aria-label", `Check Signature Challenge: ${status === "unchecked" ? "signature not checked" : status === "verified" ? "signature verified" : "signature failed"}`);
-          signature.addEventListener("click", () => BdApi.UI.showToast("Signature not checked. The verification walkthrough is coming next.", { type: "info" }));
-          element.append(signature);
+          const control = document.createElement("button");
+          control.type = "button";
+          control.className = "qcord-download";
+          const updateStatus = (verification) => {
+            const status = verification.status;
+            result.verification = verification;
+            result.signatureStatus = status;
+            control.dataset.status = status;
+            element.dataset.signature = status;
+            control.replaceChildren();
+            if (["verified", "failed"].includes(status)) {
+              const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+              for (const [name, value] of Object.entries({ viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": true })) svg.setAttribute(name, value);
+              const path = document.createElementNS(svg.namespaceURI, "path");
+              path.setAttribute("d", outlined[status === "verified" ? "check" : "shieldX"]);
+              svg.append(path);
+              control.append(svg);
+            } else control.innerHTML = LOGO;
+            const label = status === "verified" ? "signature verified" : status === "failed" ? "signature failed" : status === "unchecked" ? "signature not checked" : status === "unsigned" ? "unsigned file" : status === "missing-author" ? "sender unknown" : "sender key missing";
+            control.title = `Check Signature Challenge: ${label}`;
+            control.setAttribute("aria-label", control.title);
+          };
+          updateStatus(result.verification);
+          control.addEventListener("click", () => {
+            if (current()) plugin.openVerification(result, { downloadUrl: entry.url, onUpdate: (value) => {
+              if (current()) updateStatus(value);
+            } });
+          });
+          element.append(control);
           entry.element = element;
           const message = link.closest('[id^="chat-messages-"]');
           const slot = message?.querySelector('[id^="message-content-"], [class*="messageContent_"]');
@@ -5673,6 +5931,139 @@ var require_attachments = __commonJS({
           entry.pending = false;
         }
       }
+    };
+  }
+});
+
+// src/verification.js
+var require_verification = __commonJS({
+  "src/verification.js"(exports2, module2) {
+    "use strict";
+    var createUI = require_ui();
+    var DSA = require_mldsa();
+    var hex = (bytes) => Buffer.from(bytes).toString("hex");
+    module2.exports = function verificationPanel(plugin, result, { onClose, onUpdate, downloadUrl } = {}) {
+      const R = BdApi.React, { h, p, button, field, formula, code, Icon, Tabs, Variables, Polynomial } = createUI(R);
+      const stages = ["Sender key", "Rebuild commitment", "Check challenge"];
+      function Panel() {
+        const [step, setStep] = R.useState(0), [row, setRow] = R.useState(0);
+        const [verification, setVerification] = R.useState(null), [error, setError] = R.useState("");
+        R.useEffect(() => {
+          let active = true;
+          const timer = setTimeout(() => {
+            try {
+              const value = plugin.verifyFileSignature(result, true, true);
+              if (active) {
+                setVerification(value);
+              }
+            } catch (e) {
+              if (active) setError(e.message);
+            }
+          }, 0);
+          return () => {
+            active = false;
+            clearTimeout(timer);
+          };
+        }, []);
+        R.useEffect(() => {
+          if (verification && (step === 2 || !verification.trace)) onUpdate?.(verification);
+        }, [step, verification]);
+        const t = verification?.trace, params = DSA.parameters(result.scheme);
+        const sigma = result.file.signature_sigma;
+        const status = verification?.status || "checking";
+        const title = status === "verified" ? "Signature verified" : status === "failed" ? "Signature failed" : status === "checking" ? "Checking signature\u2026" : "Signature not verified";
+        let left, right;
+        if (!verification || !t) {
+          left = h(R.Fragment, null, h("h3", null, title), p(error || verification?.reason || "Checking the saved sender key and the signature\u2026"));
+          right = p("The walkthrough needs a signed file and the sender's matching public signature key saved locally. The file itself cannot choose a trusted key.");
+        } else if (step === 0) {
+          left = h(
+            R.Fragment,
+            null,
+            h(Variables, { items: [["pk = (\u03C1, t\u2081)", `${params.label} \xB7 ${verification.keySource}`], ["q / d", "8380417 / 13"], ["k / \u2113", `${params.k} / ${params.l}`], ["\u03C3 = (c\u0303, z, h)", `${verification.signatureBytes} encoded bytes`]] }),
+            h("h3", null, "Start with the saved sender key"),
+            p("This key comes from your local identity or saved contact. Compare it with the sender through a trusted channel when you first exchange keys."),
+            formula("A = ExpandA(\u03C1)"),
+            p("The public seed rebuilds A. The encoded public vector t\u2081 stores the high part of t, with 320 bytes per polynomial."),
+            formula("tr = H(pk),   \u03BC = H(tr \u2225 M\u2032)"),
+            p(`Qcord signs the canonical encrypted envelope (${verification.payloadBytes} bytes): kem, nonce, encrypted message, and GCM tag. Pure ML-DSA formats it as M\u2032 = 0 \u2225 0 \u2225 M for an empty context.`)
+          );
+          right = h(
+            R.Fragment,
+            null,
+            field("Saved public signature key", h("textarea", { readOnly: true, rows: 4, value: verification.publicKey })),
+            h(
+              "div",
+              { className: "qc-keyparts qc-signature-parts" },
+              h("div", null, h("strong", null, "\u03C1 seed"), h("span", null, "32 bytes")),
+              h("div", null, h("strong", null, "Encoded t\u2081"), h("span", null, `${320 * params.k} bytes \xB7 ${params.k} polynomials`))
+            ),
+            code(`\u03C1 \xB7 ${hex(t.rho)}`),
+            code(`tr \xB7 ${hex(t.tr)}`),
+            code(`\u03BC \xB7 ${hex(t.mu)}`)
+          );
+        } else if (step === 1) {
+          left = h(
+            R.Fragment,
+            null,
+            h("h3", null, "Rebuild the signer's commitment"),
+            p("Lecture 8, slides 10, 17 and 25: the response z = y + cs\u2081 lets the verifier reconstruct the commitment without learning the secret."),
+            formula("Az \u2212 ct = A(y + cs\u2081) \u2212 c(As\u2081 + s\u2082)"),
+            formula("Az \u2212 ct = w \u2212 cs\u2082"),
+            p("The lecture's simplified check compares the high bits. Full ML-DSA uses the rounded public key and the hint vector h:"),
+            formula("c = SampleInBall(c\u0303)"),
+            formula("w\u2032 = Az \u2212 c \xB7 t\u2081 \xB7 2\u1D48  (mod q)"),
+            formula("w\u2032\u2081 = UseHint(h, w\u2032)"),
+            p("Each hint corrects a high-bit boundary affected by the omitted low bits. The values shown are reconstructed from this file and the saved key.")
+          );
+          right = h(
+            R.Fragment,
+            null,
+            h("div", { className: "qc-row qc-verification-rows", "aria-label": "Commitment polynomial" }, Array.from({ length: params.k }, (_, i) => button(`w\u2032\u2081[${i}]`, () => setRow(i), { key: i, "aria-pressed": row === i }))),
+            h(Polynomial, { values: t.w1[row], name: `w\u2032\u2081[${row}] \xB7 reconstructed high bits`, modulus: (DSA.Q - 1) / (2 * params.gamma2) }),
+            code(`h[${row}] \xB7 nonzero positions: ${sigma.h[row].join(", ") || "none"}`),
+            h("details", null, h("summary", null, h(Icon, { name: "chevron" }), "Approximate commitment before UseHint"), code(t.wApprox[row].join(", ")))
+          );
+        } else {
+          left = h(
+            R.Fragment,
+            null,
+            h("h3", null, "Compare the challenge hashes"),
+            p("Lecture 8, slides 17 and 25:"),
+            formula("H(M \u2225 HighBits(Az \u2212 ct)) = c"),
+            p("Full ML-DSA hashes the message representative and the encoded, hint-corrected high bits:"),
+            formula("c\u0303\u2032 = H(\u03BC \u2225 w1Encode(w\u2032\u2081))"),
+            formula("c\u0303\u2032 = c\u0303"),
+            formula("\u2016z\u2016\u221E < \u03B3\u2081 \u2212 \u03B2,   weight(h) \u2264 \u03C9"),
+            p("Accept only when both the challenge comparison and the bounds pass. This reconstruction is checked against the bundled ML-DSA verifier's result.")
+          );
+          right = h(
+            R.Fragment,
+            null,
+            h("div", { className: "qc-verification-result", "data-status": status, role: "status" }, h(Icon, { name: status === "verified" ? "check" : "shieldX" }), h("strong", null, title)),
+            field("Received challenge c\u0303", h("textarea", { "aria-label": "Received challenge c tilde", readOnly: true, rows: 2, value: hex(Buffer.from(t.expected, "base64")) })),
+            field("Recomputed challenge c\u0303\u2032", h("textarea", { "aria-label": "Recomputed challenge c tilde prime", readOnly: true, rows: 2, value: hex(Buffer.from(t.computed, "base64")) })),
+            h(Variables, { items: [["c\u0303\u2032 = c\u0303", t.computed === t.expected ? "Match" : "Mismatch"], ["\u2016z\u2016\u221E < \u03B3\u2081 \u2212 \u03B2", `${t.zNorm} < ${t.zBound} \xB7 ${t.zNorm < t.zBound ? "Pass" : "Fail"}`], ["weight(h) \u2264 \u03C9", `${t.hintCount} \u2264 ${t.hintBound} \xB7 ${t.hintCount <= t.hintBound ? "Pass" : "Fail"}`], ["Saved-key verification", status === "verified" ? "Pass" : "Fail"]] }),
+            p(verification.reason)
+          );
+        }
+        return h(
+          "div",
+          { className: "qc-panel qc-composer qc-verifier" },
+          h("header", { className: "qc-label-row" }, h("h3", null, "Check Signature Challenge"), button("Go Back", onClose, { className: "qc-quiet" })),
+          h(Tabs, { label: "Signature verification steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: setStep }),
+          h("main", { className: "qc-main", "aria-busy": !verification && !error }, h("div", { className: "qc-split" }, h("section", { className: "qc-explanation" }, left), h("section", { className: "qc-visual" }, right))),
+          h(
+            "footer",
+            { className: "qc-footer" },
+            button("Previous step", () => setStep(step - 1), { disabled: step === 0 }),
+            h("span", { className: "qc-feedback", role: "status" }, error || verification?.reason || "Checking\u2026"),
+            downloadUrl && h("a", { className: "qc-file-link", href: downloadUrl, download: true }, h(Icon, { name: "upload" }), "Download .qcord"),
+            step < 2 ? button("Next", () => setStep(step + 1), { className: "qc-primary", disabled: !t }) : button("Done", onClose, { className: "qc-primary" })
+          )
+        );
+      }
+      return h(Panel);
     };
   }
 });
@@ -5873,6 +6264,23 @@ module.exports = class Qcord extends Encapsulation {
       if (this.composerDialog === dialog) this.composerDialog = null;
     }, { once: true });
     root.render(getSettingsPanel(this, { onClose: close }));
+    dialog.showModal();
+  }
+  openVerification(result, options = {}) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "qcord-dialog";
+    dialog.setAttribute("aria-label", "Qcord signature verification");
+    document.body.append(dialog);
+    const root = BdApi.ReactDOM.createRoot(dialog), close = () => dialog.close();
+    this.dialogs.add(close);
+    const unbind = dismissOnBackdrop(dialog, close);
+    dialog.addEventListener("close", () => {
+      unbind();
+      root.unmount();
+      dialog.remove();
+      this.dialogs.delete(close);
+    }, { once: true });
+    root.render(require_verification()(this, result, { ...options, onClose: close }));
     dialog.showModal();
   }
   observer(mutation) {

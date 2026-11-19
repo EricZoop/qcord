@@ -2,9 +2,14 @@
 
 A BetterDiscord course tool using **ML-KEM-512, ML-KEM-768, and ML-KEM-1024** (768 by default). Inspect the recipient's public key, derive K, construct `u, v`, then encrypt a message with K. Install the generated **qcord.plugin.js** in BetterDiscord's Plugins folder.
 
-**Your keys** has a click-to-cycle security-level control and **Copy both public keys**, which copies a JSON bundle. Paste that bundle into a contact's recipient-key field to fill both public keys at once, then Save and Select to return to the dashboard. Raw individual keys remain supported. Key lengths 800 / 1184 / 1568 bytes determine ML-KEM-512 / 768 / 1024 automatically; the walkthrough adjusts its matrix, sampling, and compression accordingly. All four keys for each level are grouped in `key_sets`, preserving existing identities and old files.
+**Your keys** cycles through the three security levels. The public encapsulation/signature keys are side by side, with their private keys beneath in matching columns. Each has its own Copy control; private keys have independent Reveal controls. Explanatory hints stay above the fields. The selected recipient opens the contact editor, where both public keys can be saved.
 
-**Auto verify** saves a preference for the next feature. Message bubbles have a **Check Signature Challenge** button with an unchecked state; no verification is claimed yet. Signing and the verification walkthrough remain unimplemented.
+New attachments are signed with **ML-DSA-44 / 65 / 87**, matching the selected ML-KEM level. **Auto verify** checks decrypted messages against the saved contact's signature key (or your own key for sent messages). Discord's message author determines whose key is used; a file never supplies a trusted verification key. Missing keys and unsigned legacy files remain explicitly unverified.
+
+The existing top-right Qcord message control opens **Check Signature Challenge**. It becomes a check for a verified signature or an error shield with a red bubble for a failed one. With automatic verification off, the control changes when you reach the final challenge check. Download .qcord is available inside the walkthrough.
+
+The walkthrough uses the supplied **PQC Lecture 8**, slides 10, 17 and 25: `Az - ct = w - cs2` and `H(M || HighBits(Az - ct)) = c`. It then expands the simplified equation into full ML-DSA: `c = SampleInBall(c_tilde)`, `w' = Az - c*t1*2^d`, `w1' = UseHint(h, w')`, and `c_tilde' = H(mu || w1Encode(w1'))`. It shows the actual reconstructed high-bit polynomials, received/recomputed challenges, response norm, and hint weight. The reconstruction must agree with the bundled noble ML-DSA verifier before display.
+
 
 The walkthrough starts with the recipient's key:
 
@@ -23,7 +28,7 @@ The toolbar places the recipient first (filling the remaining width), followed b
 
 - **Auto encrypt** (off by default): typing in Discord and pressing Enter prepares a `.qcord` attachment and clears the plaintext draft only after successful staging. Review it, then press Send again. A subdued blue gradient and a thin border mark the Discord composer while this is on. Missing keys, failures, or cancellation keep the draft and do not send plaintext. This encrypts text; existing non-Qcord attachments are not encrypted.
 - **Auto decrypt** (on by default): automatically opens visible `.qcord` attachments using saved sender K receipts or your private key. The composer button shows a white logo on a blue background while this is on. Switching it off restores original attachments and clears rendered plaintext, including pending decryptions. Manual file opening still works with either automatic switch off.
-- **Auto verify** (off by default): saves your preference for the upcoming signature verification feature.
+- **Auto verify** (off by default): verifies signed messages using saved public signature keys, independently of encryption and decryption.
 - **Save receipts** (on by default): saves each outgoing attachment's epoch and K so you can reopen prior messages. Switch it off to stop saving new keys; existing receipts stay available.
 
 The switches persist separately. **Previous step** navigates the walkthrough. In a subpanel, **Go Back**, Escape, or an outside click returns to the main popup. Clicking outside again exits Qcord, as does **Exit** on the main popup. **Open .qcord file** in the footer decrypts a `.qcord` file already downloaded to your device; its tooltip explains that action.
@@ -52,11 +57,13 @@ The version-6 `.qcord` file groups its ciphertext polynomials in `kem` (key enca
     "ciphertext_base64": "encrypted UTF-8 message in Base64",
     "authentication_tag_base64": "16-byte GCM tag in Base64"
   },
-  "signature_sigma": {"c_tilde": "", "z": [], "h": []}
+  "signature_sigma": {"c_tilde": "Base64 challenge seed", "z": ["response polynomials"], "h": ["nonzero hint positions per polynomial"]}
 }
 ```
 
-The signature fields reserve ML-DSA support: `c_tilde` is the challenge seed, `z` the response vector, and `h` the hint vector from [FIPS 204, Algorithms 26-27](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.204.pdf). The standard defines a separate signature output and does not prescribe JSON placement or encryption order; placing it below `encrypted_message` is Qcord's transport choice. Your keys cycles between ML-KEM 512 / ML-DSA-44, ML-KEM 768 / ML-DSA-65, and ML-KEM 1024 / ML-DSA-87. Matching ML-DSA keys are generated locally; signing and verification are coming next. All three signature components remain empty, and populated signatures are rejected. Public/private signature identities live beside the encapsulation/decapsulation keys under each security level in `key_sets`. Older version-5 files without `signature_sigma` still open.
+The signature fields contain a canonical ML-DSA signature: `c_tilde` is a Base64 challenge seed, `z` stores signed response coefficients, and `h` stores sorted nonzero hint positions per polynomial. These reconstruct the standard encoded signature. ML-DSA signs `Qcord signed envelope v1\n` followed by canonical JSON for `{qcord_version, kem: {u, v}, encrypted_message: {nonce_base64, ciphertext_base64, authentication_tag_base64}}`, using pure ML-DSA with empty context. This binds the ciphertext, nonce, authentication tag, KEM components and version. Whitespace changes do not affect verification. Old blank/missing signatures remain readable and are labeled unsigned.
+
+The saved signature public key must be exchanged through a trusted channel. A successful check establishes a match to that saved key; an unknown sender or missing key is not marked as verified. A modified signature produces a red warning bubble when the AES-GCM layer still decrypts; AES-GCM failures keep the original attachment visible.
 
 This abbreviated illustration uses placeholders. See [schemas/README.md](schemas/README.md) for the schemas and complete, valid [example attachment](schemas/example.qcord), [sender config](schemas/example.qcord.config.json), and [recipient config](schemas/example.recipient.config.json).
 
@@ -66,9 +73,9 @@ With **Auto decrypt** on, `.qcord` attachments in visible one-to-one DMs are det
 
 - The sender selects the saved K by the attachment filename's epoch and decrypts directly with AES-GCM.
 - The recipient calls ML-KEM.Decaps with their private dk and the packed u/v ciphertext. Internally it recovers m′, derives K, and performs re-encryption and implicit rejection.
-- Both use K with the file's nonce, ciphertext and tag. Wrong keys or modified files fail AES-GCM authentication. This does not authenticate the sender's identity.
+- Both use K with the file's nonce, ciphertext and tag. Wrong keys or modified files fail AES-GCM authentication. The separate ML-DSA signature authenticates against the locally saved sender key.
 
-Successfully decrypted attachments display as white text with Discord Markdown, including bold, lists, links and code blocks. A subtle box sits directly below the username when the original message has no caption. Its Qcord logo is a download link for the `.qcord` file. Discord's renderer supplies Markdown support; if it is unavailable or fails, Qcord displays safe plain text. Manual **Open .qcord file** uses the same renderer.
+Successfully decrypted attachments display as white text with Discord Markdown, including bold, lists, links and code blocks. A subtle box sits directly below the username when the original message has no caption. Its top-right control opens signature verification; the walkthrough includes the `.qcord` download link. Discord's renderer supplies Markdown support; if it is unavailable or fails, Qcord displays safe plain text. Manual **Open .qcord file** uses the same renderer.
 
 Failed or unsupported files stay visible as their original attachments. Automatic downloads accept HTTPS Discord CDN attachment URLs, and parsing is limited to 1 MiB; BetterDiscord's native fetch buffers downloads before the size check. Repeated scans reuse pending or completed results. Stopping Qcord, resetting config, or replacing keys clears displayed plaintext and restores the original attachments.
 
@@ -101,3 +108,7 @@ npm run preview:ui
 The bottom-left filename buttons open `qcord.config.json` and the current epoch-named `.qcord` file in a JSON viewer with syntax coloring, scrolling, Refresh, and Close file controls. The message file becomes available when a draft is prepared and updates as the message changes; the config viewer shows the disposable preview settings and keys. These inspection controls are only in the local preview.
 
 Open the printed localhost URL, normally `http://127.0.0.1:4173`. Stop it with Ctrl+C. It uses no Discord account. `QCORD_UI_PORT` selects a different port. Screenshots and tab timing measurements from `npm run test:ui` go to ignored `.tools/ui/`. These are local fixture checks, not live Discord integration or a performance guarantee for Discord's renderer.
+
+The preview includes **Verified message** and **Failed signature** buttons at the bottom right. They create real local signed examples, enable Auto verify for the demonstration, and close the composer so the message is visible. Click its check/error control to inspect the lecture-based walkthrough. No Discord account is involved.
+
+Run `npm run test:signatures:ui` for the signature-specific browser checks, in addition to `npm test` and `npm run test:ui`.

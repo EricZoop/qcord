@@ -14,3 +14,6 @@
 .qcord-file-viewer .json-literal { color: #ffab70; }
 .qcord-file-viewer .json-punctuation { color: #c9d1d9; }
 .qcord-preview-files button:focus-visible, .qcord-file-viewer button:focus-visible, .qcord-file-viewer pre:focus-visible { outline: 2px solid #79c0ff; outline-offset: 2px; }
+
+.qcord-signature-demos { position: fixed; bottom: 12px; right: 12px; z-index: 2147483000; display: flex; gap: 6px; }
+.qcord-signature-demos button { border: 1px solid #ffffff26; border-radius: 5px; padding: 8px 11px; background: #18242a; color: #c5dce6; cursor: pointer; font: 12px system-ui; }

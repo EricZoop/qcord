@@ -18,7 +18,7 @@ Qcord supports ML-KEM-512 / ML-KEM-768 / ML-KEM-1024, paired with ML-DSA-44 / ML
     "ciphertext_base64": "encrypted UTF-8 text in Base64",
     "authentication_tag_base64": "16-byte GCM tag in Base64"
   },
-  "signature_sigma": {"c_tilde": "", "z": [], "h": []}
+  "signature_sigma": {"c_tilde": "Base64 challenge seed", "z": ["signed response polynomials"], "h": ["sorted nonzero hint positions"]}
 }
 ```
 
@@ -28,7 +28,12 @@ AES-256-GCM encrypts the UTF-8 message directly with K and a fresh random nonce.
 
 The sender derives `(K, r) = SHA3-512(m || SHA3-256(ek))`, with K in the first 32 bytes. The recipient recovers the same K through ML-KEM.Decaps. Sender receipts store K for direct reopening. Authentication detects wrong keys and modified ciphertext; it does not establish sender identity.
 
-`signature_sigma` reserves the challenge seed `c_tilde`, response vector `z`, and hint vector `h` for a future signature feature. Only blank components are currently accepted. Messages are not signed or verified yet; older files may omit the placeholder.
+`signature_sigma` stores actual ML-DSA signatures. The challenge seed `c_tilde` is canonical Base64 (32 / 48 / 64 decoded bytes). The response `z` has 4 / 5 / 7 polynomials of 256 signed coefficients. The sparse hint vector `h` has 4 / 6 / 8 lists of strictly increasing coefficient indices, with at most 80 / 55 / 75 nonzero hints in total. Runtime validation reconstructs and validates the standard signature encoding; cryptographic verification also enforces the response norm bound.
+
+Pure ML-DSA with empty context signs a domain-separated canonical payload: `Qcord signed envelope v1\n` followed by JSON for `{qcord_version, kem: {u, v}, encrypted_message: {nonce_base64, ciphertext_base64, authentication_tag_base64}}`, preserving that field order. Signature fields themselves are excluded. This covers all encrypted envelope contents. Each message edit gets a fresh nonce and signature.
+
+Verification uses locally pinned public signature keys and, for Discord attachments, the actual message author. Files do not carry trusted identity keys. The lecture walkthrough reconstructs the full challenge and checks its decision against noble's public ML-DSA.verify API. Blank/missing signatures on older files remain readable as unsigned. Changing or removing a signature never produces a verified status.
+
 
 ## Local config
 

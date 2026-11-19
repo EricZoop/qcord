@@ -56,7 +56,9 @@ module.exports = class AttachmentDecoder {
             // BdApi.Net buffers the response; bound text parsing after download too.
             const wire = await response.text();
             if (Buffer.byteLength(wire) > MAX_DECODED_FILE_SIZE || !current()) return;
-            const result = await plugin.openFile(wire, channelId, messageEpoch);
+            const messageId = link.closest('[id^="chat-messages-"]')?.id?.match(/^chat-messages-\d+-(\d+)$/)?.[1];
+            const authorId = BdApi.Webpack.getStore?.("MessageStore")?.getMessage?.(channelId, messageId)?.author?.id || null;
+            const result = await plugin.openFile(wire, channelId, messageEpoch, {authorId, requireAuthor: true});
             if (!current()) return;
 
             const element = document.createElement("div");
@@ -65,31 +67,31 @@ module.exports = class AttachmentDecoder {
             const content = document.createElement("div");
             content.className = `qcord-message ${plugin.markupClass}`;
             element.append(content);
-            const download = document.createElement("a");
-            download.className = "qcord-download";
-            download.href = entry.url;
-            download.innerHTML = LOGO; // Static bundled logo, never decrypted HTML.
-            download.title = "Download .qcord";
-            download.setAttribute("aria-label", "Download .qcord");
-            element.append(download);
-            const signature = document.createElement("button");
-            signature.type = "button";
-            signature.className = "qcord-signature qcord-signature-pending";
-            const status = ["verified", "failed"].includes(result.signatureStatus) ? result.signatureStatus : "unchecked";
-            signature.dataset.status = status;
-            element.dataset.signature = status;
-            if (status === "unchecked") signature.textContent = "?";
-            else {
-                const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                for (const [name, value] of Object.entries({viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": true})) svg.setAttribute(name, value);
-                const path = document.createElementNS(svg.namespaceURI, "path");
-                path.setAttribute("d", outlined[status === "verified" ? "check" : "shieldX"]);
-                svg.append(path); signature.append(svg);
-            }
-            signature.title = plugin.autoVerify ? "Signature not checked: automatic verification is coming next" : "Check Signature Challenge (coming next)";
-            signature.setAttribute("aria-label", `Check Signature Challenge: ${status === "unchecked" ? "signature not checked" : status === "verified" ? "signature verified" : "signature failed"}`);
-            signature.addEventListener("click", () => BdApi.UI.showToast("Signature not checked. The verification walkthrough is coming next.", {type: "info"}));
-            element.append(signature);
+            // Reuse the existing top-right Qcord control; never add a second badge.
+            const control = document.createElement("button");
+            control.type = "button";
+            control.className = "qcord-download";
+            const updateStatus = verification => {
+                const status = verification.status;
+                result.verification = verification; result.signatureStatus = status;
+                control.dataset.status = status; element.dataset.signature = status;
+                control.replaceChildren();
+                if (["verified", "failed"].includes(status)) {
+                    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                    for (const [name, value] of Object.entries({viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": true})) svg.setAttribute(name, value);
+                    const path = document.createElementNS(svg.namespaceURI, "path");
+                    path.setAttribute("d", outlined[status === "verified" ? "check" : "shieldX"]);
+                    svg.append(path); control.append(svg);
+                } else control.innerHTML = LOGO; // Static bundled logo only.
+                const label = status === "verified" ? "signature verified" : status === "failed" ? "signature failed" : status === "unchecked" ? "signature not checked" : status === "unsigned" ? "unsigned file" : status === "missing-author" ? "sender unknown" : "sender key missing";
+                control.title = `Check Signature Challenge: ${label}`;
+                control.setAttribute("aria-label", control.title);
+            };
+            updateStatus(result.verification);
+            control.addEventListener("click", () => {
+                if (current()) plugin.openVerification(result, {downloadUrl: entry.url, onUpdate: value => { if (current()) updateStatus(value); }});
+            });
+            element.append(control);
             entry.element = element;
             const message = link.closest('[id^="chat-messages-"]');
             const slot = message?.querySelector('[id^="message-content-"], [class*="messageContent_"]');

@@ -27,6 +27,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
         }, []);
         return h("dialog", {ref: dialog, className: "qcord-dialog qc-opened-dialog", "aria-label": "Decrypted message", onClose: onDismiss},
             h("div", {className: "qc-panel"}, h("div", {className: "qc-label-row"}, h("span", {className: "qc-muted"}, result.source), h("div", {className: "qc-row"},
+                button("Check Signature Challenge", () => plugin.openVerification(result), {className: "qc-quiet"}),
                 button("Go Back", () => dialog.current.close(), {className: "qc-quiet", title: "Return to the main Qcord panel"}))),
                 h("div", {className: `qc-plaintext qcord-message ${plugin.markupClass}`}, plugin.messageContent(result.text, plugin.currentChannel())),
                 h("details", null, h("summary", null, h(Icon, {name: "chevron"}), "Derived K"), code(result.key))));
@@ -124,7 +125,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 h("section", {className: "qc-sampling", "aria-label": "Noise sampling from r"},
                     h("div", {className: "qc-seed-row"}, h("strong", null, "Seed r"), h("code", {"aria-label": "Sampling seed r"}, derived.r)),
                     h("div", {className: "qc-noise-paths"}, [[`y[0..${k - 1}]`, indices.join(", ")], [`e₁[0..${k - 1}]`, indices.map(i => k + i).join(", ")], ["e₂", String(2 * k)]].map(([symbol, nonces]) => h("div", {key: symbol}, h("strong", null, symbol), h("small", null, `Nonce N = ${nonces}`)))),
-                    h("div", {className: "qc-sampling-equation", role: "math"}, `y uses CBD with eta=${params.eta1}; e₁ and e₂ use eta=${params.eta2}. Each has its own nonce.`),
+                    h("div", {className: "qc-sampling-equation", role: "math"}, `y uses CBD with η=${params.eta1}; e₁ and e₂ use η=${params.eta2}. Each has its own nonce.`),
                     h("small", null, "r is a seed, not the vector y. Then compute ŷ = NTT(y).")),
                 h("div", {className: "qc-construction-equations"}, formula("u = NTT⁻¹(Âᵀ ∘ ŷ) + e₁"), formula("v = NTT⁻¹(t̂ᵀ ∘ ŷ) + μ + e₂"),
                     h("small", null, "∘ multiplies in the NTT domain. Coefficients are modulo 3329.")),
@@ -152,7 +153,7 @@ module.exports = function getSettingsPanel(plugin, {onClose} = {}) {
                 button(h(R.Fragment, null, h(Icon, {name: "keys"}), "Your keys"), () => setContactsTab("keys"), {className: "qc-panel-button", "aria-label": "Your keys"}),
                 h("div", {className: "qc-mode-controls"}, h(Switch, {label: "Auto encrypt", checked: autoEncrypt, disabled: !plugin.sendHookReady, title: plugin.sendHookReady ? "Turn normal chat text into a reviewed .qcord attachment" : "Unavailable in this Discord build", onChange: value => run(async () => plugin.setAutomatic("encrypt", value))}),
                     h(Switch, {label: "Auto decrypt", checked: autoDecrypt, onChange: value => run(async () => plugin.setAutomatic("decrypt", value))}),
-                    h(Switch, {label: "Auto verify", checked: autoVerify, title: "Save your preference for the upcoming signature verification feature", onChange: value => run(async () => plugin.setAutomatic("verify", value))}),
+                    h(Switch, {label: "Auto verify", checked: autoVerify, title: "Verify decrypted messages using saved signature public keys", onChange: value => run(async () => plugin.setAutomatic("verify", value))}),
                     h(Switch, {label: "Save receipts", checked: saveReceipts, title: "Save keys to reopen your sent messages on this device", onChange: value => run(async () => plugin.setSaveReceipts(value))})),
                 onClose && button("Exit", onClose, {className: "qc-quiet qc-exit", "aria-label": "Exit Qcord", title: "Exit Qcord and return to chat"})),
             h(Tabs, {label: "Encapsulation steps", items: stages.map((name, i) => [i, `${i + 1}. ${name}`]), value: step, onChange: navigate, disabled: busy}),

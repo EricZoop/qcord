@@ -8,7 +8,7 @@ const dismissOnBackdrop = require("./dialog");
 const raw = key => Buffer.from(key.bytes).toString("base64");
 
 module.exports = function createContacts(R, ui) {
-    const {h, button, field, code, p, Icon, Avatar, KeyParts} = ui;
+    const {h, button, field, p, Icon, Avatar} = ui;
     return function Contacts({plugin, channel, keys, view = "contacts", onSelect, onChanged, onClose}) {
         const [ownKeys, setOwnKeys] = R.useState(keys), [level, setLevel] = R.useState(ACTIVE_SCHEME);
         const keyParams = parameters(level);
@@ -63,7 +63,7 @@ module.exports = function createContacts(R, ui) {
                         }})),
                         field("Public signature key", h("textarea", {rows: 3, value: signatureText, disabled: busy, placeholder: "Paste their matching ML-DSA public signature key (optional)", onChange: e => setSignatureText(e.target.value)}))),
                         p("Key length selects the security level automatically: 800, 1184, or 1568 decoded bytes. Save once for this DM."),
-                        p("Keep both public keys together for this contact. Signature verification is coming next."),
+                        p("Keep both public keys together for this contact. Signatures are checked against the public signature key you save here."),
                         h("div", {className: "qc-row"}, button(row && keyText === row.public_encaps && signatureText === (row.public_signature || "") ? "Saved" : "Save key", () => run(async () => {
                             const publicKey = PQC.createPublicKey(keyText);
                             plugin.saveRecipients(selected, [{user_id: selectedContact.userId, public_encaps: raw(publicKey), public_signature: signatureText}], publicKey.asymmetricKeyType);
@@ -77,9 +77,10 @@ module.exports = function createContacts(R, ui) {
                         const levels = Object.keys(PARAMETER_SETS), next = levels[(levels.indexOf(level) + 1) % levels.length];
                         const pair = await plugin.generateKeys(next);
                         if (alive.current) { setOwnKeys(pair); setLevel(next); setRevealed(false); setSignatureRevealed(false); }
-                    }), {className: "qc-action", "aria-label": "Cycle security level", title: "Click to cycle security levels", disabled: busy}),
-                    button(h(R.Fragment, null, h(Icon, {name: "copy"}), "Copy both public keys"), () => copy(JSON.stringify({parameter_set: level, public_encaps: raw(ownKeys.publicKey), public_signature: ownKeys.publicSignature}, null, 2)), {disabled: !ownKeys || busy, className: "qc-quiet"})),
+                    }), {className: "qc-action", "aria-label": "Cycle security level", title: "Click to cycle security levels", disabled: busy})),
                     p(`ML-KEM NIST category ${keyParams.category}. Share the encapsulation and signature public keys from the same level.`),
+                    p(`Stored in this order: encoded t̂, then ρ. Together: ${keyParams.publicBytes} bytes / ${4 * Math.ceil(keyParams.publicBytes / 3)} Base64 characters.`),
+                    h("p", null, "KeyGen takes random d and computes ", h("span", {className: "qc-inline-math"}, `(ρ, σ) = G(d ∥ byte(${keyParams.k}))`), ". The public seed ρ reconstructs the matrix; secret s and noise e produce the public vector t̂."),
                     h("div", {className: "qc-public-keys"},
                     h("div", {className: "qc-key-field"},
                         h("div", {className: "qc-label-row"}, h("h3", null, "Public encapsulation key"), button(h(R.Fragment, null, h(Icon, {name: "copy"}), "Copy"), () => copy(raw(ownKeys.publicKey)), {disabled: !ownKeys || busy, className: "qc-quiet"})),
@@ -87,9 +88,6 @@ module.exports = function createContacts(R, ui) {
                     h("div", {className: "qc-key-field"},
                         h("div", {className: "qc-label-row"}, h("h3", null, "Public signature key"), button(h(R.Fragment, null, h(Icon, {name: "copy"}), "Copy"), () => copy(ownKeys.publicSignature), {disabled: !ownKeys || busy, className: "qc-quiet"})),
                         h("textarea", {"aria-label": "Public signature key", readOnly: true, rows: 3, value: ownKeys?.publicSignature || "Generating signature key…"}))),
-                    h(KeyParts, {k: keyParams.k}),
-                    p(`Stored in this order: encoded t̂, then ρ. Together: ${keyParams.publicBytes} bytes / ${4 * Math.ceil(keyParams.publicBytes / 3)} Base64 characters.`),
-                    h("p", null, "KeyGen takes random d and computes ", h("span", {className: "qc-inline-math"}, `(ρ, σ) = G(d ∥ byte(${keyParams.k}))`), ". The public seed ρ reconstructs the matrix; secret s and noise e produce the public vector t̂."),
                     h("div", {className: "qc-public-keys qc-private-keys"},
                     h("div", {className: "qc-key-field"},
                         h("div", {className: "qc-label-row"}, h("h3", null, "Private decapsulation key"), h("div", {className: "qc-key-actions"},

@@ -111,6 +111,23 @@ const PQC = {
         if (bytes.length !== signatures[scheme].lengths.publicKey) throw new Error("Signature key length does not match the recipient's security level.");
         return Buffer.from(bytes).toString("base64");
     },
+    sign: (payload, privateText, scheme) => {
+        algorithm(scheme);
+        const secret = readKeyData(privateText), entropy = randomBytes(32);
+        try { return signatures[scheme].sign(Uint8Array.from(payload), secret, {extraEntropy: entropy}); }
+        finally { secret.fill(0); entropy.fill(0); }
+    },
+    verify: (signature, payload, publicText, scheme) => {
+        algorithm(scheme);
+        const key = readKeyData(PQC.validateSignatureKey(publicText, scheme));
+        try { return signatures[scheme].verify(Uint8Array.from(signature), Uint8Array.from(payload), Uint8Array.from(key)); }
+        catch { return false; }
+    },
+    signaturePublicKey: (privateText, scheme) => {
+        const secret = readKeyData(privateText);
+        try { return Buffer.from(signatures[scheme].getPublicKey(secret)).toString("base64"); }
+        finally { secret.fill(0); }
+    },
     backend: "bundled @noble/post-quantum 0.7.1",
     generateKeyPair: scheme => run(() => {
         const {impl} = algorithm(scheme);

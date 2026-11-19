@@ -5,7 +5,7 @@
     {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "Qcord encrypted message",
-      "description": "An ML-KEM ciphertext grouped under kem, an AES-GCM encrypted message, and a reserved ML-DSA signature.",
+      "description": "ML-KEM ciphertext, AES-GCM encrypted message, and optional canonical ML-DSA signature components. New files are signed; old blank or missing signatures remain readable.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -46,31 +46,74 @@
           }
         },
         "signature_sigma": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "c_tilde",
-            "z",
-            "h"
-          ],
-          "description": "FIPS 204 Algorithms 26-27: sigma encodes the challenge seed c_tilde, response vector z, and hint vector h. Qcord placeholders only.",
-          "properties": {
-            "c_tilde": {
-              "type": "string",
-              "const": "",
-              "description": "Blank challenge seed (not the challenge polynomial c)."
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "c_tilde",
+                "z",
+                "h"
+              ],
+              "description": "FIPS 204 Algorithms 26-27: sigma encodes the challenge seed c_tilde, response vector z, and hint vector h. Qcord placeholders only.",
+              "properties": {
+                "c_tilde": {
+                  "type": "string",
+                  "const": "",
+                  "description": "Blank challenge seed (not the challenge polynomial c)."
+                },
+                "z": {
+                  "type": "array",
+                  "maxItems": 0,
+                  "description": "Blank response vector."
+                },
+                "h": {
+                  "type": "array",
+                  "maxItems": 0,
+                  "description": "Blank hint vector."
+                }
+              }
             },
-            "z": {
-              "type": "array",
-              "maxItems": 0,
-              "description": "Blank response vector."
-            },
-            "h": {
-              "type": "array",
-              "maxItems": 0,
-              "description": "Blank hint vector."
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "c_tilde",
+                "z",
+                "h"
+              ],
+              "properties": {
+                "c_tilde": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+                },
+                "z": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "minItems": 256,
+                    "maxItems": 256,
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "h": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 80,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 255
+                    }
+                  }
+                }
+              }
             }
-          }
+          ]
         },
         "kem": {
           "type": "object",
@@ -140,7 +183,192 @@
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kem": {
+                "type": "object",
+                "properties": {
+                  "u": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                }
+              },
+              "signature_sigma": {
+                "type": "object",
+                "properties": {
+                  "c_tilde": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signature_sigma": {
+                "type": "object",
+                "properties": {
+                  "c_tilde": {
+                    "type": "string",
+                    "minLength": 44,
+                    "maxLength": 44
+                  },
+                  "z": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": -131071,
+                        "maximum": 131072
+                      }
+                    }
+                  },
+                  "h": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {
+                      "type": "array",
+                      "maxItems": 80
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kem": {
+                "type": "object",
+                "properties": {
+                  "u": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                }
+              },
+              "signature_sigma": {
+                "type": "object",
+                "properties": {
+                  "c_tilde": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signature_sigma": {
+                "type": "object",
+                "properties": {
+                  "c_tilde": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
+                  "z": {
+                    "type": "array",
+                    "minItems": 5,
+                    "maxItems": 5,
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": -524287,
+                        "maximum": 524288
+                      }
+                    }
+                  },
+                  "h": {
+                    "type": "array",
+                    "minItems": 6,
+                    "maxItems": 6,
+                    "items": {
+                      "type": "array",
+                      "maxItems": 55
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kem": {
+                "type": "object",
+                "properties": {
+                  "u": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4
+                  }
+                }
+              },
+              "signature_sigma": {
+                "type": "object",
+                "properties": {
+                  "c_tilde": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signature_sigma": {
+                "type": "object",
+                "properties": {
+                  "c_tilde": {
+                    "type": "string",
+                    "minLength": 88,
+                    "maxLength": 88
+                  },
+                  "z": {
+                    "type": "array",
+                    "minItems": 7,
+                    "maxItems": 7,
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": -524287,
+                        "maximum": 524288
+                      }
+                    }
+                  },
+                  "h": {
+                    "type": "array",
+                    "minItems": 8,
+                    "maxItems": 8,
+                    "items": {
+                      "type": "array",
+                      "maxItems": 75
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
